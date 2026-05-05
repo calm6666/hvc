@@ -1,0 +1,63 @@
+syntax = "proto3";
+package transcode.v1;
+
+message Error {
+  int32 code = 1;
+  string message = 2;
+}
+
+message SegmentOptions {
+  bool support_dash = 1;
+  bool support_hls = 2;
+  int32 segment_duration_sec = 3;
+  uint64 naming_template_id = 4;
+}
+
+message StorageOptions {
+  uint64 storage_id = 1;
+  string bucket_prefix = 2;
+  string segment_prefix = 3;
+}
+
+message ScheduleOptions {
+  string preferred_hwaccel = 1;
+  bool allow_software_decode_fallback = 2;
+  int32 max_wait_seconds = 3;
+}
+
+message CreateJobRequest {
+  string request_id = 1;
+  string biz_key = 2;
+  string source_url = 3;
+  uint64 profile_id = 4;
+  int32 priority = 5;
+  bool enable_watermark = 6;
+  SegmentOptions segment_options = 7;
+  StorageOptions storage_options = 8;
+  ScheduleOptions schedule_options = 9;
+}
+
+message CreateJobResponse {
+  Error error = 1;
+  uint64 job_id = 2;
+  string request_id = 3;
+  int32 status = 4;
+  string status_name = 5;
+}
+
+message QueryProgressRequest {
+  string request_id = 1;
+}
+
+message QueryProgressResponse {
+  Error error = 1;
+  uint64 job_id = 2;
+  int32 status = 3;
+  string stage = 4;
+  int32 progress_permille = 5;
+}
+
+service TranscodePublicService {
+  rpc CreateJob(CreateJobRequest) returns (CreateJobResponse);
+  rpc QueryProgress(QueryProgressRequest) returns (QueryProgressResponse);
+}
