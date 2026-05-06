@@ -1,0 +1,62 @@
+# 服务启动基础配置
+# 这里只放启动必须项：监听地址、数据库、Redis、配置中心入口和雪花 ID 参数。
+# 运行时业务配置不写在这里，而是由后台接口写入数据库并缓存到 Redis。
+
+server:
+  # HTTP 服务监听地址。
+  listen_address: ":8080"
+  # 服务名称，用于日志和监控标识。
+  service_name: "hili-video-cloud"
+  # 当前节点 ID，用于集群内唯一标识节点。
+  node_id: 1
+  # 当前 Worker 实例标识。
+  worker_id: "worker-local-1"
+
+mysql:
+  # MySQL 连接串。
+  dsn: "root:root@tcp(127.0.0.1:3306)/hvc?parseTime=true&charset=utf8mb4"
+  # 是否开启分库分表路由。
+  sharding_enabled: false
+  # 分片数量。
+  shard_count: 1
+  # 查询超时时间。
+  query_timeout: "3s"
+  # 写入超时时间。
+  exec_timeout: "5s"
+
+redis:
+  # Redis 地址列表，单机和集群都从这里读取。
+  addrs:
+    - "127.0.0.1:6379"
+  # Redis 密码。
+  password: ""
+  # 单机 Redis DB 编号。
+  db: 0
+  # 是否启用 Redis Cluster。
+  cluster_enabled: false
+  # Redis 建连超时。
+  dial_timeout: "2s"
+  # Redis 读超时。
+  read_timeout: "2s"
+  # Redis 写超时。
+  write_timeout: "2s"
+
+config_center:
+  # 是否在启动时启用配置中心读取。
+  enabled: false
+  # 配置中心 HTTP 地址；开启后启动时优先拉取一次。
+  endpoint: ""
+  # 配置中心命名空间。
+  namespace: ""
+  # 配置中心鉴权方式。
+  auth_mode: "none"
+  # 配置中心访问令牌。
+  token: ""
+
+id:
+  # 雪花 ID 起始时间。
+  start_time: "2025-01-01T00:00:00Z"
+  # 雪花 ID 节点位数。
+  node_bits: 10
+  # 雪花 ID 序列位数。
+  sequence_bits: 12

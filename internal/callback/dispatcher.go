@@ -13,13 +13,13 @@ import (
 
 // Dispatcher 表示回调投递模块。
 type Dispatcher struct {
-	cfg              config.RuntimeConfig
+	cfg              config.DynamicRuntimeConfig
 	outboxRepository *mysql.OutboxRepository
 	httpClient       *http.Client
 }
 
 // NewDispatcher 创建回调投递模块。
-func NewDispatcher(cfg config.RuntimeConfig, outboxRepository *mysql.OutboxRepository) *Dispatcher {
+func NewDispatcher(cfg config.DynamicRuntimeConfig, outboxRepository *mysql.OutboxRepository) *Dispatcher {
 	return &Dispatcher{
 		cfg:              cfg,
 		outboxRepository: outboxRepository,

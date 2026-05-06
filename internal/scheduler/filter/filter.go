@@ -7,11 +7,11 @@ import (
 
 // Filter 表示调度过滤器。
 type Filter struct {
-	cfg config.RuntimeConfig
+	cfg config.DynamicRuntimeConfig
 }
 
 // NewFilter 创建调度过滤器。
-func NewFilter(cfg config.RuntimeConfig) *Filter {
+func NewFilter(cfg config.DynamicRuntimeConfig) *Filter {
 	return &Filter{cfg: cfg}
 }
 

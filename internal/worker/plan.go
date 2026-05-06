@@ -12,7 +12,7 @@ type Plan struct {
 }
 
 // BuildPlan 生成执行计划。
-func BuildPlan(cfg config.RuntimeConfig, sourceSupportsHardwareDecode bool, watermarkEnabled bool, cpuPercent int) (Plan, bool) {
+func BuildPlan(cfg config.DynamicRuntimeConfig, sourceSupportsHardwareDecode bool, watermarkEnabled bool, cpuPercent int) (Plan, bool) {
 	if cfg.Scheduler.RequireHardwareEncode == false {
 		return Plan{}, false
 	}

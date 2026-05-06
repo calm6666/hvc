@@ -2,17 +2,18 @@ package cluster
 
 import (
 	"context"
-	"hvc/internal/config"
 	"time"
+
+	"hvc/internal/config"
 )
 
 // Coordinator 表示集群协调模块。
 type Coordinator struct {
-	cfg config.RuntimeConfig
+	cfg config.DynamicRuntimeConfig
 }
 
 // NewCoordinator 创建集群协调模块。
-func NewCoordinator(cfg config.RuntimeConfig) *Coordinator {
+func NewCoordinator(cfg config.DynamicRuntimeConfig) *Coordinator {
 	return &Coordinator{cfg: cfg}
 }
 

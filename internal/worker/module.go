@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
+	"hvc/internal/cluster/hotpath"
 	"hvc/internal/config"
-	hotpath "hvc/internal/cluster/hotpath"
 	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/infra/db/mysql"
 	"hvc/internal/infra/storage/s3"
@@ -19,7 +19,9 @@ import (
 
 // Module 表示执行模块。
 type Module struct {
-	cfg               config.RuntimeConfig
+	cfg               config.DynamicRuntimeConfig
+	nodeID            uint64
+	workerID          string
 	jobRepository     *mysql.JobRepository
 	segmentRepository *mysql.SegmentRepository
 	progressStore     *rediscache.ProgressStore
@@ -31,10 +33,12 @@ type Module struct {
 }
 
 // NewModule 创建执行模块。
-func NewModule(cfg config.RuntimeConfig, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus) *Module {
+func NewModule(cfg config.DynamicRuntimeConfig, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus) *Module {
 	uploader, _ := storage.Open(cfg.Storage)
 	return &Module{
 		cfg:               cfg,
+		nodeID:            nodeID,
+		workerID:          workerID,
 		jobRepository:     jobRepository,
 		segmentRepository: segmentRepository,
 		progressStore:     progressStore,
@@ -94,22 +98,22 @@ func (m *Module) Start(ctx context.Context) error {
 }
 
 func (m *Module) runOnce(ctx context.Context) {
-	jobs := m.jobRepository.ListAssigned(ctx, m.cfg.Server.NodeID, m.cfg.Server.WorkerID)
+	jobs := m.jobRepository.ListAssigned(ctx, m.nodeID, m.workerID)
 	for _, job := range jobs {
 		probeResult := probe.Inspect(job.SourceURL)
 		logx.Info("worker.job.probe", logx.Fields{
-			"job_id":             job.JobID,
-			"video_codec":        probeResult.VideoCodec,
-			"audio_codec":        probeResult.AudioCodec,
-			"duration_ms":        probeResult.DurationMS,
-			"width":              probeResult.Width,
-			"height":             probeResult.Height,
+			"job_id":      job.JobID,
+			"video_codec": probeResult.VideoCodec,
+			"audio_codec": probeResult.AudioCodec,
+			"duration_ms": probeResult.DurationMS,
+			"width":       probeResult.Width,
+			"height":      probeResult.Height,
 		})
 		logx.Info("worker.job.start", logx.Fields{
-			"job_id":      job.JobID,
-			"request_id":  job.RequestID,
-			"worker_id":   m.cfg.Server.WorkerID,
-			"node_id":     m.cfg.Server.NodeID,
+			"job_id":     job.JobID,
+			"request_id": job.RequestID,
+			"worker_id":  m.workerID,
+			"node_id":    m.nodeID,
 		})
 		progressStream := m.runner.Run(ctx, job)
 		for progress := range progressStream {
@@ -122,13 +126,13 @@ func (m *Module) runOnce(ctx context.Context) {
 			m.hotpathBus.SaveProgress(ctx, progress)
 			_ = m.jobRepository.UpdateProgress(ctx, job.JobID, snapshot.ProgressPermille, snapshot.Stage)
 			logx.Info("worker.job.progress", logx.Fields{
-				"job_id":             job.JobID,
-				"request_id":         job.RequestID,
-				"progress_permille":  snapshot.ProgressPermille,
-				"stage":              snapshot.Stage,
-				"fps":                snapshot.CurrentFPS,
-				"bitrate_kbps":       snapshot.CurrentBitrateKbps,
-				"speed":              snapshot.CurrentSpeed,
+				"job_id":            job.JobID,
+				"request_id":        job.RequestID,
+				"progress_permille": snapshot.ProgressPermille,
+				"stage":             snapshot.Stage,
+				"fps":               snapshot.CurrentFPS,
+				"bitrate_kbps":      snapshot.CurrentBitrateKbps,
+				"speed":             snapshot.CurrentSpeed,
 			})
 			if snapshot.ProgressPermille >= 900 {
 				segment, _ := m.segmentRepository.Save(ctx, model.Segment{
@@ -147,9 +151,9 @@ func (m *Module) runOnce(ctx context.Context) {
 					UpdatedAt:     time.Now(),
 				})
 				logx.Info("worker.segment.created", logx.Fields{
-					"job_id":      job.JobID,
-					"segment_id":  segment.SegmentID,
-					"object_key":  segment.ObjectKey,
+					"job_id":     job.JobID,
+					"segment_id": segment.SegmentID,
+					"object_key": segment.ObjectKey,
 				})
 			}
 		}
@@ -173,9 +177,9 @@ func (m *Module) runOnce(ctx context.Context) {
 		}
 		_ = m.outboxRepository.Save(ctx, event)
 		logx.Info("worker.job.completed", logx.Fields{
-			"job_id":      job.JobID,
-			"request_id":  job.RequestID,
-			"event_id":    event.EventID,
+			"job_id":     job.JobID,
+			"request_id": job.RequestID,
+			"event_id":   event.EventID,
 		})
 	}
 }
@@ -189,10 +193,10 @@ func (m *Module) uploadOnce(ctx context.Context) {
 	for _, segment := range segments {
 		_ = m.segmentRepository.MarkUploading(ctx, segment.SegmentID)
 		logx.Info("worker.upload.start", logx.Fields{
-			"segment_id":   segment.SegmentID,
-			"job_id":       segment.JobID,
-			"object_key":   segment.ObjectKey,
-			"retry_count":  segment.UploadRetryCount,
+			"segment_id":  segment.SegmentID,
+			"job_id":      segment.JobID,
+			"object_key":  segment.ObjectKey,
+			"retry_count": segment.UploadRetryCount,
 		})
 		tasks = append(tasks, model.UploadTask{
 			SegmentID:   segment.SegmentID,

@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	idgen.Configure(startTime, cfg.Server.NodeID, cfg.ID.NodeBits, cfg.ID.SequenceBits, cfg.ID.MaxJSIntegerSafe)
+	idgen.Configure(startTime, cfg.Server.NodeID, cfg.ID.NodeBits, cfg.ID.SequenceBits)
 	logx.Init(cfg.Server.ServiceName)
 	defer logx.Sync()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

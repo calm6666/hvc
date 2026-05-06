@@ -14,6 +14,12 @@ func TestRuntimeConfigLoad(t *testing.T) {
 	if cfg.Server.ListenAddress == "" {
 		t.Fatalf("listen address should not be empty")
 	}
+	if cfg.MySQL.DSN == "" {
+		t.Fatalf("mysql dsn should not be empty")
+	}
+	if len(cfg.Redis.Addrs) == 0 {
+		t.Fatalf("redis addrs should not be empty")
+	}
 }
 
 func TestFFprobeExists(t *testing.T) {

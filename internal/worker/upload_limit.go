@@ -3,12 +3,12 @@ package worker
 import "hvc/internal/config"
 
 // CanAcceptUpload 判断是否允许继续扩大上传并发。
-func CanAcceptUpload(cfg config.RuntimeConfig, uploadQueueDepth int) bool {
+func CanAcceptUpload(cfg config.DynamicRuntimeConfig, uploadQueueDepth int) bool {
 	return uploadQueueDepth < cfg.Scheduler.MaxNodeUploadConcurrency
 }
 
 // EffectiveUploadConcurrency 返回单任务有效上传并发。
-func EffectiveUploadConcurrency(cfg config.RuntimeConfig, uploadQueueDepth int) int {
+func EffectiveUploadConcurrency(cfg config.DynamicRuntimeConfig, uploadQueueDepth int) int {
 	limit := cfg.Worker.SingleJobUploadConcurrency
 	if limit <= 0 {
 		return 1

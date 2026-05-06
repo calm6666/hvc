@@ -14,53 +14,16 @@ import (
 
 const configCenterCacheKey = "hvc:runtime:config:center"
 
-// MergeConfigCenterRuntimeConfig 从配置中心读取并合并运行配置。
-func MergeConfigCenterRuntimeConfig(cfg RuntimeConfig) (RuntimeConfig, error) {
-	if !cfg.ConfigCenter.Enabled {
-		return cfg, nil
+// LoadDynamicRuntimeConfig 加载动态运行配置。
+func LoadDynamicRuntimeConfig(base RuntimeConfig) (DynamicRuntimeConfig, error) {
+	if base.ConfigCenter.Enabled {
+		return FetchConfigCenterRuntimeConfig(base.ConfigCenter, base.Redis)
 	}
-	fetched, err := FetchConfigCenterRuntimeConfig(cfg.ConfigCenter, cfg.Redis)
-	if err != nil {
-		return RuntimeConfig{}, err
-	}
-	if fetched.Server.ListenAddress != "" {
-		cfg.Server.ListenAddress = fetched.Server.ListenAddress
-	}
-	if fetched.Server.ServiceName != "" {
-		cfg.Server.ServiceName = fetched.Server.ServiceName
-	}
-	if fetched.Server.NodeID != 0 {
-		cfg.Server.NodeID = fetched.Server.NodeID
-	}
-	if fetched.Server.WorkerID != "" {
-		cfg.Server.WorkerID = fetched.Server.WorkerID
-	}
-	if len(fetched.Redis.Addrs) > 0 {
-		cfg.Redis.Addrs = fetched.Redis.Addrs
-	}
-	if fetched.Redis.Password != "" {
-		cfg.Redis.Password = fetched.Redis.Password
-	}
-	if fetched.Redis.DB != 0 {
-		cfg.Redis.DB = fetched.Redis.DB
-	}
-	if fetched.Scheduler.LoopInterval != 0 {
-		cfg.Scheduler.LoopInterval = fetched.Scheduler.LoopInterval
-	}
-	if fetched.Scheduler.JobLeaseTTL != 0 {
-		cfg.Scheduler.JobLeaseTTL = fetched.Scheduler.JobLeaseTTL
-	}
-	if fetched.Scheduler.WorkerHeartbeatTimeout != 0 {
-		cfg.Scheduler.WorkerHeartbeatTimeout = fetched.Scheduler.WorkerHeartbeatTimeout
-	}
-	if fetched.Worker.LoopInterval != 0 {
-		cfg.Worker.LoopInterval = fetched.Worker.LoopInterval
-	}
-	return cfg, nil
+	return DynamicRuntimeConfig{}, fmt.Errorf("dynamic runtime config must be loaded from database or redis cache")
 }
 
 // FetchConfigCenterRuntimeConfig 读取配置中心配置。
-func FetchConfigCenterRuntimeConfig(configCenter ConfigCenterConfig, redisConfig RedisConfig) (RuntimeConfig, error) {
+func FetchConfigCenterRuntimeConfig(configCenter ConfigCenterConfig, redisConfig RedisConfig) (DynamicRuntimeConfig, error) {
 	if strings.TrimSpace(configCenter.Endpoint) != "" {
 		return fetchFromConfigCenterHTTP(configCenter)
 	}
@@ -76,43 +39,43 @@ func FetchConfigCenterRuntimeConfig(configCenter ConfigCenterConfig, redisConfig
 	defer cancel()
 	payload, err := engine.Get(ctx, configCenterCacheKey).Result()
 	if err == redis.Nil {
-		return RuntimeConfig{}, fmt.Errorf("config center payload is empty")
+		return DynamicRuntimeConfig{}, fmt.Errorf("config center payload is empty")
 	}
 	if err != nil {
-		return RuntimeConfig{}, err
+		return DynamicRuntimeConfig{}, err
 	}
-	var cfg RuntimeConfig
+	var cfg DynamicRuntimeConfig
 	if err := json.Unmarshal([]byte(payload), &cfg); err != nil {
-		return RuntimeConfig{}, err
+		return DynamicRuntimeConfig{}, err
 	}
 	return cfg, nil
 }
 
-func fetchFromConfigCenterHTTP(configCenter ConfigCenterConfig) (RuntimeConfig, error) {
+func fetchFromConfigCenterHTTP(configCenter ConfigCenterConfig) (DynamicRuntimeConfig, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, configCenter.Endpoint, nil)
 	if err != nil {
-		return RuntimeConfig{}, err
+		return DynamicRuntimeConfig{}, err
 	}
 	if configCenter.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+configCenter.Token)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return RuntimeConfig{}, err
+		return DynamicRuntimeConfig{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return RuntimeConfig{}, fmt.Errorf("config center http status %d", resp.StatusCode)
+		return DynamicRuntimeConfig{}, fmt.Errorf("config center http status %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return RuntimeConfig{}, err
+		return DynamicRuntimeConfig{}, err
 	}
-	var cfg RuntimeConfig
+	var cfg DynamicRuntimeConfig
 	if err := json.Unmarshal(body, &cfg); err != nil {
-		return RuntimeConfig{}, err
+		return DynamicRuntimeConfig{}, err
 	}
 	return cfg, nil
 }
