@@ -3,19 +3,19 @@ package consumer
 import (
 	"context"
 	"encoding/json"
-	"hvc/internal/model"
-	transcodeusecase "hvc/internal/usecase/transcode"
 	"github.com/rabbitmq/amqp091-go"
+	"hvc/internal/model"
+	transcodesvc "hvc/internal/service/transcode"
 )
 
 // CreateJobConsumer 表示创建任务消费者。
 type CreateJobConsumer struct {
-	createJobUseCase *transcodeusecase.CreateJobUseCase
+	service *transcodesvc.Service
 }
 
 // NewCreateJobConsumer 创建创建任务消费者。
-func NewCreateJobConsumer(createJobUseCase *transcodeusecase.CreateJobUseCase) *CreateJobConsumer {
-	return &CreateJobConsumer{createJobUseCase: createJobUseCase}
+func NewCreateJobConsumer(service *transcodesvc.Service) *CreateJobConsumer {
+	return &CreateJobConsumer{service: service}
 }
 
 // Consume 处理一条消息。
@@ -24,6 +24,6 @@ func (c *CreateJobConsumer) Consume(ctx context.Context, delivery amqp091.Delive
 	if err := json.Unmarshal(delivery.Body, &req); err != nil {
 		return err
 	}
-	_, err := c.createJobUseCase.Execute(req)
+	_, err := c.service.CreateJob(ctx, req)
 	return err
 }

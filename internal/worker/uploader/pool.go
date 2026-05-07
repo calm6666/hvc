@@ -11,6 +11,7 @@ import (
 	"sync"
 )
 
+// WorkerPool 管理并发上传的 Worker 池。
 type WorkerPool struct {
 	concurrency    int
 	client         *storage.Client
@@ -19,6 +20,7 @@ type WorkerPool struct {
 	retryMaxDelay  time.Duration
 }
 
+// NewWorkerPool 创建上传 Worker 池，concurrency 为并发上传数。
 func NewWorkerPool(concurrency int, client *storage.Client) *WorkerPool {
 	if concurrency <= 0 {
 		concurrency = 1

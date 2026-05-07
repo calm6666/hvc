@@ -1,4 +1,5 @@
 syntax = "proto3";
+option go_package = "hvc/api/pb/clusterv1;clusterv1";
 
 // 集群内部通信接口定义。
 //

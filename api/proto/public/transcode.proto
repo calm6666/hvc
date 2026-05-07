@@ -1,4 +1,5 @@
 syntax = "proto3";
+option go_package = "hvc/api/pb/transcodev1;transcodev1";
 
 // 转码服务公共接口定义。
 //
@@ -92,6 +93,40 @@ message RenditionOption {
   string preset = 8;
 }
 
+// 视频输出选项。
+message VideoOptions {
+  // 是否保持原始宽高比。
+  bool output_aspect_keep = 1;
+  // 宽高比填充模式：fit/pad/crop。
+  string aspect_fill_mode = 2;
+}
+
+// 缩略图选项。
+message ThumbnailOptions {
+  // 是否启用雪碧图。
+  bool enable_sprite = 1;
+  // 雪碧图行数。
+  int32 sprite_rows = 2;
+  // 雪碧图列数。
+  int32 sprite_cols = 3;
+  // 缩略图间隔（秒）。
+  int32 thumb_interval_sec = 4;
+  // 缩略图宽度。
+  int32 thumb_width = 5;
+  // 缩略图高度。
+  int32 thumb_height = 6;
+  // 雪碧图格式（jpg/png/webp）。
+  string sprite_image_format = 7;
+  // 雪碧图存储前缀。
+  string sprite_storage_prefix = 8;
+  // 是否启用二进制索引文件。
+  bool enable_binary_index = 9;
+  // 二进制索引文件存储前缀。
+  string binary_storage_prefix = 10;
+  // 二进制索引文件最大大小（字节）。
+  uint64 binary_max_size_bytes = 11;
+}
+
 // 创建转码任务请求。
 message CreateJobRequest {
   // 外部请求唯一标识，用于幂等控制。
@@ -116,6 +151,12 @@ message CreateJobRequest {
   Watermark watermark = 10;
   // 自定义输出清晰度列表（空则使用默认编码阶梯）。
   repeated RenditionOption renditions = 11;
+  // 视频输出选项。
+  VideoOptions video_options = 12;
+  // 缩略图选项。
+  ThumbnailOptions thumbnail_options = 13;
+  // 单任务回调目标（空则使用后台全局配置），支持 HTTP/gRPC/MQ。
+  string callback_url = 14;
 }
 
 // 创建转码任务响应。
@@ -156,6 +197,70 @@ message QueryProgressResponse {
   double current_bitrate_kbps = 7;
   // 当前转码速度倍率。
   double current_speed = 8;
+}
+
+// 转码完成回调载荷中的源视频信息。
+message SourceInfo {
+  int32 width = 1;
+  int32 height = 2;
+  string video_codec = 3;
+  int32 video_bitrate_kbps = 4;
+  string audio_codec = 5;
+  int32 audio_bitrate_kbps = 6;
+  double fps = 7;
+  int64 duration_ms = 8;
+}
+
+// 转码完成回调载荷中的单个清晰度信息。
+message CompletedRendition {
+  string rendition_name = 1;
+  string quality_label = 2;
+  int32 width = 3;
+  int32 height = 4;
+  string video_codec = 5;
+  int32 video_bitrate_kbps = 6;
+  int32 audio_bitrate_kbps = 7;
+  int32 segment_count = 8;
+  string init_segment_object_key = 9;
+  string manifest_dash_url = 10;
+  string manifest_hls_url = 11;
+  string manifest_hls_variant_url = 12;
+}
+
+// 转码完成回调载荷。
+message TranscodeCompletedPayload {
+  uint64 job_id = 1;
+  string request_id = 2;
+  string biz_key = 3;
+  string source_url = 4;
+  int32 status = 5;
+  string status_name = 6;
+  int64 duration_ms = 7;
+  int32 segment_duration_sec = 8;
+  bool support_dash = 9;
+  bool support_hls = 10;
+  string segment_template = 11;
+  string storage_type = 12;
+  string storage_bucket = 13;
+  string play_domain = 14;
+  SourceInfo source_info = 15;
+  repeated CompletedRendition renditions = 16;
+  int32 total_segment_count = 17;
+  uint64 total_size_bytes = 18;
+}
+
+// 转码失败回调载荷。
+message TranscodeFailedPayload {
+  uint64 job_id = 1;
+  string request_id = 2;
+  string biz_key = 3;
+  string source_url = 4;
+  int32 status = 5;
+  string status_name = 6;
+  string error_code = 7;
+  string error_message = 8;
+  string failed_stage = 9;
+  int32 retry_count = 10;
 }
 
 // 转码服务公共接口。

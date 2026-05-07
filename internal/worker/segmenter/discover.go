@@ -17,6 +17,7 @@ var (
 	mediaSegRe = regexp.MustCompile(`^seg-(\d+)-(\d+)\.m4s$`)
 )
 
+// DiscoveredSegment 表示扫描发现的分片文件信息。
 type DiscoveredSegment struct {
 	RenditionName    string
 	IsInit           bool
@@ -35,6 +36,7 @@ type DiscoveredSegment struct {
 	QualityLabel     string
 }
 
+// Result 表示分片扫描结果。
 type Result struct {
 	Segments []DiscoveredSegment
 }

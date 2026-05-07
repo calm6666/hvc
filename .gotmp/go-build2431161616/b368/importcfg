@@ -1,0 +1,5 @@
+# import config
+packagefile fmt=D:\hilihili\server\hvc\.gocache\9d\9dbda6e832b423d90ca1c95ac9172eccafed6efaeed208ed6a80a0c79adc0121-d
+packagefile github.com/rabbitmq/amqp091-go=D:\hilihili\server\hvc\.gocache\f9\f92fbad09c24114c0a41cd84c517990fb31ad44578169db9a42bf52a7a06ca26-d
+packagefile hvc/internal/config=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b001\_pkg_.a
+packagefile strings=D:\hilihili\server\hvc\.gocache\66\6645e12e1f8b109c5a45aea4ea5919430c735ffd4ebba6c0531951579e9a3498-d

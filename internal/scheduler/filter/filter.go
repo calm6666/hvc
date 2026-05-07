@@ -5,10 +5,12 @@ import (
 	"hvc/internal/model"
 )
 
+// Filter 根据运行配置对候选节点进行硬约束过滤。
 type Filter struct {
 	cfg config.DynamicRuntimeConfig
 }
 
+// NewFilter 创建节点过滤器。
 func NewFilter(cfg config.DynamicRuntimeConfig) *Filter {
 	return &Filter{cfg: cfg}
 }

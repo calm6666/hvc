@@ -8,10 +8,12 @@ import (
 	"hvc/pkg/logx"
 )
 
+// ProgressSink 定义进度持久化接口。
 type ProgressSink interface {
 	SaveProgress(ctx context.Context, progress model.TranscodeProgress)
 }
 
+// ReportProgress 将转码进度写入所有 Sink 并记录日志。
 func ReportProgress(ctx context.Context, progress model.TranscodeProgress, snapshot model.ProgressSnapshot, sinks ...ProgressSink) {
 	for _, sink := range sinks {
 		sink.SaveProgress(ctx, progress)
@@ -25,6 +27,7 @@ func ReportProgress(ctx context.Context, progress model.TranscodeProgress, snaps
 	})
 }
 
+// ReportMetrics 将节点指标写入集群状态缓存并记录日志。
 func ReportMetrics(ctx context.Context, cache *clusterstate.StateCache, metrics model.NodeMetrics) {
 	if cache != nil {
 		cache.SaveNodeMetrics(ctx, metrics)

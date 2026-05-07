@@ -1,53 +1,60 @@
-// Package live 提供直播频道服务。
-//
-// ChannelService 管理直播频道的创建、启停和播放信息查询。
-// 播放域名从配置中读取，不再硬编码。
 package live
 
 import (
-	"hvc/internal/config"
-	"hvc/internal/model"
-	"hvc/pkg/idgen"
+	"context"
+	"strings"
 	"sync"
 	"time"
+
+	"hvc/internal/config"
+	"hvc/internal/infra/db/mysql"
+	"hvc/internal/model"
+	"hvc/pkg/idgen"
 )
 
-// ChannelService 表示直播频道服务。
 type ChannelService struct {
-	mu          sync.RWMutex
-	channels    map[string]model.LiveChannel
-	sessions    map[string]model.LivePlaybackInfo
-	playDomain  string
-	flvDomain   string
+	currentConfig       func() config.DynamicRuntimeConfig
+	channelRepository   *mysql.LiveChannelRepository
+	sessionRepository   *mysql.LiveSessionRepository
+	renditionRepository *mysql.LiveProfileRenditionRepository
+	mu                  sync.RWMutex
+	fallbackChannels    map[string]model.LiveChannel
 }
 
-// NewChannelService 创建直播频道服务。
-//
-// 参数：
-//   - cfg: 动态运行配置，从中读取播放域名
-func NewChannelService(cfg config.DynamicRuntimeConfig) *ChannelService {
-	playDomain := cfg.Storage.PlayDomain
-	if playDomain == "" {
-		playDomain = cfg.Storage.BasePrefix
-	}
-	if playDomain == "" {
-		playDomain = "http://localhost:8080"
-	}
-	flvDomain := cfg.Storage.FLVDomain
-	if flvDomain == "" {
-		flvDomain = playDomain
-	}
+func NewChannelService(cfg config.DynamicRuntimeConfig, channelRepository *mysql.LiveChannelRepository, sessionRepository *mysql.LiveSessionRepository, renditionRepository *mysql.LiveProfileRenditionRepository) *ChannelService {
 	return &ChannelService{
-		channels:   make(map[string]model.LiveChannel),
-		sessions:   make(map[string]model.LivePlaybackInfo),
-		playDomain: playDomain,
-		flvDomain:  flvDomain,
+		currentConfig:       func() config.DynamicRuntimeConfig { return cfg },
+		channelRepository:   channelRepository,
+		sessionRepository:   sessionRepository,
+		renditionRepository: renditionRepository,
+		fallbackChannels:    make(map[string]model.LiveChannel),
 	}
 }
 
-// CreateChannel 创建直播频道。
+func (s *ChannelService) SetConfigSnapshot(snapshot func() config.DynamicRuntimeConfig) {
+	if snapshot != nil {
+		s.currentConfig = snapshot
+	}
+}
+
 func (s *ChannelService) CreateChannel(channelKey string, channelName string, profileID uint64) model.LiveChannel {
+	channel, _ := s.CreateChannelContext(context.Background(), channelKey, channelName, profileID)
+	return channel
+}
+
+func (s *ChannelService) CreateChannelContext(ctx context.Context, channelKey string, channelName string, profileID uint64) (model.LiveChannel, error) {
+	channelKey = strings.TrimSpace(channelKey)
+	if channelKey == "" {
+		return model.LiveChannel{}, nil
+	}
+	if s.channelRepository != nil {
+		if channel, ok := s.channelRepository.FindByKey(ctx, channelKey); ok {
+			return channel, nil
+		}
+	}
+
 	now := time.Now()
+	cfg := s.snapshot()
 	channel := model.LiveChannel{
 		ChannelID:             idgen.Next(),
 		ChannelKey:            channelKey,
@@ -56,52 +63,178 @@ func (s *ChannelService) CreateChannel(channelKey string, channelName string, pr
 		Status:                model.LiveChannelStatusIdle,
 		EnableSourceRendition: true,
 		EnableWatermark:       false,
+		PlayDomain:            cfg.Storage.PlayDomain,
+		PushDomain:            cfg.Storage.BasePrefix,
 		CreatedAt:             now,
 		UpdatedAt:             now,
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.channels[channelKey] = channel
-	return channel
+	if s.channelRepository != nil {
+		if err := s.channelRepository.Create(ctx, channel); err != nil {
+			return model.LiveChannel{}, err
+		}
+	} else {
+		s.mu.Lock()
+		s.fallbackChannels[channelKey] = channel
+		s.mu.Unlock()
+	}
+	return channel, nil
 }
 
-// StartChannel 启动直播频道。
+func (s *ChannelService) UpdateChannelContext(ctx context.Context, patch model.LiveChannel) (model.LiveChannel, bool, error) {
+	if patch.ChannelID == 0 {
+		return model.LiveChannel{}, false, nil
+	}
+	channel, ok := s.GetChannelByIDContext(ctx, patch.ChannelID)
+	if !ok {
+		return model.LiveChannel{}, false, nil
+	}
+	if patch.ChannelName != "" {
+		channel.ChannelName = patch.ChannelName
+	}
+	if patch.ProfileID != 0 {
+		channel.ProfileID = patch.ProfileID
+	}
+	channel.EnableWatermark = patch.EnableWatermark
+	if patch.PlayDomain != "" {
+		channel.PlayDomain = patch.PlayDomain
+	}
+	if patch.PushDomain != "" {
+		channel.PushDomain = patch.PushDomain
+	}
+	channel.UpdatedAt = time.Now()
+	if s.channelRepository != nil {
+		if err := s.channelRepository.Update(ctx, channel); err != nil {
+			return model.LiveChannel{}, false, err
+		}
+	} else {
+		s.mu.Lock()
+		s.fallbackChannels[channel.ChannelKey] = channel
+		s.mu.Unlock()
+	}
+	return channel, true, nil
+}
+
+func (s *ChannelService) GetChannelByIDContext(ctx context.Context, channelID uint64) (model.LiveChannel, bool) {
+	if s.channelRepository == nil {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		for _, channel := range s.fallbackChannels {
+			if channel.ChannelID == channelID {
+				return channel, true
+			}
+		}
+		return model.LiveChannel{}, false
+	}
+	return s.channelRepository.FindByID(ctx, channelID)
+}
+
+func (s *ChannelService) GetChannelByKeyContext(ctx context.Context, channelKey string) (model.LiveChannel, bool) {
+	if s.channelRepository == nil {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		channel, ok := s.fallbackChannels[channelKey]
+		return channel, ok
+	}
+	return s.channelRepository.FindByKey(ctx, channelKey)
+}
+
 func (s *ChannelService) StartChannel(channelKey string) model.LivePlaybackInfo {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	playback := model.LivePlaybackInfo{
-		ChannelKey:     channelKey,
-		Status:         "RUNNING",
-		MasterHLSURL:   s.playDomain + "/hls/" + channelKey + "/master.m3u8",
-		HTTPFLVURL:     s.flvDomain + "/flv/" + channelKey + ".flv",
-		RenditionNames: []string{"source", "720p", "480p"},
+	ctx := context.Background()
+	channel, ok := s.GetChannelByKeyContext(ctx, channelKey)
+	if ok && s.channelRepository != nil {
+		_ = s.channelRepository.UpdateStatus(ctx, channel.ChannelID, model.LiveChannelStatusLive, channel.AssignedNodeID, channel.AssignedWorkerID)
+	} else if ok {
+		channel.Status = model.LiveChannelStatusLive
+		s.mu.Lock()
+		s.fallbackChannels[channel.ChannelKey] = channel
+		s.mu.Unlock()
 	}
-	s.sessions[channelKey] = playback
-	return playback
+	return s.GetPlaybackInfoContext(ctx, channelKey)
 }
 
-// StopChannel 停止直播频道。
 func (s *ChannelService) StopChannel(channelKey string) model.LivePlaybackInfo {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	playback := s.sessions[channelKey]
-	playback.Status = "STOPPED"
-	s.sessions[channelKey] = playback
-	return playback
+	ctx := context.Background()
+	channel, ok := s.GetChannelByKeyContext(ctx, channelKey)
+	if ok && s.channelRepository != nil {
+		_ = s.channelRepository.UpdateStatus(ctx, channel.ChannelID, model.LiveChannelStatusStopped, 0, "")
+	} else if ok {
+		channel.Status = model.LiveChannelStatusStopped
+		s.mu.Lock()
+		s.fallbackChannels[channel.ChannelKey] = channel
+		s.mu.Unlock()
+	}
+	return s.GetPlaybackInfoContext(ctx, channelKey)
 }
 
-// GetPlaybackInfo 查询播放信息。
 func (s *ChannelService) GetPlaybackInfo(channelKey string) model.LivePlaybackInfo {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if playback, ok := s.sessions[channelKey]; ok {
-		return playback
+	return s.GetPlaybackInfoContext(context.Background(), channelKey)
+}
+
+func (s *ChannelService) GetPlaybackInfoContext(ctx context.Context, channelKey string) model.LivePlaybackInfo {
+	channel, _ := s.GetChannelByKeyContext(ctx, channelKey)
+	playDomain, flvDomain := s.resolveDomains(channel)
+	status := "IDLE"
+	renditionNames := s.defaultRenditionNames()
+
+	if channel.ProfileID != 0 && s.renditionRepository != nil {
+		if items := s.renditionRepository.ListEnabledNamesByProfileID(ctx, channel.ProfileID); len(items) > 0 {
+			renditionNames = items
+		}
 	}
+
+	if channel.ChannelID != 0 {
+		switch channel.Status {
+		case model.LiveChannelStatusStarting, model.LiveChannelStatusLive:
+			status = "RUNNING"
+		case model.LiveChannelStatusStopped, model.LiveChannelStatusError:
+			status = "STOPPED"
+		}
+	}
+	if s.sessionRepository != nil && channel.ChannelID != 0 {
+		if session, ok := s.sessionRepository.FindLatestActiveByChannelID(ctx, channel.ChannelID); ok {
+			switch session.Status {
+			case model.LiveSessionStatusPublishing, model.LiveSessionStatusResumed, model.LiveSessionStatusInterruptWaitResume:
+				status = "RUNNING"
+			}
+		}
+	}
+
 	return model.LivePlaybackInfo{
 		ChannelKey:     channelKey,
-		Status:         "IDLE",
-		MasterHLSURL:   s.playDomain + "/hls/" + channelKey + "/master.m3u8",
-		HTTPFLVURL:     s.flvDomain + "/flv/" + channelKey + ".flv",
-		RenditionNames: []string{"source", "720p", "480p"},
+		Status:         status,
+		MasterHLSURL:   playDomain + "/hls/" + channelKey + "/master.m3u8",
+		HTTPFLVURL:     flvDomain + "/flv/" + channelKey + ".flv",
+		RenditionNames: renditionNames,
 	}
+}
+
+func (s *ChannelService) snapshot() config.DynamicRuntimeConfig {
+	if s.currentConfig == nil {
+		return config.DynamicRuntimeConfig{}
+	}
+	return s.currentConfig()
+}
+
+func (s *ChannelService) resolveDomains(channel model.LiveChannel) (string, string) {
+	cfg := s.snapshot()
+	playDomain := strings.TrimSpace(channel.PlayDomain)
+	if playDomain == "" {
+		playDomain = cfg.Storage.PlayDomain
+	}
+	if playDomain == "" {
+		playDomain = cfg.Storage.BasePrefix
+	}
+	if playDomain == "" {
+		playDomain = "http://localhost:8080"
+	}
+
+	flvDomain := cfg.Storage.FLVDomain
+	if flvDomain == "" {
+		flvDomain = playDomain
+	}
+	return playDomain, flvDomain
+}
+
+func (s *ChannelService) defaultRenditionNames() []string {
+	return []string{"source", "720p", "480p"}
 }

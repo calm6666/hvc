@@ -63,7 +63,7 @@ paths:
       summary: 动态构建 DASH MPD 播放清单
       description: |
         根据数据库中的分片元数据，实时生成 MPEG-DASH MPD 播放清单。
-        不依赖磁盘文件，分片 URL 使用后台配置的命名模板。
+        支持通过查询参数控制可见清晰度，实现版权保护。
       operationId: serveMPD
       tags: [Manifest]
       parameters:
@@ -73,6 +73,16 @@ paths:
           schema:
             type: integer
             format: uint64
+        - name: renditions
+          in: query
+          description: 清晰度白名单（逗号分隔，如 720p,480p），版权保护用
+          schema:
+            type: string
+        - name: max_height
+          in: query
+          description: 最大允许高度（如 720 表示只返回 720p 及以下），版权保护用
+          schema:
+            type: integer
       responses:
         '200':
           description: MPD XML 内容
@@ -86,7 +96,7 @@ paths:
       summary: 动态构建 HLS Master 播放清单
       description: |
         根据数据库中的分片元数据，实时生成 HLS fMP4 Master m3u8。
-        每个清晰度对应一个 Variant Stream。
+        支持通过查询参数控制可见清晰度，实现版权保护。
       operationId: serveMasterM3U8
       tags: [Manifest]
       parameters:
@@ -96,6 +106,16 @@ paths:
           schema:
             type: integer
             format: uint64
+        - name: renditions
+          in: query
+          description: 清晰度白名单（逗号分隔），版权保护用
+          schema:
+            type: string
+        - name: max_height
+          in: query
+          description: 最大允许高度，版权保护用
+          schema:
+            type: integer
       responses:
         '200':
           description: m3u8 内容
@@ -192,6 +212,14 @@ components:
           description: 自定义输出清晰度列表（空则使用默认编码阶梯）
           items:
             $ref: '#/components/schemas/RenditionOption'
+        video_options:
+          $ref: '#/components/schemas/VideoOptions'
+        thumbnail_options:
+          $ref: '#/components/schemas/ThumbnailOptions'
+        callback_url:
+          type: string
+          description: 单任务回调目标，优先于系统级回调配置；支持 https://callback.example.com/path、grpc://127.0.0.1:9000/pkg.Service/Method、mq://exchange/routing.key
+          example: grpc://127.0.0.1:9000/transcode.callback.Service/Notify
 
     Watermark:
       type: object
@@ -236,7 +264,7 @@ components:
         naming_template_id:
           type: integer
           format: uint64
-          description: 分片命名模板 ID
+          description: 分片命名模板 ID；当前服务端会显式拒绝该字段，请改用后台全局命名模板配置
 
     StorageOptions:
       type: object
@@ -244,13 +272,13 @@ components:
         storage_id:
           type: integer
           format: uint64
-          description: 存储配置 ID，0 使用默认
+          description: 存储配置 ID；当前服务端会显式拒绝该字段
         bucket_prefix:
           type: string
-          description: 存储桶前缀
+          description: 存储桶前缀；当前会真实作用于任务输出对象前缀
         segment_prefix:
           type: string
-          description: 分片前缀
+          description: 分片前缀；当前服务端会显式拒绝该字段
 
     ScheduleOptions:
       type: object
@@ -261,10 +289,10 @@ components:
         allow_software_decode_fallback:
           type: boolean
           default: true
-          description: 硬件不支持时是否允许软解降级
+          description: 硬件不支持时是否允许软解降级；当前服务端会显式拒绝该字段
         max_wait_seconds:
           type: integer
-          description: 等待调度的最大秒数
+          description: 等待调度的最大秒数；当前服务端会显式拒绝该字段
 
     RenditionOption:
       type: object
@@ -293,6 +321,45 @@ components:
         preset:
           type: string
           description: 编码器预设
+
+    VideoOptions:
+      type: object
+      description: 当前服务端尚未实际消费该对象；传入 aspect_fill_mode 会被显式拒绝
+      properties:
+        output_aspect_keep:
+          type: boolean
+          description: 是否保持原始宽高比
+        aspect_fill_mode:
+          type: string
+          description: 画面填充模式，例如 fit 或 crop
+
+    ThumbnailOptions:
+      type: object
+      properties:
+        enable_sprite:
+          type: boolean
+          description: 是否生成雪碧图
+        sprite_rows:
+          type: integer
+        sprite_cols:
+          type: integer
+        thumb_interval_sec:
+          type: integer
+        thumb_width:
+          type: integer
+        thumb_height:
+          type: integer
+        sprite_image_format:
+          type: string
+        sprite_storage_prefix:
+          type: string
+        enable_binary_index:
+          type: boolean
+        binary_storage_prefix:
+          type: string
+        binary_max_size_bytes:
+          type: integer
+          format: uint64
 
     CreateJobResponse:
       type: object
@@ -342,6 +409,15 @@ components:
               type: number
             current_speed:
               type: number
+            elapsed_ms:
+              type: integer
+              format: int64
+            estimated_remaining_ms:
+              type: integer
+              format: int64
+            updated_at:
+              type: string
+              format: date-time
 
     NodeInfo:
       type: object

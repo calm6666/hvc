@@ -54,49 +54,47 @@ func (h *TranscodeHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	statusFilter, _ := strconv.Atoi(r.URL.Query().Get("status"))
 	bizKey := r.URL.Query().Get("biz_key")
+	requestID := r.URL.Query().Get("request_id")
 
-	var jobs []model.TranscodeJob
-	if h.jobRepository != nil {
-		jobs = h.jobRepository.ListAll(ctx)
+	if h.jobRepository == nil {
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "任务仓储未初始化"})
+		return
 	}
 
-	filtered := make([]model.TranscodeJob, 0)
+	jobs, total, err := h.jobRepository.ListPage(ctx, mysql.JobListFilter{
+		Page:      page,
+		PageSize:  pageSize,
+		Status:    statusFilter,
+		BizKey:    bizKey,
+		RequestID: requestID,
+	})
+	if err != nil {
+		logx.Error("admin.list_jobs.query_failed", err, logx.Fields{
+			"page":       page,
+			"page_size":  pageSize,
+			"status":     statusFilter,
+			"biz_key":    bizKey,
+			"request_id": requestID,
+		})
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "任务列表查询失败"})
+		return
+	}
+
+	items := make([]map[string]any, 0, len(jobs))
 	for _, job := range jobs {
-		if statusFilter > 0 && job.Status != statusFilter {
-			continue
-		}
-		if bizKey != "" && job.BizKey != bizKey {
-			continue
-		}
-		filtered = append(filtered, job)
-	}
-
-	total := len(filtered)
-	start := (page - 1) * pageSize
-	end := start + pageSize
-	if start > total {
-		start = total
-	}
-	if end > total {
-		end = total
-	}
-	pageItems := filtered[start:end]
-
-	items := make([]map[string]any, 0, len(pageItems))
-	for _, job := range pageItems {
 		items = append(items, map[string]any{
-			"job_id":            job.JobID,
-			"request_id":        job.RequestID,
-			"biz_key":           job.BizKey,
-			"source_url":        job.SourceURL,
-			"status":            job.Status,
-			"status_name":       statusName(job.Status),
-			"progress_permille": job.ProgressPermille,
-			"stage":             job.ProgressStage,
-			"assigned_node_id":  job.AssignedNodeID,
+			"job_id":             job.JobID,
+			"request_id":         job.RequestID,
+			"biz_key":            job.BizKey,
+			"source_url":         job.SourceURL,
+			"status":             job.Status,
+			"status_name":        statusName(job.Status),
+			"progress_permille":  job.ProgressPermille,
+			"stage":              job.ProgressStage,
+			"assigned_node_id":   job.AssignedNodeID,
 			"assigned_worker_id": job.AssignedWorkerID,
-			"created_at":        job.CreatedAt,
-			"updated_at":        job.UpdatedAt,
+			"created_at":         job.CreatedAt,
+			"updated_at":         job.UpdatedAt,
 		})
 	}
 
@@ -104,8 +102,10 @@ func (h *TranscodeHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		Code:    0,
 		Message: "ok",
 		Data: map[string]any{
-			"total": total,
-			"items": items,
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
+			"items":     items,
 		},
 	})
 }
@@ -158,11 +158,11 @@ func (h *TranscodeHandler) JobDetail(w http.ResponseWriter, r *http.Request) {
 		snapshot, found := h.progressStore.Get(ctx, jobID)
 		if found {
 			detail["realtime_progress"] = map[string]any{
-				"current_fps":             snapshot.CurrentFPS,
-				"current_bitrate_kbps":    snapshot.CurrentBitrateKbps,
-				"current_speed":           snapshot.CurrentSpeed,
-				"elapsed_ms":              snapshot.ElapsedMS,
-				"estimated_remaining_ms":  snapshot.EstimatedRemainingMS,
+				"current_fps":            snapshot.CurrentFPS,
+				"current_bitrate_kbps":   snapshot.CurrentBitrateKbps,
+				"current_speed":          snapshot.CurrentSpeed,
+				"elapsed_ms":             snapshot.ElapsedMS,
+				"estimated_remaining_ms": snapshot.EstimatedRemainingMS,
 			}
 		}
 	}

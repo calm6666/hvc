@@ -6,6 +6,7 @@ import (
 	"hvc/internal/model"
 )
 
+// ProgressEvent 表示转码进度上报事件。
 type ProgressEvent struct {
 	JobID            uint64  `json:"job_id"`
 	Status           int     `json:"status"`
@@ -19,6 +20,7 @@ type ProgressEvent struct {
 	Timestamp        int64   `json:"timestamp"`
 }
 
+// NewProgressEvent 从进度快照创建进度上报事件。
 func NewProgressEvent(snapshot model.ProgressSnapshot) ProgressEvent {
 	return ProgressEvent{
 		JobID:            snapshot.JobID,

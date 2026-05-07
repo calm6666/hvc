@@ -17,6 +17,7 @@ type CreateJobRequest struct {
 	StorageOptions   *StorageOptions   `json:"storage_options,omitempty"`
 	ScheduleOptions  *ScheduleOptions  `json:"schedule_options,omitempty"`
 	Renditions       []RenditionOption `json:"renditions,omitempty"`
+	CallbackURL      string            `json:"callback_url,omitempty"`
 }
 
 // Watermark 表示水印配置。
@@ -128,6 +129,7 @@ type TranscodeJobRequestOverride struct {
 	OverrideThumbBinaryMaxSizeBytes  uint64
 	OverrideBucketPrefix             string
 	OverrideSegmentPrefix            string
+	OverrideCallbackURL              string
 	CreatedAt                        time.Time
 }
 
@@ -147,51 +149,51 @@ type ProgressSnapshot struct {
 
 // TranscodeJob 表示转码任务。
 type TranscodeJob struct {
-	JobID                    uint64
-	RequestID                string
-	BizKey                   string
-	Status                   int
-	Priority                 int
-	SourceURL                string
-	ProfileID                uint64
-	SegmentDurationSec       int
-	SupportDash              bool
-	SupportHLS               bool
-	EnableWatermark          bool
-	WatermarkImageURL        string
-	WatermarkAnchor          int
-	WatermarkXRatio          float64
-	WatermarkYRatio          float64
-	WatermarkWidthRatio      float64
-	WatermarkOpacity         float64
-	WatermarkSafeMarginRatio float64
-	EnableThumbnailSprite    bool
-	ThumbRows                int
-	ThumbCols                int
-	ThumbIntervalSec         int
-	ThumbWidth               int
-	ThumbHeight              int
-	ThumbImageFormat         string
-	ThumbStoragePrefix       string
+	JobID                      uint64
+	RequestID                  string
+	BizKey                     string
+	Status                     int
+	Priority                   int
+	SourceURL                  string
+	ProfileID                  uint64
+	SegmentDurationSec         int
+	SupportDash                bool
+	SupportHLS                 bool
+	EnableWatermark            bool
+	WatermarkImageURL          string
+	WatermarkAnchor            int
+	WatermarkXRatio            float64
+	WatermarkYRatio            float64
+	WatermarkWidthRatio        float64
+	WatermarkOpacity           float64
+	WatermarkSafeMarginRatio   float64
+	EnableThumbnailSprite      bool
+	ThumbRows                  int
+	ThumbCols                  int
+	ThumbIntervalSec           int
+	ThumbWidth                 int
+	ThumbHeight                int
+	ThumbImageFormat           string
+	ThumbStoragePrefix         string
 	EnableThumbnailBinaryIndex bool
-	ThumbBinaryStoragePrefix string
-	ThumbBinaryMaxSizeBytes  uint64
-	Renditions               []RenditionOption
-	OutputStorageID          uint64
-	OutputBasePrefix         string
-	AssignedNodeID           uint64
-	AssignedWorkerID         string
-	ExecutorWorkerInstanceID uint64
-	SelectedExecutionHWAccel string
-	SelectedGPUIndex         int
-	SelectedGPUDeviceID      uint64
-	LeaseOwner               string
-	LeaseGeneration          uint64
-	AttemptNo                int
-	ProgressPermille         int
-	ProgressStage            string
-	ErrorCode                string
-	ErrorMessage             string
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
+	ThumbBinaryStoragePrefix   string
+	ThumbBinaryMaxSizeBytes    uint64
+	Renditions                 []RenditionOption
+	OutputStorageID            uint64
+	OutputBasePrefix           string
+	AssignedNodeID             uint64
+	AssignedWorkerID           string
+	ExecutorWorkerInstanceID   uint64
+	SelectedExecutionHWAccel   string
+	SelectedGPUIndex           int
+	SelectedGPUDeviceID        uint64
+	LeaseOwner                 string
+	LeaseGeneration            uint64
+	AttemptNo                  int
+	ProgressPermille           int
+	ProgressStage              string
+	ErrorCode                  string
+	ErrorMessage               string
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }

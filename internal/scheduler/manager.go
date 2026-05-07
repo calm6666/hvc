@@ -6,6 +6,7 @@ import (
 
 	"hvc/internal/cluster"
 	"hvc/internal/config"
+	"hvc/internal/configcenter"
 	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
 	dispatchpkg "hvc/internal/scheduler/dispatch"
@@ -25,9 +26,9 @@ import (
 //  6. 定期扫描过期租约并触发故障接管。
 type Manager struct {
 	cfg                    config.DynamicRuntimeConfig
+	effectiveConfig        *configcenter.EffectiveConfig
 	nodeID                 uint64
 	workerID               string
-	filter                 *filterpkg.Filter
 	clusterCache           *cluster.StateCache
 	leaseCache             *cluster.LeaseCache
 	jobRepository          *mysql.JobRepository
@@ -39,12 +40,12 @@ type Manager struct {
 }
 
 // NewManager 创建调度模块。
-func NewManager(cfg config.DynamicRuntimeConfig, nodeID uint64, workerID string, clusterCache *cluster.StateCache, jobRepository *mysql.JobRepository, jobRequestOverrideRepo *mysql.JobRequestOverrideRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Manager {
+func NewManager(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeID uint64, workerID string, clusterCache *cluster.StateCache, jobRepository *mysql.JobRepository, jobRequestOverrideRepo *mysql.JobRequestOverrideRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Manager {
 	return &Manager{
 		cfg:                    cfg,
+		effectiveConfig:        effectiveConfig,
 		nodeID:                 nodeID,
 		workerID:               workerID,
-		filter:                 filterpkg.NewFilter(cfg),
 		clusterCache:           clusterCache,
 		jobRepository:          jobRepository,
 		jobRequestOverrideRepo: jobRequestOverrideRepo,
@@ -73,15 +74,22 @@ func (m *Manager) SetTopK(k int) {
 
 // Start 启动调度模块。
 func (m *Manager) Start(ctx context.Context) error {
-	ticker := time.NewTicker(m.cfg.Scheduler.LoopInterval)
-	defer ticker.Stop()
 	for {
+		cfg := m.currentConfig()
+		if cfg.Mode.EnableScheduler {
+			m.dispatchOnce(ctx, cfg)
+			m.failoverOnce(ctx, cfg)
+		}
+		interval := cfg.Scheduler.LoopInterval
+		if interval <= 0 {
+			interval = 3 * time.Second
+		}
+		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil
-		case <-ticker.C:
-			m.dispatchOnce(ctx)
-			m.failoverOnce(ctx)
+		case <-timer.C:
 		}
 	}
 }
@@ -93,7 +101,7 @@ func (m *Manager) Start(ctx context.Context) error {
 //  2. 收集集群中所有可用节点作为候选；
 //  3. 对每个任务，过滤合规候选并选择最优节点；
 //  4. 将任务分配给选中节点。
-func (m *Manager) dispatchOnce(ctx context.Context) {
+func (m *Manager) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeConfig) {
 	jobs := m.jobRepository.ListQueued(ctx)
 	if len(jobs) == 0 {
 		return
@@ -104,7 +112,7 @@ func (m *Manager) dispatchOnce(ctx context.Context) {
 	}
 	for _, job := range jobs {
 		req := m.buildJobRequest(ctx, job)
-		passed := m.filter.Apply(req, candidates)
+		passed := filterpkg.NewFilter(cfg).Apply(req, candidates)
 		if len(passed) == 0 {
 			logx.Info("scheduler.dispatch.skipped", logx.Fields{
 				"job_id":     job.JobID,
@@ -223,11 +231,11 @@ func (m *Manager) resolvePreferredHWAccel(ctx context.Context, job model.Transco
 //
 // 扫描过期租约并将对应任务重置为排队状态，
 // 同时恢复已到隔离期限的节点。
-func (m *Manager) failoverOnce(ctx context.Context) {
+func (m *Manager) failoverOnce(ctx context.Context, cfg config.DynamicRuntimeConfig) {
 	if m.leaseCache == nil {
 		return
 	}
-	takeoverCount := failover.TakeoverExpiredLeases(ctx, m.jobRepository, m.leaseCache, m.shieldTracker, m.cfg.Scheduler.WorkerHeartbeatTimeout)
+	takeoverCount := failover.TakeoverExpiredLeases(ctx, m.jobRepository, m.leaseCache, m.shieldTracker, cfg.Scheduler.WorkerHeartbeatTimeout)
 	if takeoverCount > 0 {
 		logx.Info("scheduler.failover.takeover_completed", logx.Fields{
 			"takeover_count": takeoverCount,
@@ -241,4 +249,11 @@ func (m *Manager) failoverOnce(ctx context.Context) {
 			})
 		}
 	}
+}
+
+func (m *Manager) currentConfig() config.DynamicRuntimeConfig {
+	if m.effectiveConfig == nil {
+		return m.cfg
+	}
+	return m.effectiveConfig.Snapshot()
 }

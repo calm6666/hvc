@@ -7,11 +7,42 @@ import (
 	"strings"
 	"time"
 
+	"hvc/internal/config"
+	"hvc/internal/configcenter"
 	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
 	"hvc/internal/worker/planner"
 	"hvc/pkg/logx"
 )
+
+// RenditionFilter 清晰度过滤条件。
+//
+// 用于版权保护场景，控制清单中可见的清晰度列表。
+// 支持两种过滤方式：
+//   - AllowedNames：按名称白名单过滤（如 720p,480p）
+//   - MaxHeight：按最大高度过滤（如 720 表示只返回 720p 及以下）
+//
+// 两者同时存在时取交集。两者都为空时不过滤，返回全部清晰度。
+type RenditionFilter struct {
+	AllowedNames []string
+	MaxHeight    int
+}
+
+// IsAllowed 判断指定清晰度是否通过过滤。
+func (f RenditionFilter) IsAllowed(renditionName string, height int) bool {
+	if len(f.AllowedNames) == 0 && f.MaxHeight <= 0 {
+		return true
+	}
+	nameOk := len(f.AllowedNames) == 0
+	for _, n := range f.AllowedNames {
+		if n == renditionName {
+			nameOk = true
+			break
+		}
+	}
+	heightOk := f.MaxHeight <= 0 || height <= f.MaxHeight
+	return nameOk && heightOk
+}
 
 // Builder 动态清单构建器。
 //
@@ -21,20 +52,18 @@ import (
 type Builder struct {
 	segmentRepo     *mysql.SegmentRepository
 	jobRepo         *mysql.JobRepository
-	playDomain      string
-	segmentTemplate string
+	effectiveConfig *configcenter.EffectiveConfig
 }
 
 // NewBuilder 创建动态清单构建器。
 //
 // segmentTemplate 为后台配置的分片命名模板，
 // 用于生成清单中 SegmentTemplate 的 media 和 initialization 属性。
-func NewBuilder(segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository, playDomain string, segmentTemplate string) *Builder {
+func NewBuilder(segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository, effectiveConfig *configcenter.EffectiveConfig) *Builder {
 	return &Builder{
 		segmentRepo:     segmentRepo,
 		jobRepo:         jobRepo,
-		playDomain:      playDomain,
-		segmentTemplate: segmentTemplate,
+		effectiveConfig: effectiveConfig,
 	}
 }
 
@@ -43,7 +72,7 @@ func NewBuilder(segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobReposito
 // 从数据库查询指定任务的所有分片元数据，
 // 按清晰度和媒体类型分组，生成符合 MPEG-DASH 标准的 MPD XML。
 // 分片 URL 使用后台配置的命名模板渲染。
-func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
+func (b *Builder) BuildMPD(ctx context.Context, jobID uint64, filter RenditionFilter) (string, error) {
 	job, ok := b.jobRepo.GetByID(ctx, jobID)
 	if !ok {
 		return "", fmt.Errorf("任务不存在: %d", jobID)
@@ -99,6 +128,10 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
 			continue
 		}
 
+		if !filter.IsAllowed(initSeg.RenditionName, initSeg.Height) {
+			continue
+		}
+
 		rend := planner.RenditionSpec{
 			Name:         initSeg.RenditionName,
 			QualityLabel: planner.QualityLabelFromHeight(initSeg.Height),
@@ -140,6 +173,10 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
 	for rendKey, segs := range audioRenditions {
 		initSeg := findInitSegment(segs)
 		if initSeg == nil {
+			continue
+		}
+
+		if !filter.IsAllowed(initSeg.RenditionName, initSeg.Height) {
 			continue
 		}
 
@@ -205,7 +242,7 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
 //
 // 生成 HLS fMP4 格式的 master.m3u8，
 // 每个清晰度对应一个 Variant Stream。
-func (b *Builder) BuildM3U8(ctx context.Context, jobID uint64) (string, error) {
+func (b *Builder) BuildM3U8(ctx context.Context, jobID uint64, filter RenditionFilter) (string, error) {
 	job, ok := b.jobRepo.GetByID(ctx, jobID)
 	if !ok {
 		return "", fmt.Errorf("任务不存在: %d", jobID)
@@ -230,6 +267,10 @@ func (b *Builder) BuildM3U8(ctx context.Context, jobID uint64) (string, error) {
 	for rendName, segs := range renditions {
 		initSeg := findInitSegment(segs)
 		if initSeg == nil {
+			continue
+		}
+
+		if !filter.IsAllowed(rendName, initSeg.Height) {
 			continue
 		}
 		bandwidth := initSeg.VideoBitrateKbps * 1000
@@ -298,7 +339,8 @@ func (b *Builder) BuildVariantM3U8(ctx context.Context, jobID uint64, renditionN
 // 使用 $Number$ 作为 FFmpeg/DASH 标准占位符，
 // 其余占位符按后台配置模板渲染。
 func (b *Builder) renderMediaTemplateURL(jobID uint64, rend planner.RenditionSpec, mediaType string) string {
-	tmpl := b.segmentTemplate
+	cfg := b.currentConfig()
+	tmpl := cfg.Worker.SegmentTemplate
 	if tmpl == "" {
 		tmpl = "{job_id}-{media_type}-{number}.m4s"
 	}
@@ -313,8 +355,9 @@ func (b *Builder) renderMediaTemplateURL(jobID uint64, rend planner.RenditionSpe
 }
 
 func (b *Builder) objectURL(objectKey string) string {
-	if b.playDomain != "" {
-		return fmt.Sprintf("%s/%s", b.playDomain, objectKey)
+	playDomain := b.currentConfig().Storage.PlayDomain
+	if playDomain != "" {
+		return fmt.Sprintf("%s/%s", playDomain, objectKey)
 	}
 	return objectKey
 }
@@ -397,8 +440,16 @@ type segmentLister interface {
 	ListByJobID(ctx context.Context, jobID uint64) []model.Segment
 }
 
+// EnsureBuilderDependencies 确保 Builder 依赖项已正确初始化。
 func EnsureBuilderDependencies(builder *Builder) {
 	if builder == nil {
 		logx.Info("manifest.builder.nil", nil)
 	}
+}
+
+func (b *Builder) currentConfig() config.DynamicRuntimeConfig {
+	if b.effectiveConfig == nil {
+		return config.DynamicRuntimeConfig{}
+	}
+	return b.effectiveConfig.Snapshot()
 }

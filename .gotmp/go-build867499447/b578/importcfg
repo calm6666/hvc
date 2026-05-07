@@ -1,0 +1,20 @@
+# import config
+packagefile net/http=D:\hilihili\server\hvc\.gocache\f6\f64e4b596df7c160f354029e7b27e4eda7b2e4d1bef46228789e3545940235f1-d
+packagefile net/http/httptest=D:\hilihili\server\hvc\.gocache\06\063f93f42b0f272e767799659afc689d67c54dff40990609ada5c5d1f8440c80-d
+packagefile strings=D:\hilihili\server\hvc\.gocache\66\6645e12e1f8b109c5a45aea4ea5919430c735ffd4ebba6c0531951579e9a3498-d
+packagefile testing=D:\hilihili\server\hvc\.gocache\88\8886ab1870be8ce572c19e58348d3f241793c1453598aef5c6c6921a10d4e497-d
+packagefile encoding/json=D:\hilihili\server\hvc\.gocache\ef\ef224f26b95fa1070d909134b1a46a45abd5f642d57d809f245e3451417a1637-d
+packagefile errors=D:\hilihili\server\hvc\.gocache\80\8044b4c077c539b6e90ff9e4d0197f0c48f0c117813fd08e52b761257fd99e41-d
+packagefile hvc/internal/cluster=D:\hilihili\server\hvc\.gocache\da\da7678c39f8affdad6457b22cf4ea56a8a0b759477b59e65488abc2af3aa35d1-d
+packagefile hvc/internal/cluster/heartbeat=D:\hilihili\server\hvc\.gocache\bf\bfb1568381899d4cf353c270596853076c16ff1baa34756aa1c445377beb38d9-d
+packagefile hvc/internal/infra/db/mysql=D:\hilihili\server\hvc\.gocache\13\13711089aa3eb3e23717e1429661ed39b20e0d7a6719c0aeb8af72f427d44991-d
+packagefile hvc/internal/manifest=D:\hilihili\server\hvc\.gocache\2e\2e54ea3d53064835a331321dd59546d8fb4773896a491e808fe6acad0d0ceb90-d
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gocache\b0\b0d2ccff21af2e639cd8b568ba599bd0de5730835348a7ff8b711751becb73b2-d
+packagefile hvc/internal/service/live=D:\hilihili\server\hvc\.gocache\f5\f5875fb655a2c072ea8d6c8d8c66be5bf1ec9bd0f3eac5220ea2d92228a56e07-d
+packagefile hvc/internal/service/transcode=D:\hilihili\server\hvc\.gocache\c0\c0f1b2dbaf7e829246d150ee9039781fb196ca677f7eebbc22882488c8b99001-d
+packagefile hvc/pkg/logx=D:\hilihili\server\hvc\.gocache\bb\bb08e73f64ee8b88298f0f157def7f73e6cd37fcd2ee7e71736109292b5b1085-d
+packagefile net/http=D:\hilihili\server\hvc\.gocache\f6\f64e4b596df7c160f354029e7b27e4eda7b2e4d1bef46228789e3545940235f1-d
+packagefile strconv=D:\hilihili\server\hvc\.gocache\3f\3f234232dacf33a8ad1915ecae2866501227e43ee673d71499dfd0f52af54ee1-d
+packagefile strings=D:\hilihili\server\hvc\.gocache\66\6645e12e1f8b109c5a45aea4ea5919430c735ffd4ebba6c0531951579e9a3498-d
+packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d
+packagefile hvc/internal/interfaces/http/public=D:\hilihili\server\hvc\.gocache\d1\d129559d1cfae9bf48d1a5d625d4e8711540a6b65b274d336ebb6743cc05edc0-d

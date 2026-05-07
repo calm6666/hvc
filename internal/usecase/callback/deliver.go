@@ -42,10 +42,10 @@ import (
 //     - 不可重试失败：标记为 FAILED，写入投递失败队列
 //  4. 记录投递尝试日志
 type DeliverUseCase struct {
-	outboxRepository    *mysql.OutboxRepository
-	callbackConfigRepo  *mysql.CallbackConfigRepository
-	cfg                 config.DynamicRuntimeConfig
-	httpClient          *http.Client
+	outboxRepository   *mysql.OutboxRepository
+	callbackConfigRepo *mysql.CallbackConfigRepository
+	cfg                config.DynamicRuntimeConfig
+	httpClient         *http.Client
 }
 
 // NewDeliverUseCase 创建回调投递用例实例。
@@ -72,12 +72,12 @@ func NewDeliverUseCase(
 
 // DeliverResult 表示单次投递结果。
 type DeliverResult struct {
-	EventID     uint64 `json:"event_id"`
-	Success     bool   `json:"success"`
-	StatusCode  int    `json:"status_code,omitempty"`
+	EventID      uint64 `json:"event_id"`
+	Success      bool   `json:"success"`
+	StatusCode   int    `json:"status_code,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
-	RetryCount  int    `json:"retry_count"`
-	FinalFailed bool   `json:"final_failed"`
+	RetryCount   int    `json:"retry_count"`
+	FinalFailed  bool   `json:"final_failed"`
 }
 
 // Execute 执行回调投递。
@@ -244,7 +244,7 @@ func (u *DeliverUseCase) handleRetry(ctx context.Context, event model.OutboxEven
 	nextRetryAt := time.Now().Add(backoff)
 
 	if u.outboxRepository != nil {
-		u.outboxRepository.MarkFailed(ctx, event.EventID, errMsg)
+		u.outboxRepository.MarkRetryable(ctx, event.EventID, errMsg, nextRetryAt)
 	}
 
 	logx.Info("callback.deliver.retry_scheduled", logx.Fields{
@@ -260,14 +260,14 @@ func (u *DeliverUseCase) handleRetry(ctx context.Context, event model.OutboxEven
 // 当事件超过最大重试次数仍然投递失败时调用。
 // 事件状态更新为 FAILED，并记录最后的错误信息。
 func (u *DeliverUseCase) markFinalFailed(ctx context.Context, event model.OutboxEvent, errMsg string) {
-	u.outboxRepository.MarkFailed(ctx, event.EventID, errMsg)
+	u.outboxRepository.MarkFinalFailed(ctx, event.EventID, errMsg)
 
 	logx.Error("callback.deliver.final_failed", nil, logx.Fields{
-		"event_id":     event.EventID,
-		"event_type":   event.EventType,
-		"job_id":       event.JobID,
-		"retry_count":  event.RetryCount,
-		"error":        errMsg,
+		"event_id":    event.EventID,
+		"event_type":  event.EventType,
+		"job_id":      event.JobID,
+		"retry_count": event.RetryCount,
+		"error":       errMsg,
 	})
 }
 

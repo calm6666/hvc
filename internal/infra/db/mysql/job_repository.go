@@ -5,115 +5,125 @@ import (
 	"encoding/json"
 	"hvc/internal/model"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 func toJobRecord(job model.TranscodeJob) JobRecord {
 	return JobRecord{
-		JobID:                       job.JobID,
-		RequestID:                   job.RequestID,
-		BizKey:                      job.BizKey,
-		Status:                      job.Status,
-		Priority:                    job.Priority,
-		SourceURL:                   job.SourceURL,
-		ProfileID:                   job.ProfileID,
-		SegmentDurationSec:          job.SegmentDurationSec,
-		SupportDash:                 job.SupportDash,
-		SupportHLS:                  job.SupportHLS,
-		EnableWatermark:             job.EnableWatermark,
-		WatermarkImageURL:           job.WatermarkImageURL,
-		WatermarkAnchor:             job.WatermarkAnchor,
-		WatermarkXRatio:             job.WatermarkXRatio,
-		WatermarkYRatio:             job.WatermarkYRatio,
-		WatermarkWidthRatio:         job.WatermarkWidthRatio,
-		WatermarkOpacity:            job.WatermarkOpacity,
-		WatermarkSafeMarginRatio:    job.WatermarkSafeMarginRatio,
-		EnableThumbnailSprite:       job.EnableThumbnailSprite,
-		ThumbRows:                   job.ThumbRows,
-		ThumbCols:                   job.ThumbCols,
-		ThumbIntervalSec:            job.ThumbIntervalSec,
-		ThumbWidth:                  job.ThumbWidth,
-		ThumbHeight:                 job.ThumbHeight,
-		ThumbImageFormat:            job.ThumbImageFormat,
-		ThumbStoragePrefix:          job.ThumbStoragePrefix,
-		EnableThumbnailBinaryIndex:  job.EnableThumbnailBinaryIndex,
-		ThumbBinaryStoragePrefix:    job.ThumbBinaryStoragePrefix,
-		ThumbBinaryMaxSizeBytes:     job.ThumbBinaryMaxSizeBytes,
-		RenditionsJSON:              marshalRenditions(job.Renditions),
-		OutputStorageID:             job.OutputStorageID,
-		OutputBasePrefix:            job.OutputBasePrefix,
-		AssignedNodeID:              job.AssignedNodeID,
-		AssignedWorkerID:            job.AssignedWorkerID,
-		ExecutorWorkerInstanceID:     job.ExecutorWorkerInstanceID,
-		SelectedExecutionHWAccel:     job.SelectedExecutionHWAccel,
-		SelectedGPUIndex:            job.SelectedGPUIndex,
-		SelectedGPUDeviceID:         job.SelectedGPUDeviceID,
-		LeaseOwner:                  job.LeaseOwner,
-		LeaseGeneration:             job.LeaseGeneration,
-		AttemptNo:                   job.AttemptNo,
-		ProgressPermille:            job.ProgressPermille,
-		ProgressStage:               job.ProgressStage,
-		ErrorCode:                   job.ErrorCode,
-		ErrorMessage:                job.ErrorMessage,
-		CreatedAt:                   job.CreatedAt,
-		UpdatedAt:                   job.UpdatedAt,
+		JobID:                      job.JobID,
+		RequestID:                  job.RequestID,
+		BizKey:                     job.BizKey,
+		Status:                     job.Status,
+		Priority:                   job.Priority,
+		SourceURL:                  job.SourceURL,
+		ProfileID:                  job.ProfileID,
+		SegmentDurationSec:         job.SegmentDurationSec,
+		SupportDash:                job.SupportDash,
+		SupportHLS:                 job.SupportHLS,
+		EnableWatermark:            job.EnableWatermark,
+		WatermarkImageURL:          job.WatermarkImageURL,
+		WatermarkAnchor:            job.WatermarkAnchor,
+		WatermarkXRatio:            job.WatermarkXRatio,
+		WatermarkYRatio:            job.WatermarkYRatio,
+		WatermarkWidthRatio:        job.WatermarkWidthRatio,
+		WatermarkOpacity:           job.WatermarkOpacity,
+		WatermarkSafeMarginRatio:   job.WatermarkSafeMarginRatio,
+		EnableThumbnailSprite:      job.EnableThumbnailSprite,
+		ThumbRows:                  job.ThumbRows,
+		ThumbCols:                  job.ThumbCols,
+		ThumbIntervalSec:           job.ThumbIntervalSec,
+		ThumbWidth:                 job.ThumbWidth,
+		ThumbHeight:                job.ThumbHeight,
+		ThumbImageFormat:           job.ThumbImageFormat,
+		ThumbStoragePrefix:         job.ThumbStoragePrefix,
+		EnableThumbnailBinaryIndex: job.EnableThumbnailBinaryIndex,
+		ThumbBinaryStoragePrefix:   job.ThumbBinaryStoragePrefix,
+		ThumbBinaryMaxSizeBytes:    job.ThumbBinaryMaxSizeBytes,
+		RenditionsJSON:             marshalRenditions(job.Renditions),
+		OutputStorageID:            job.OutputStorageID,
+		OutputBasePrefix:           job.OutputBasePrefix,
+		AssignedNodeID:             job.AssignedNodeID,
+		AssignedWorkerID:           job.AssignedWorkerID,
+		ExecutorWorkerInstanceID:   job.ExecutorWorkerInstanceID,
+		SelectedExecutionHWAccel:   job.SelectedExecutionHWAccel,
+		SelectedGPUIndex:           job.SelectedGPUIndex,
+		SelectedGPUDeviceID:        job.SelectedGPUDeviceID,
+		LeaseOwner:                 job.LeaseOwner,
+		LeaseGeneration:            job.LeaseGeneration,
+		AttemptNo:                  job.AttemptNo,
+		ProgressPermille:           job.ProgressPermille,
+		ProgressStage:              job.ProgressStage,
+		ErrorCode:                  job.ErrorCode,
+		ErrorMessage:               job.ErrorMessage,
+		CreatedAt:                  job.CreatedAt,
+		UpdatedAt:                  job.UpdatedAt,
 	}
 }
 
 func toJobModel(record JobRecord) model.TranscodeJob {
 	return model.TranscodeJob{
-		JobID:                       record.JobID,
-		RequestID:                   record.RequestID,
-		BizKey:                      record.BizKey,
-		Status:                      record.Status,
-		Priority:                    record.Priority,
-		SourceURL:                   record.SourceURL,
-		ProfileID:                   record.ProfileID,
-		SegmentDurationSec:          record.SegmentDurationSec,
-		SupportDash:                 record.SupportDash,
-		SupportHLS:                  record.SupportHLS,
-		EnableWatermark:             record.EnableWatermark,
-		WatermarkImageURL:           record.WatermarkImageURL,
-		WatermarkAnchor:             record.WatermarkAnchor,
-		WatermarkXRatio:             record.WatermarkXRatio,
-		WatermarkYRatio:             record.WatermarkYRatio,
-		WatermarkWidthRatio:         record.WatermarkWidthRatio,
-		WatermarkOpacity:            record.WatermarkOpacity,
-		WatermarkSafeMarginRatio:    record.WatermarkSafeMarginRatio,
-		EnableThumbnailSprite:       record.EnableThumbnailSprite,
-		ThumbRows:                   record.ThumbRows,
-		ThumbCols:                   record.ThumbCols,
-		ThumbIntervalSec:            record.ThumbIntervalSec,
-		ThumbWidth:                  record.ThumbWidth,
-		ThumbHeight:                 record.ThumbHeight,
-		ThumbImageFormat:            record.ThumbImageFormat,
-		ThumbStoragePrefix:          record.ThumbStoragePrefix,
-		EnableThumbnailBinaryIndex:  record.EnableThumbnailBinaryIndex,
-		ThumbBinaryStoragePrefix:    record.ThumbBinaryStoragePrefix,
-		ThumbBinaryMaxSizeBytes:     record.ThumbBinaryMaxSizeBytes,
-		Renditions:                  unmarshalRenditions(record.RenditionsJSON),
-		OutputStorageID:             record.OutputStorageID,
-		OutputBasePrefix:            record.OutputBasePrefix,
-		AssignedNodeID:              record.AssignedNodeID,
-		AssignedWorkerID:            record.AssignedWorkerID,
-		ExecutorWorkerInstanceID:     record.ExecutorWorkerInstanceID,
-		SelectedExecutionHWAccel:     record.SelectedExecutionHWAccel,
-		SelectedGPUIndex:            record.SelectedGPUIndex,
-		SelectedGPUDeviceID:         record.SelectedGPUDeviceID,
-		LeaseOwner:                  record.LeaseOwner,
-		LeaseGeneration:             record.LeaseGeneration,
-		AttemptNo:                   record.AttemptNo,
-		ProgressPermille:            record.ProgressPermille,
-		ProgressStage:               record.ProgressStage,
-		ErrorCode:                   record.ErrorCode,
-		ErrorMessage:                record.ErrorMessage,
-		CreatedAt:                   record.CreatedAt,
-		UpdatedAt:                   record.UpdatedAt,
+		JobID:                      record.JobID,
+		RequestID:                  record.RequestID,
+		BizKey:                     record.BizKey,
+		Status:                     record.Status,
+		Priority:                   record.Priority,
+		SourceURL:                  record.SourceURL,
+		ProfileID:                  record.ProfileID,
+		SegmentDurationSec:         record.SegmentDurationSec,
+		SupportDash:                record.SupportDash,
+		SupportHLS:                 record.SupportHLS,
+		EnableWatermark:            record.EnableWatermark,
+		WatermarkImageURL:          record.WatermarkImageURL,
+		WatermarkAnchor:            record.WatermarkAnchor,
+		WatermarkXRatio:            record.WatermarkXRatio,
+		WatermarkYRatio:            record.WatermarkYRatio,
+		WatermarkWidthRatio:        record.WatermarkWidthRatio,
+		WatermarkOpacity:           record.WatermarkOpacity,
+		WatermarkSafeMarginRatio:   record.WatermarkSafeMarginRatio,
+		EnableThumbnailSprite:      record.EnableThumbnailSprite,
+		ThumbRows:                  record.ThumbRows,
+		ThumbCols:                  record.ThumbCols,
+		ThumbIntervalSec:           record.ThumbIntervalSec,
+		ThumbWidth:                 record.ThumbWidth,
+		ThumbHeight:                record.ThumbHeight,
+		ThumbImageFormat:           record.ThumbImageFormat,
+		ThumbStoragePrefix:         record.ThumbStoragePrefix,
+		EnableThumbnailBinaryIndex: record.EnableThumbnailBinaryIndex,
+		ThumbBinaryStoragePrefix:   record.ThumbBinaryStoragePrefix,
+		ThumbBinaryMaxSizeBytes:    record.ThumbBinaryMaxSizeBytes,
+		Renditions:                 unmarshalRenditions(record.RenditionsJSON),
+		OutputStorageID:            record.OutputStorageID,
+		OutputBasePrefix:           record.OutputBasePrefix,
+		AssignedNodeID:             record.AssignedNodeID,
+		AssignedWorkerID:           record.AssignedWorkerID,
+		ExecutorWorkerInstanceID:   record.ExecutorWorkerInstanceID,
+		SelectedExecutionHWAccel:   record.SelectedExecutionHWAccel,
+		SelectedGPUIndex:           record.SelectedGPUIndex,
+		SelectedGPUDeviceID:        record.SelectedGPUDeviceID,
+		LeaseOwner:                 record.LeaseOwner,
+		LeaseGeneration:            record.LeaseGeneration,
+		AttemptNo:                  record.AttemptNo,
+		ProgressPermille:           record.ProgressPermille,
+		ProgressStage:              record.ProgressStage,
+		ErrorCode:                  record.ErrorCode,
+		ErrorMessage:               record.ErrorMessage,
+		CreatedAt:                  record.CreatedAt,
+		UpdatedAt:                  record.UpdatedAt,
 	}
 }
 
 // JobRepository 表示任务仓储。
 type JobRepository struct {
 	db *DB
+}
+
+type JobListFilter struct {
+	Page      int
+	PageSize  int
+	Status    int
+	BizKey    string
+	RequestID string
 }
 
 // NewJobRepository 创建任务仓储。
@@ -143,6 +153,35 @@ func (r *JobRepository) FindByJobID(ctx context.Context, jobID uint64) (model.Tr
 func (r *JobRepository) Save(ctx context.Context, job model.TranscodeJob) error {
 	record := toJobRecord(job)
 	return r.db.WithContext(ctx).Create(&record).Error
+}
+
+// CreateWithOverrideAtomic 以 request_id 唯一键为准原子创建任务。
+func (r *JobRepository) CreateWithOverrideAtomic(ctx context.Context, job model.TranscodeJob, override *model.TranscodeJobRequestOverride) (model.TranscodeJob, bool, error) {
+	record := toJobRecord(job)
+	created := false
+	createdJob := job
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&record).Error; err != nil {
+			if !isDuplicateEntryError(err) {
+				return err
+			}
+			var existing JobRecord
+			if findErr := tx.Where("request_id = ?", job.RequestID).Take(&existing).Error; findErr != nil {
+				return findErr
+			}
+			createdJob = toJobModel(existing)
+			return nil
+		}
+		created = true
+		if override != nil {
+			overrideRecord := toJobRequestOverrideRecord(*override)
+			if err := tx.Create(&overrideRecord).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return createdJob, created, err
 }
 
 // ListQueued 返回待调度任务。
@@ -231,16 +270,57 @@ func (r *JobRepository) ListAll(ctx context.Context) []model.TranscodeJob {
 	return jobs
 }
 
+func (r *JobRepository) ListPage(ctx context.Context, filter JobListFilter) ([]model.TranscodeJob, int64, error) {
+	page := filter.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	query := r.db.WithContext(ctx).Model(&JobRecord{})
+	if filter.Status > 0 {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.BizKey != "" {
+		query = query.Where("biz_key = ?", filter.BizKey)
+	}
+	if filter.RequestID != "" {
+		query = query.Where("request_id = ?", filter.RequestID)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var records []JobRecord
+	if err := query.Order("job_id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]model.TranscodeJob, 0, len(records))
+	for _, rec := range records {
+		items = append(items, toJobModel(rec))
+	}
+	return items, total, nil
+}
+
 // ResetToQueued 将任务重置为排队状态（用于重试）。
 func (r *JobRepository) ResetToQueued(ctx context.Context, jobID uint64) error {
 	return r.db.WithContext(ctx).Model(&JobRecord{}).Where("job_id = ?", jobID).Updates(map[string]any{
-		"status":            model.JobStatusQueued,
-		"progress_permille": 0,
-		"progress_stage":    model.StageQueued,
-		"assigned_node_id":  0,
+		"status":             model.JobStatusQueued,
+		"progress_permille":  0,
+		"progress_stage":     model.StageQueued,
+		"assigned_node_id":   0,
 		"assigned_worker_id": "",
-		"lease_generation":  0,
-		"updated_at":        time.Now(),
+		"lease_generation":   0,
+		"updated_at":         time.Now(),
 	}).Error
 }
 

@@ -2,11 +2,12 @@ package model
 
 import "time"
 
+// Outbox 事件状态常量，表示回调事件从创建到投递完成的完整状态。
 const (
-	OutboxStatusPending   = 1
-	OutboxStatusSending   = 2
-	OutboxStatusDelivered = 3
-	OutboxStatusFailed    = 4
+	OutboxStatusPending   = 1 // 待投递
+	OutboxStatusSending   = 2 // 投递中
+	OutboxStatusDelivered = 3 // 已投递
+	OutboxStatusFailed    = 4 // 投递失败
 )
 
 // OutboxEvent 表示回调事件。

@@ -2,16 +2,22 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"time"
 
 	"hvc/internal/cluster"
 	"hvc/internal/cluster/hotpath"
 	"hvc/internal/config"
+	"hvc/internal/configcenter"
 	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/infra/db/mysql"
+	ffprobe "hvc/internal/infra/ffmpeg/probe"
 	"hvc/internal/infra/gpu"
 	"hvc/internal/infra/storage/s3"
 	"hvc/internal/model"
@@ -36,6 +42,7 @@ import (
 // 而不是继续把“能力已建模、调度也会消费，但 Worker 永远不填数据”的断链状态保留下去。
 type Module struct {
 	cfg                     config.DynamicRuntimeConfig
+	effectiveConfig         *configcenter.EffectiveConfig
 	nodeID                  uint64
 	workerID                string
 	jobRepository           *mysql.JobRepository
@@ -50,21 +57,25 @@ type Module struct {
 	stateCache              *cluster.StateCache
 	runner                  *executor.Runner
 	uploader                *storage.Client
+	uploaderConfig          config.StorageConfig
+	uploaderMu              sync.RWMutex
 	retryPolicy             RetryPolicy
 	startupInstanceID       string
 	machineFingerprint      string
 	workerInstanceID        uint64
 	currentProbeGeneration  uint64
 	runningJobs             map[uint64]struct{}
+	runningJobsMu           sync.Mutex
 }
 
 // NewModule 创建执行模块。
-func NewModule(cfg config.DynamicRuntimeConfig, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus, stateCache *cluster.StateCache, workerInstanceRepo *mysql.WorkerInstanceRepository, gpuDeviceRepository *mysql.GPUDeviceRepository, gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Module {
+func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus, stateCache *cluster.StateCache, workerInstanceRepo *mysql.WorkerInstanceRepository, gpuDeviceRepository *mysql.GPUDeviceRepository, gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Module {
 	uploader, _ := storage.Open(cfg.Storage)
 	startupInstanceID := workerID + "-startup"
 	machineFingerprint := "node-" + workerID
 	return &Module{
 		cfg:                     cfg,
+		effectiveConfig:         effectiveConfig,
 		nodeID:                  nodeID,
 		workerID:                workerID,
 		jobRepository:           jobRepository,
@@ -79,6 +90,7 @@ func NewModule(cfg config.DynamicRuntimeConfig, nodeID uint64, workerID string, 
 		stateCache:              stateCache,
 		runner:                  executor.NewRunner(),
 		uploader:                uploader,
+		uploaderConfig:          cfg.Storage,
 		retryPolicy: RetryPolicy{
 			BaseDelay: cfg.Worker.UploadRetryBaseDelay,
 			MaxDelay:  cfg.Worker.UploadRetryMaxDelay,
@@ -93,27 +105,29 @@ func NewModule(cfg config.DynamicRuntimeConfig, nodeID uint64, workerID string, 
 
 // CanUseSoftwareDecode 判断是否允许软解。
 func (m *Module) CanUseSoftwareDecode(cpuPercent int) bool {
-	if !m.cfg.Scheduler.AllowSoftwareDecodeFallback {
+	cfg := m.currentConfig()
+	if !cfg.Scheduler.AllowSoftwareDecodeFallback {
 		return false
 	}
-	return cpuPercent < m.cfg.Scheduler.SoftDecodeCPULimitPercent
+	return cpuPercent < cfg.Scheduler.SoftDecodeCPULimitPercent
 }
 
 // CanAcceptNewTask 判断是否允许接收新任务。
 func (m *Module) CanAcceptNewTask(cpuPercent, memPercent, gpuMemPercent, uploadQueueDepth, activeSessions int) bool {
-	if cpuPercent >= m.cfg.Scheduler.NodeCPUSafetyLimitPercent {
+	cfg := m.currentConfig()
+	if cpuPercent >= cfg.Scheduler.NodeCPUSafetyLimitPercent {
 		return false
 	}
-	if memPercent >= m.cfg.Scheduler.NodeMemorySafetyLimitPercent {
+	if memPercent >= cfg.Scheduler.NodeMemorySafetyLimitPercent {
 		return false
 	}
-	if gpuMemPercent >= m.cfg.Scheduler.NodeGPUSafetyLimitPercent {
+	if gpuMemPercent >= cfg.Scheduler.NodeGPUSafetyLimitPercent {
 		return false
 	}
-	if activeSessions >= m.cfg.Scheduler.MaxNodeTranscodeSessions {
+	if activeSessions >= cfg.Scheduler.MaxNodeTranscodeSessions {
 		return false
 	}
-	if uploadQueueDepth >= m.cfg.Scheduler.MaxNodeUploadConcurrency {
+	if uploadQueueDepth >= cfg.Scheduler.MaxNodeUploadConcurrency {
 		return false
 	}
 	return true
@@ -126,20 +140,22 @@ func (m *Module) CanAcceptNewTask(cpuPercent, memPercent, gpuMemPercent, uploadQ
 func (m *Module) Start(ctx context.Context) error {
 	m.ensureWorkerInstance(ctx)
 
-	jobSem := make(chan struct{}, m.cfg.Scheduler.MaxNodeTranscodeSessions)
-	uploadSem := make(chan struct{}, m.cfg.Scheduler.MaxNodeUploadConcurrency)
-
-	ticker := time.NewTicker(m.cfg.Worker.LoopInterval)
-	defer ticker.Stop()
+	jobSem := make(chan struct{}, 1024)
+	uploadSem := make(chan struct{}, 1024)
 	for {
+		cfg := m.currentConfig()
+		m.refreshRuntimeState(cfg)
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
+		case <-time.After(loopInterval(cfg.Worker.LoopInterval, 2*time.Second)):
+			if !cfg.Mode.EnableWorker {
+				continue
+			}
 			m.reportHeartbeatOnce(ctx)
 			m.reportMetricsOnce(ctx)
-			m.dispatchJobs(ctx, jobSem)
-			m.dispatchUploads(ctx, uploadSem)
+			m.dispatchJobs(ctx, cfg, jobSem)
+			m.dispatchUploads(ctx, cfg, uploadSem)
 		}
 	}
 }
@@ -148,23 +164,34 @@ func (m *Module) Start(ctx context.Context) error {
 //
 // 使用信号量控制最大并发转码数，避免资源过载。
 // 每个任务在独立 goroutine 中执行，不阻塞主循环。
-func (m *Module) dispatchJobs(ctx context.Context, sem chan struct{}) {
+func (m *Module) dispatchJobs(ctx context.Context, cfg config.DynamicRuntimeConfig, sem chan struct{}) {
 	jobs := m.jobRepository.ListAssigned(ctx, m.nodeID, m.workerID)
 	for _, job := range jobs {
-		if _, running := m.runningJobs[job.JobID]; running {
+		m.runningJobsMu.Lock()
+		_, running := m.runningJobs[job.JobID]
+		if running {
+			m.runningJobsMu.Unlock()
 			continue
+		}
+		if cfg.Scheduler.MaxNodeTranscodeSessions > 0 && len(sem) >= cfg.Scheduler.MaxNodeTranscodeSessions {
+			m.runningJobsMu.Unlock()
+			return
 		}
 		select {
 		case sem <- struct{}{}:
 			m.runningJobs[job.JobID] = struct{}{}
+			m.runningJobsMu.Unlock()
 			go func(j model.TranscodeJob) {
 				defer func() {
 					<-sem
+					m.runningJobsMu.Lock()
 					delete(m.runningJobs, j.JobID)
+					m.runningJobsMu.Unlock()
 				}()
 				m.executeJob(ctx, j)
 			}(job)
 		default:
+			m.runningJobsMu.Unlock()
 		}
 	}
 }
@@ -173,9 +200,12 @@ func (m *Module) dispatchJobs(ctx context.Context, sem chan struct{}) {
 //
 // 使用信号量控制最大并发上传数。
 // 每批上传在独立 goroutine 中执行，不阻塞主循环。
-func (m *Module) dispatchUploads(ctx context.Context, sem chan struct{}) {
-	segments := m.segmentRepository.ListPendingUpload(ctx, m.cfg.Worker.SingleJobUploadConcurrency)
+func (m *Module) dispatchUploads(ctx context.Context, cfg config.DynamicRuntimeConfig, sem chan struct{}) {
+	segments := m.segmentRepository.ListPendingUpload(ctx, cfg.Worker.SingleJobUploadConcurrency)
 	if len(segments) == 0 {
+		return
+	}
+	if cfg.Scheduler.MaxNodeUploadConcurrency > 0 && len(sem) >= cfg.Scheduler.MaxNodeUploadConcurrency {
 		return
 	}
 	select {
@@ -189,6 +219,7 @@ func (m *Module) dispatchUploads(ctx context.Context, sem chan struct{}) {
 }
 
 func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
+	cfg := m.currentConfig()
 	if m.jobExecutionRepository != nil {
 		if err := m.jobExecutionRepository.MarkRunning(ctx, job.JobID, job.LeaseGeneration); err != nil {
 			logx.Error("worker.job.mark_running_failed", err, logx.Fields{
@@ -223,20 +254,22 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 
 	naming := planner.DefaultSegmentNamingConfig()
 	naming.JobID = job.JobID
-	if m.cfg.Worker.SegmentTemplate != "" {
-		naming.SegmentTemplate = m.cfg.Worker.SegmentTemplate
+	if cfg.Worker.SegmentTemplate != "" {
+		naming.SegmentTemplate = cfg.Worker.SegmentTemplate
 	}
-	if m.cfg.Storage.BasePrefix != "" {
-		naming.ObjectKeyPrefix = m.cfg.Storage.BasePrefix
+	if job.OutputBasePrefix != "" {
+		naming.ObjectKeyPrefix = job.OutputBasePrefix
+	} else if cfg.Storage.BasePrefix != "" {
+		naming.ObjectKeyPrefix = cfg.Storage.BasePrefix
 	}
 	pipeline := planner.BuildPlan(job, probeResult, executionHW, naming)
 	logx.Info("worker.job.pipeline", logx.Fields{
-		"job_id":         job.JobID,
-		"execution_hw":   executionHW,
-		"output_dir":     pipeline.OutputDir,
+		"job_id":          job.JobID,
+		"execution_hw":    executionHW,
+		"output_dir":      pipeline.OutputDir,
 		"rendition_count": len(pipeline.Renditions),
-		"hw_decode":      pipeline.HardwareDecode,
-		"hw_encode":      pipeline.HardwareEncode,
+		"hw_decode":       pipeline.HardwareDecode,
+		"hw_encode":       pipeline.HardwareEncode,
 	})
 
 	logx.Info("worker.job.start", logx.Fields{
@@ -348,14 +381,16 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 		Stage:            model.StageCompleted,
 		ProgressPermille: 1000,
 	})
+	payload := m.buildCompletedPayload(ctx, job, probeResult, discoverResult)
+	payloadJSON, _ := json.Marshal(payload)
 	event := model.OutboxEvent{
 		EventID:       idgen.Next(),
 		EventType:     "transcode.completed",
 		JobID:         job.JobID,
 		RequestID:     job.RequestID,
-		PayloadJSON:   "{}",
+		PayloadJSON:   string(payloadJSON),
 		Status:        model.OutboxStatusPending,
-		MaxRetryCount: m.cfg.Worker.UploadMaxRetryCount,
+		MaxRetryCount: cfg.Worker.UploadMaxRetryCount,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -383,17 +418,18 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 }
 
 func (m *Module) failJob(ctx context.Context, job model.TranscodeJob, errorCode string, errorMessage string) {
-	if job.AttemptNo < m.cfg.Worker.UploadMaxRetryCount {
+	cfg := m.currentConfig()
+	if job.AttemptNo < cfg.Worker.UploadMaxRetryCount {
 		if err := m.jobRepository.ResetToQueued(ctx, job.JobID); err != nil {
 			logx.Error("worker.fail_job.reset_to_queued_failed", err, logx.Fields{
 				"job_id": job.JobID,
 			})
 		} else {
 			logx.Info("worker.fail_job.retried", logx.Fields{
-				"job_id":       job.JobID,
-				"attempt_no":   job.AttemptNo,
-				"max_retry":    m.cfg.Worker.UploadMaxRetryCount,
-				"error_code":   errorCode,
+				"job_id":        job.JobID,
+				"attempt_no":    job.AttemptNo,
+				"max_retry":     cfg.Worker.UploadMaxRetryCount,
+				"error_code":    errorCode,
 				"error_message": errorMessage,
 			})
 			return
@@ -421,6 +457,37 @@ func (m *Module) failJob(ctx context.Context, job model.TranscodeJob, errorCode 
 			})
 		}
 	}
+
+	failedPayload := model.TranscodeFailedPayload{
+		JobID:        job.JobID,
+		RequestID:    job.RequestID,
+		BizKey:       job.BizKey,
+		SourceURL:    job.SourceURL,
+		Status:       model.JobStatusFailed,
+		StatusName:   "failed",
+		ErrorCode:    errorCode,
+		ErrorMessage: errorMessage,
+		FailedStage:  strings.ToLower(strings.TrimSuffix(errorCode, "_FAILED")),
+		RetryCount:   job.AttemptNo,
+	}
+	failedPayloadJSON, _ := json.Marshal(failedPayload)
+	failedEvent := model.OutboxEvent{
+		EventID:       idgen.Next(),
+		EventType:     "transcode.failed",
+		JobID:         job.JobID,
+		RequestID:     job.RequestID,
+		PayloadJSON:   string(failedPayloadJSON),
+		Status:        model.OutboxStatusPending,
+		MaxRetryCount: cfg.Worker.UploadMaxRetryCount,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+	if err := m.outboxRepository.Save(ctx, failedEvent); err != nil {
+		logx.Error("worker.fail_job.outbox_save_failed", err, logx.Fields{
+			"job_id": job.JobID,
+		})
+	}
+
 	logx.Error("worker.job.failed_permanently", nil, logx.Fields{
 		"job_id":        job.JobID,
 		"error_code":    errorCode,
@@ -442,6 +509,12 @@ func (m *Module) uploadSegments(ctx context.Context, segments []model.Segment) {
 	if len(segments) == 0 {
 		return
 	}
+	cfg := m.currentConfig()
+	uploader := m.currentUploader()
+	if uploader == nil {
+		logx.Error("worker.upload.uploader_not_ready", nil, nil)
+		return
+	}
 	tasks := make([]model.UploadTask, 0, len(segments))
 	for _, segment := range segments {
 		_ = m.segmentRepository.MarkUploading(ctx, segment.SegmentID)
@@ -455,13 +528,13 @@ func (m *Module) uploadSegments(ctx context.Context, segments []model.Segment) {
 			SegmentID:   segment.SegmentID,
 			JobID:       segment.JobID,
 			RenditionID: segment.RenditionID,
-			ObjectKey:   m.uploader.BuildObjectKey(segment),
+			ObjectKey:   uploader.BuildObjectKey(segment),
 			LocalPath:   segment.ObjectKey,
 			RetryCount:  segment.UploadRetryCount,
 			CreatedAt:   time.Now(),
 		})
 	}
-	pool := uploadworker.NewWorkerPool(m.cfg.Worker.SingleJobUploadConcurrency, m.uploader)
+	pool := uploadworker.NewWorkerPool(cfg.Worker.SingleJobUploadConcurrency, uploader)
 	results := pool.Run(ctx, tasks)
 	for _, result := range results {
 		if result.Success {
@@ -521,6 +594,7 @@ func (m *Module) reportHeartbeatOnce(ctx context.Context) {
 }
 
 func (m *Module) reportMetricsOnce(ctx context.Context) {
+	cfg := m.currentConfig()
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	gpuCapabilities := gpu.ToGPUCapabilities(gpu.Probe())
@@ -530,7 +604,7 @@ func (m *Module) reportMetricsOnce(ctx context.Context) {
 		CPUUsagePercent:         0,
 		MemoryUsagePercent:      approximateMemoryUsagePercent(mem),
 		GPUMemoryUsagePercent:   0,
-		UploadQueueDepth:        len(m.segmentRepository.ListPendingUpload(ctx, m.cfg.Scheduler.MaxNodeUploadConcurrency)),
+		UploadQueueDepth:        len(m.segmentRepository.ListPendingUpload(ctx, cfg.Scheduler.MaxNodeUploadConcurrency)),
 		ActiveTranscodeSessions: m.hotpathBus.ActiveProgressCount(ctx),
 		GPUCapabilities:         gpuCapabilities,
 		Timestamp:               time.Now(),
@@ -582,4 +656,131 @@ func approximateMemoryUsagePercent(mem runtime.MemStats) int {
 		return 100
 	}
 	return used
+}
+
+// buildCompletedPayload 构建转码完成回调载荷。
+//
+// 从任务信息、探测结果和分片发现结果中提取完整信息，
+// 生成包含源视频信息、各清晰度输出详情和播放地址的回调载荷。
+func (m *Module) buildCompletedPayload(ctx context.Context, job model.TranscodeJob, probeResult ffprobe.Result, discoverResult segmenter.Result) model.TranscodeCompletedPayload {
+	cfg := m.currentConfig()
+	renditionMap := make(map[string]*model.CompletedRendition)
+	totalSegments := 0
+	var totalSizeBytes uint64
+
+	for _, seg := range discoverResult.Segments {
+		totalSegments++
+		totalSizeBytes += uint64(seg.FileSize)
+
+		key := seg.RenditionName
+		rend, ok := renditionMap[key]
+		if !ok {
+			rend = &model.CompletedRendition{
+				RenditionName:         seg.RenditionName,
+				QualityLabel:          seg.QualityLabel,
+				Width:                 seg.Width,
+				Height:                seg.Height,
+				VideoCodec:            seg.VideoCodec,
+				VideoBitrateKbps:      seg.VideoBitrateKbps,
+				AudioBitrateKbps:      seg.AudioBitrateKbps,
+				ManifestDashURL:       fmt.Sprintf("/v1/manifest/dash/%d.mpd", job.JobID),
+				ManifestHLSURL:        fmt.Sprintf("/v1/manifest/hls/%d.m3u8", job.JobID),
+				ManifestHLSVariantURL: fmt.Sprintf("/v1/manifest/hls/%d/%s.m3u8", job.JobID, seg.RenditionName),
+			}
+			renditionMap[key] = rend
+		}
+		if seg.IsInit {
+			rend.InitSegmentObjectKey = seg.ObjectKey
+		} else {
+			rend.SegmentCount++
+		}
+	}
+
+	renditions := make([]model.CompletedRendition, 0, len(renditionMap))
+	for _, rend := range renditionMap {
+		renditions = append(renditions, *rend)
+	}
+
+	storageType := "s3"
+	if cfg.Storage.StorageType == "local" {
+		storageType = "local"
+	}
+
+	return model.TranscodeCompletedPayload{
+		JobID:           job.JobID,
+		RequestID:       job.RequestID,
+		BizKey:          job.BizKey,
+		SourceURL:       job.SourceURL,
+		Status:          model.JobStatusCompleted,
+		StatusName:      "completed",
+		DurationMS:      int64(probeResult.DurationMS),
+		SegmentDuration: job.SegmentDurationSec,
+		SupportDash:     job.SupportDash,
+		SupportHLS:      job.SupportHLS,
+		SegmentTemplate: cfg.Worker.SegmentTemplate,
+		StorageType:     storageType,
+		StorageBucket:   cfg.Storage.Bucket,
+		PlayDomain:      cfg.Storage.PlayDomain,
+		SourceInfo: model.SourceInfo{
+			Width:            probeResult.Width,
+			Height:           probeResult.Height,
+			VideoCodec:       probeResult.VideoCodec,
+			VideoBitrateKbps: probeResult.VideoBitrateKbps,
+			AudioCodec:       probeResult.AudioCodec,
+			AudioBitrateKbps: probeResult.AudioBitrateKbps,
+			FPS:              probeResult.FPS,
+			DurationMS:       int64(probeResult.DurationMS),
+		},
+		Renditions:        renditions,
+		TotalSegmentCount: totalSegments,
+		TotalSizeBytes:    totalSizeBytes,
+	}
+}
+
+func (m *Module) currentConfig() config.DynamicRuntimeConfig {
+	if m.effectiveConfig == nil {
+		return m.cfg
+	}
+	return m.effectiveConfig.Snapshot()
+}
+
+func (m *Module) refreshRuntimeState(cfg config.DynamicRuntimeConfig) {
+	m.uploaderMu.Lock()
+	defer m.uploaderMu.Unlock()
+	if m.uploader != nil && m.uploaderConfig == cfg.Storage {
+		m.retryPolicy = RetryPolicy{
+			BaseDelay: cfg.Worker.UploadRetryBaseDelay,
+			MaxDelay:  cfg.Worker.UploadRetryMaxDelay,
+			MaxRetry:  cfg.Worker.UploadMaxRetryCount,
+		}
+		return
+	}
+	uploader, err := storage.Open(cfg.Storage)
+	if err != nil {
+		logx.Error("worker.storage.reopen_failed", err, logx.Fields{
+			"storage_endpoint": cfg.Storage.Endpoint,
+			"storage_bucket":   cfg.Storage.Bucket,
+		})
+		return
+	}
+	m.uploader = uploader
+	m.uploaderConfig = cfg.Storage
+	m.retryPolicy = RetryPolicy{
+		BaseDelay: cfg.Worker.UploadRetryBaseDelay,
+		MaxDelay:  cfg.Worker.UploadRetryMaxDelay,
+		MaxRetry:  cfg.Worker.UploadMaxRetryCount,
+	}
+}
+
+func (m *Module) currentUploader() *storage.Client {
+	m.uploaderMu.RLock()
+	defer m.uploaderMu.RUnlock()
+	return m.uploader
+}
+
+func loopInterval(interval time.Duration, fallback time.Duration) time.Duration {
+	if interval > 0 {
+		return interval
+	}
+	return fallback
 }

@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS `t_transcode_job_request_override` (
   `override_thumb_binary_max_size_bytes` BIGINT UNSIGNED DEFAULT NULL COMMENT '请求级覆盖后的单个缩略图二进制索引包最大字节数',
   `override_bucket_prefix` VARCHAR(256) DEFAULT NULL COMMENT '请求级覆盖后的对象存储根前缀',
   `override_segment_prefix` VARCHAR(256) DEFAULT NULL COMMENT '请求级覆盖后的分片输出前缀',
+  `override_callback_url` VARCHAR(2048) DEFAULT NULL COMMENT '请求级覆盖后的单任务回调目标，支持 HTTP/gRPC/MQ',
   `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_job_id` (`job_id`),
@@ -411,6 +412,8 @@ CREATE TABLE IF NOT EXISTS `t_delivery_failure_queue` (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS `t_runtime_config` (
+  `enable_http_server` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用 HTTP 服务和 WebSocket 监控入口，0=否，1=是',
+  `enable_callback` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用回调投递模块，0=否，1=是',
   `config_version` BIGINT UNSIGNED NOT NULL COMMENT '运行配置版本号，由应用侧递增控制',
   `default_profile_id` BIGINT UNSIGNED NOT NULL COMMENT '默认转码模板ID',
   `max_global_transcode_sessions` INT NOT NULL DEFAULT 10 COMMENT '全局最大转码并发数',
@@ -851,6 +854,8 @@ WHERE `published` = 1;
 
 INSERT INTO `t_runtime_config` (
   `config_version`,
+  `enable_http_server`,
+  `enable_callback`,
   `default_profile_id`,
   `max_global_transcode_sessions`,
   `job_lease_ttl_sec`,
@@ -899,6 +904,8 @@ INSERT INTO `t_runtime_config` (
 ) VALUES (
   1,
   1,
+  1,
+  1,
   10,
   60,
   20,
@@ -945,6 +952,8 @@ INSERT INTO `t_runtime_config` (
   @now
 )
 ON DUPLICATE KEY UPDATE
+  `enable_http_server` = VALUES(`enable_http_server`),
+  `enable_callback` = VALUES(`enable_callback`),
   `default_profile_id` = VALUES(`default_profile_id`),
   `max_global_transcode_sessions` = VALUES(`max_global_transcode_sessions`),
   `job_lease_ttl_sec` = VALUES(`job_lease_ttl_sec`),

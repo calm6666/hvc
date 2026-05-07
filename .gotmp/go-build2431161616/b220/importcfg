@@ -1,0 +1,17 @@
+# import config
+packagefile context=D:\hilihili\server\hvc\.gocache\b4\b4183b72b01ee34c104f2643ea9dc36e464f79f396a677679e635b2811db203c-d
+packagefile crypto/sha256=D:\hilihili\server\hvc\.gocache\06\06338781b813675094bb2f5aa4bd1fb47e6d9decf3d29894a47624897f3dae2d-d
+packagefile encoding/hex=D:\hilihili\server\hvc\.gocache\c1\c13fec21a6694d028533d125e73e71d4783ed2c3b35bd93cc9311587890e5689-d
+packagefile encoding/json=D:\hilihili\server\hvc\.gocache\ef\ef224f26b95fa1070d909134b1a46a45abd5f642d57d809f245e3451417a1637-d
+packagefile errors=D:\hilihili\server\hvc\.gocache\80\8044b4c077c539b6e90ff9e4d0197f0c48f0c117813fd08e52b761257fd99e41-d
+packagefile fmt=D:\hilihili\server\hvc\.gocache\9d\9dbda6e832b423d90ca1c95ac9172eccafed6efaeed208ed6a80a0c79adc0121-d
+packagefile github.com/go-sql-driver/mysql=D:\hilihili\server\hvc\.gocache\04\04716cc0a3b0b6ecd528a05c4d1892106ab20b39d013d878e9ea6e596bd19c93-d
+packagefile gorm.io/driver/mysql=D:\hilihili\server\hvc\.gocache\f5\f5efba2cb0c4d9203f1dad248054265bdebcbf1da1255b412340308c78b25609-d
+packagefile gorm.io/gorm=D:\hilihili\server\hvc\.gocache\47\479d052f18cf8a9df7a4e5d687309caa2a15fd66aad35f284e2d32b920bc2618-d
+packagefile gorm.io/gorm/clause=D:\hilihili\server\hvc\.gocache\2e\2e26de313a63d547c65a0879cb583a3983a197c9c41080f6ebe5c96dda4d7263-d
+packagefile hvc/internal/config=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b001\_pkg_.a
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b245\_pkg_.a
+packagefile hvc/pkg/idgen=D:\hilihili\server\hvc\.gocache\35\35483ca11bba7fcba2ab03c7c35c6702694c67fadeccd3a7963965b2ac11c5ec-d
+packagefile net=D:\hilihili\server\hvc\.gocache\50\5084280ec753990e8a136516a062b6e2c75325eee81cde3d83a9d4ec97e7d85d-d
+packagefile strings=D:\hilihili\server\hvc\.gocache\66\6645e12e1f8b109c5a45aea4ea5919430c735ffd4ebba6c0531951579e9a3498-d
+packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d

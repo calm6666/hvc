@@ -23,6 +23,15 @@ type Connection struct {
 //   - 默认使用 amqp://guest:guest@127.0.0.1:5672/
 func Open(cfg config.RuntimeConfig) (*Connection, error) {
 	dsn := buildDSN(cfg)
+	return openDSN(dsn)
+}
+
+// OpenRuntime 根据运行时 MQ 配置打开连接。
+func OpenRuntime(cfg config.MQRuntimeConfig) (*Connection, error) {
+	return openDSN(buildRuntimeDSN(cfg))
+}
+
+func openDSN(dsn string) (*Connection, error) {
 	conn, err := amqp091.Dial(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("连接 RabbitMQ 失败 (%s): %w", maskDSN(dsn), err)
@@ -84,6 +93,30 @@ func buildDSN(cfg config.RuntimeConfig) string {
 		vhost = "/"
 	}
 
+	return fmt.Sprintf("amqp://%s:%s@%s:%d/%s", user, password, host, port, vhost)
+}
+
+func buildRuntimeDSN(cfg config.MQRuntimeConfig) string {
+	host := cfg.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := cfg.Port
+	if port == 0 {
+		port = 5672
+	}
+	user := cfg.Username
+	if user == "" {
+		user = "guest"
+	}
+	password := cfg.Password
+	if password == "" {
+		password = "guest"
+	}
+	vhost := cfg.VHost
+	if vhost == "" {
+		vhost = "/"
+	}
 	return fmt.Sprintf("amqp://%s:%s@%s:%d/%s", user, password, host, port, vhost)
 }
 

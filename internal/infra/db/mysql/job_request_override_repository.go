@@ -33,6 +33,7 @@ func toJobRequestOverrideRecord(item model.TranscodeJobRequestOverride) Transcod
 		OverrideThumbBinaryMaxSizeBytes:  item.OverrideThumbBinaryMaxSizeBytes,
 		OverrideBucketPrefix:             item.OverrideBucketPrefix,
 		OverrideSegmentPrefix:            item.OverrideSegmentPrefix,
+		OverrideCallbackURL:              item.OverrideCallbackURL,
 		CreatedAt:                        item.CreatedAt,
 	}
 }
@@ -72,6 +73,7 @@ func toJobRequestOverrideModel(record TranscodeJobRequestOverrideRecord) model.T
 		OverrideThumbBinaryMaxSizeBytes:  record.OverrideThumbBinaryMaxSizeBytes,
 		OverrideBucketPrefix:             record.OverrideBucketPrefix,
 		OverrideSegmentPrefix:            record.OverrideSegmentPrefix,
+		OverrideCallbackURL:              record.OverrideCallbackURL,
 		CreatedAt:                        record.CreatedAt,
 	}
 }

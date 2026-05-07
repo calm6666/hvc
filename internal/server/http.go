@@ -11,6 +11,7 @@ import (
 	adminhttp "hvc/internal/interfaces/http/admin"
 	httpmiddleware "hvc/internal/interfaces/http/middleware"
 	publichttp "hvc/internal/interfaces/http/public"
+	wsmonitor "hvc/internal/interfaces/ws/monitor"
 	"hvc/pkg/logx"
 )
 
@@ -31,10 +32,12 @@ type HTTPServer struct {
 	adminClusterHandle   *adminhttp.ClusterHandler
 	adminTranscodeHandle *adminhttp.TranscodeHandler
 	adminLiveHandle      *adminhttp.LiveHandler
+	namingTemplateHandle *adminhttp.NamingTemplateHandler
+	monitorHandle        *wsmonitor.SnapshotHandler
 }
 
 // NewHTTPServer 创建 HTTP 服务。
-func NewHTTPServer(cfg config.ServerConfig, systemHandler *handler.SystemHandler, transcodeHandler *publichttp.TranscodeHandler, clusterHandler *publichttp.ClusterHandler, liveHandler *publichttp.LiveHandler, manifestHandler *publichttp.ManifestHandler, authHandler *adminhttp.AuthHandler, configHandler *adminhttp.ConfigHandler, callbackHandler *adminhttp.CallbackHandler, rbacHandler *adminhttp.RBACHandler, writeRBACHandler *adminhttp.WriteRBAC, configCenterHandler *adminhttp.ConfigCenterHandler, adminClusterHandler *adminhttp.ClusterHandler, adminTranscodeHandler *adminhttp.TranscodeHandler, adminLiveHandler *adminhttp.LiveHandler) *HTTPServer {
+func NewHTTPServer(cfg config.ServerConfig, systemHandler *handler.SystemHandler, transcodeHandler *publichttp.TranscodeHandler, clusterHandler *publichttp.ClusterHandler, liveHandler *publichttp.LiveHandler, manifestHandler *publichttp.ManifestHandler, authHandler *adminhttp.AuthHandler, configHandler *adminhttp.ConfigHandler, callbackHandler *adminhttp.CallbackHandler, rbacHandler *adminhttp.RBACHandler, writeRBACHandler *adminhttp.WriteRBAC, configCenterHandler *adminhttp.ConfigCenterHandler, adminClusterHandler *adminhttp.ClusterHandler, adminTranscodeHandler *adminhttp.TranscodeHandler, adminLiveHandler *adminhttp.LiveHandler, namingTemplateHandler *adminhttp.NamingTemplateHandler, monitorHandler *wsmonitor.SnapshotHandler) *HTTPServer {
 	return &HTTPServer{
 		listenAddress:        cfg.ListenAddress,
 		systemHandler:        systemHandler,
@@ -51,6 +54,8 @@ func NewHTTPServer(cfg config.ServerConfig, systemHandler *handler.SystemHandler
 		adminClusterHandle:   adminClusterHandler,
 		adminTranscodeHandle: adminTranscodeHandler,
 		adminLiveHandle:      adminLiveHandler,
+		namingTemplateHandle: namingTemplateHandler,
+		monitorHandle:        monitorHandler,
 	}
 }
 
@@ -82,6 +87,9 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	mux.Handle("/v1/admin/config/callback/list", httpmiddleware.RequirePermission("config.callback.read", http.HandlerFunc(s.callbackHandler.List)))
 	mux.Handle("/v1/admin/config/callback/upsert", httpmiddleware.RequirePermission("config.callback.update", http.HandlerFunc(s.callbackHandler.Upsert)))
 	mux.Handle("/v1/admin/config/callback/enabled", httpmiddleware.RequirePermission("config.callback.update", http.HandlerFunc(s.callbackHandler.SetEnabled)))
+	mux.Handle("/v1/admin/config/naming-template/list", httpmiddleware.RequirePermission("config.naming_template.read", http.HandlerFunc(s.namingTemplateHandle.ListTemplates)))
+	mux.Handle("/v1/admin/config/naming-template/configure", httpmiddleware.RequirePermission("config.naming_template.update", http.HandlerFunc(s.namingTemplateHandle.ConfigureTemplate)))
+	mux.Handle("/v1/admin/config/naming-template/activate", httpmiddleware.RequirePermission("config.naming_template.update", http.HandlerFunc(s.namingTemplateHandle.ActivateTemplate)))
 	mux.Handle("/v1/admin/config-center/list", httpmiddleware.RequirePermission("config.version.read", http.HandlerFunc(s.configCenterHandle.List)))
 	mux.Handle("/v1/admin/config-center/upsert", httpmiddleware.RequirePermission("config.version.publish", http.HandlerFunc(s.configCenterHandle.Upsert)))
 	mux.Handle("/v1/admin/config-center/enabled", httpmiddleware.RequirePermission("config.version.publish", http.HandlerFunc(s.configCenterHandle.SetEnabled)))
@@ -107,6 +115,8 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	mux.Handle("/v1/admin/transcode/job/retry", httpmiddleware.RequirePermission("transcode.job.retry", http.HandlerFunc(s.adminTranscodeHandle.RetryJob)))
 	mux.Handle("/v1/admin/transcode/job/cancel", httpmiddleware.RequirePermission("transcode.job.cancel", http.HandlerFunc(s.adminTranscodeHandle.CancelJob)))
 	mux.Handle("/v1/admin/transcode/job/progress", httpmiddleware.RequirePermission("transcode.job.read", http.HandlerFunc(s.adminTranscodeHandle.JobProgress)))
+	mux.Handle("/v1/admin/transcode/monitor/snapshot", httpmiddleware.RequirePermission("transcode.job.read", http.HandlerFunc(s.monitorHandle.Snapshot)))
+	mux.Handle("/v1/admin/transcode/monitor/ws", httpmiddleware.RequirePermission("transcode.job.read", http.HandlerFunc(s.monitorHandle.HandleWS)))
 
 	mux.Handle("/v1/admin/live/channel/create", httpmiddleware.RequirePermission("live.channel.create", http.HandlerFunc(s.adminLiveHandle.CreateChannel)))
 	mux.Handle("/v1/admin/live/channel/detail", httpmiddleware.RequirePermission("live.channel.read", http.HandlerFunc(s.adminLiveHandle.ChannelDetail)))

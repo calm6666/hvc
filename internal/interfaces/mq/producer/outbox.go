@@ -3,14 +3,14 @@ package producer
 import (
 	"context"
 	"encoding/json"
-	"hvc/internal/model"
 	"github.com/rabbitmq/amqp091-go"
+	"hvc/internal/model"
 )
 
 // Publisher 表示 MQ 生产者。
 type Publisher struct {
-	channel *amqp091.Channel
-	exchange string
+	channel    *amqp091.Channel
+	exchange   string
 	routingKey string
 }
 
@@ -25,8 +25,13 @@ func (p *Publisher) PublishOutbox(ctx context.Context, event model.OutboxEvent) 
 	if err != nil {
 		return err
 	}
+	return p.PublishPayload(ctx, payload)
+}
+
+// PublishPayload 发布原始消息体。
+func (p *Publisher) PublishPayload(ctx context.Context, payload []byte) error {
 	return p.channel.PublishWithContext(ctx, p.exchange, p.routingKey, false, false, amqp091.Publishing{
 		ContentType: "application/json",
-		Body: payload,
+		Body:        payload,
 	})
 }

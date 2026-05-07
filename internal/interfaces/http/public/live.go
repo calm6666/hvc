@@ -3,8 +3,8 @@ package public
 import (
 	"net/http"
 
-	livesvc "hvc/internal/service/live"
 	"hvc/internal/model"
+	livesvc "hvc/internal/service/live"
 	"hvc/pkg/logx"
 )
 
@@ -27,6 +27,6 @@ func (h *LiveHandler) GetPlaybackInfo(w http.ResponseWriter, r *http.Request) {
 	logx.WriteJSON(w, http.StatusOK, model.Response{
 		Code:    0,
 		Message: "ok",
-		Data:    h.service.GetPlaybackInfo(channelKey),
+		Data:    h.service.GetPlaybackInfoContext(r.Context(), channelKey),
 	})
 }

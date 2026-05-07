@@ -1,0 +1,15 @@
+# import config
+packagefile bytes=D:\hilihili\server\hvc\.gocache\f0\f0f9d526fd399ece393495cbca881da350bf4fb26d83b4584dfd0fc6c6dc106a-d
+packagefile context=D:\hilihili\server\hvc\.gocache\b4\b4183b72b01ee34c104f2643ea9dc36e464f79f396a677679e635b2811db203c-d
+packagefile encoding/json=D:\hilihili\server\hvc\.gocache\ef\ef224f26b95fa1070d909134b1a46a45abd5f642d57d809f245e3451417a1637-d
+packagefile fmt=D:\hilihili\server\hvc\.gocache\9d\9dbda6e832b423d90ca1c95ac9172eccafed6efaeed208ed6a80a0c79adc0121-d
+packagefile github.com/redis/go-redis/v9=D:\hilihili\server\hvc\.gocache\32\32539116185ab9d811a9b792ce33b8554e4193b012a5edda0aa7b849e59557db-d
+packagefile hvc/internal/config=D:\hilihili\server\hvc\.gocache\a7\a748b5f039149b34c3dfe64b059f437a37b33f6045fbb113908ab3bbf84a87ec-d
+packagefile hvc/internal/infra/cache/redis=D:\hilihili\server\hvc\.gocache\ff\ff989294362690ff176cf30f88caa03a15d7fd69ccac9343ecc7570e22343100-d
+packagefile hvc/internal/infra/db/mysql=D:\hilihili\server\hvc\.gocache\13\13711089aa3eb3e23717e1429661ed39b20e0d7a6719c0aeb8af72f427d44991-d
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gocache\b0\b0d2ccff21af2e639cd8b568ba599bd0de5730835348a7ff8b711751becb73b2-d
+packagefile hvc/pkg/logx=D:\hilihili\server\hvc\.gocache\bb\bb08e73f64ee8b88298f0f157def7f73e6cd37fcd2ee7e71736109292b5b1085-d
+packagefile hvc/pkg/retryx=D:\hilihili\server\hvc\.gocache\59\59b93abc371d63c9a1e5f79e5c01f025a1467a0a79bbe5d1791d286786ab8022-d
+packagefile io=D:\hilihili\server\hvc\.gocache\dd\dd8d6a3c540e927692bd3f654fe43df87f9623763d4b149c75a28e448ff5133d-d
+packagefile net/http=D:\hilihili\server\hvc\.gocache\f6\f64e4b596df7c160f354029e7b27e4eda7b2e4d1bef46228789e3545940235f1-d
+packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d

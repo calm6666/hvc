@@ -18,6 +18,6 @@ func NewCreateChannelUseCase(service *livesvc.ChannelService) *CreateChannelUseC
 
 // Execute 创建直播频道。
 func (u *CreateChannelUseCase) Execute(ctx context.Context, channelKey string, channelName string, profileID uint64) model.LiveChannel {
-	_ = ctx
-	return u.service.CreateChannel(channelKey, channelName, profileID)
+	channel, _ := u.service.CreateChannelContext(ctx, channelKey, channelName, profileID)
+	return channel
 }

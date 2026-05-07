@@ -2,11 +2,12 @@ package model
 
 import "time"
 
+// 分片上传状态常量，表示分片从创建到上传完成的完整状态。
 const (
-	SegmentUploadPending   = 1
-	SegmentUploading       = 2
-	SegmentUploaded        = 3
-	SegmentUploadFailed    = 4
+	SegmentUploadPending = 1 // 待上传
+	SegmentUploading     = 2 // 上传中
+	SegmentUploaded      = 3 // 已上传
+	SegmentUploadFailed  = 4 // 上传失败
 )
 
 // Segment 表示分片元数据。

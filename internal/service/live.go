@@ -6,8 +6,9 @@ package service
 
 import (
 	"hvc/internal/config"
-	liveservice "hvc/internal/service/live"
+	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
+	liveservice "hvc/internal/service/live"
 )
 
 // LiveChannelService 是对 service/live.ChannelService 的类型别名，
@@ -16,7 +17,7 @@ type LiveChannelService = liveservice.ChannelService
 
 // NewLiveChannelService 创建直播频道服务。
 func NewLiveChannelService(cfg config.DynamicRuntimeConfig) *LiveChannelService {
-	return liveservice.NewChannelService(cfg)
+	return liveservice.NewChannelService(cfg, (*mysql.LiveChannelRepository)(nil), (*mysql.LiveSessionRepository)(nil), (*mysql.LiveProfileRenditionRepository)(nil))
 }
 
 // CreateLiveChannel 创建直播频道的便捷函数。

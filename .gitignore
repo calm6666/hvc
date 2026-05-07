@@ -1,0 +1,94 @@
+# ============================================================
+# HVC 视频转码服务 - Git 忽略规则
+# ============================================================
+
+# ---- Go 编译产物 ----
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+.gocache/
+
+# ---- 构建输出目录 ----
+build/
+release/
+dist/
+bin/
+out/
+
+# ---- Go 工具缓存 ----
+go.work
+go.work.sum
+
+# ---- IDE 和编辑器 ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.iml
+
+# ---- 操作系统生成文件 ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ---- 配置文件（含敏感信息） ----
+configs/config.local.yaml
+configs/config.prod.yaml
+configs/config.staging.yaml
+*.env
+.env
+.env.*
+!.env.example
+
+# ---- 临时文件和日志 ----
+tmp/
+temp/
+*.log
+*.tmp
+*.bak
+logs/
+
+# ---- 依赖和缓存 ----
+vendor/
+node_modules/
+
+# ---- Air 热重载临时文件 ----
+tmp_air/
+
+# ---- 数据库文件（本地开发） ----
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- 转码临时输出 ----
+output/
+media/
+
+# ---- 测试覆盖率 ----
+coverage.txt
+coverage.html
+coverage.out
+
+# ---- Docker 卷数据 ----
+data/
+
+# ---- Protocol Buffers 生成文件 ----
+*.pb.go
+
+# ---- 加密和密钥文件 ----
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+secrets/

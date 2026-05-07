@@ -4,6 +4,7 @@ import (
 	"hvc/internal/model"
 )
 
+// ToSnapshot 将转码进度转换为进度快照，并计算预估剩余时间。
 func ToSnapshot(p model.TranscodeProgress, status int) model.ProgressSnapshot {
 	estimatedRemainingMS := int64(0)
 	if p.Speed > 0 && p.Percent < 100 {

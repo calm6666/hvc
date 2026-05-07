@@ -59,7 +59,10 @@ func (r *OutboxRepository) Save(ctx context.Context, event model.OutboxEvent) er
 // ListPending 返回待投递事件。
 func (r *OutboxRepository) ListPending(ctx context.Context) []model.OutboxEvent {
 	var records []OutboxRecord
-	if err := r.db.WithContext(ctx).Where("status IN ?", []int{model.OutboxStatusPending, model.OutboxStatusFailed}).Find(&records).Error; err != nil {
+	now := time.Now()
+	if err := r.db.WithContext(ctx).
+		Where("status = ? AND (next_retry_at IS NULL OR next_retry_at <= ?)", model.OutboxStatusPending, now).
+		Find(&records).Error; err != nil {
 		return nil
 	}
 	items := make([]model.OutboxEvent, 0, len(records))
@@ -77,13 +80,24 @@ func (r *OutboxRepository) MarkDelivered(ctx context.Context, eventID uint64) er
 	}).Error
 }
 
-// MarkFailed 标记投递失败。
-func (r *OutboxRepository) MarkFailed(ctx context.Context, eventID uint64, message string) error {
+// MarkRetryable 标记本次投递失败，并安排下次重试。
+func (r *OutboxRepository) MarkRetryable(ctx context.Context, eventID uint64, message string, nextRetryAt time.Time) error {
 	return r.db.WithContext(ctx).Model(&OutboxRecord{}).Where("event_id = ?", eventID).Updates(map[string]any{
 		"status":             model.OutboxStatusFailed,
 		"retry_count":        gormExpr("retry_count + 1"),
 		"last_error_message": message,
-		"next_retry_at":      time.Now().Add(2 * time.Second),
+		"next_retry_at":      nextRetryAt,
+		"updated_at":         time.Now(),
+	}).Error
+}
+
+// MarkFinalFailed 标记事件已达到最终失败状态。
+func (r *OutboxRepository) MarkFinalFailed(ctx context.Context, eventID uint64, message string) error {
+	return r.db.WithContext(ctx).Model(&OutboxRecord{}).Where("event_id = ?", eventID).Updates(map[string]any{
+		"status":             model.OutboxStatusFailed,
+		"retry_count":        gormExpr("retry_count + 1"),
+		"last_error_message": message,
+		"next_retry_at":      time.Time{},
 		"updated_at":         time.Now(),
 	}).Error
 }

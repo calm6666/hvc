@@ -3,17 +3,18 @@ package public
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"hvc/internal/manifest"
-	"hvc/pkg/logx"
 )
 
-// ManifestHandler 清单动态构建处理器。
+// ManifestHandler 清单动态生成处理器。
 //
-// 提供以下接口：
-//   - GET /api/v1/manifest/dash/{job_id}.mpd  -- 动态构建 DASH MPD
-//   - GET /api/v1/manifest/hls/{job_id}.m3u8   -- 动态构建 HLS Master m3u8
-//   - GET /api/v1/manifest/hls/{job_id}/{rendition}.m3u8 -- 动态构建 HLS Variant m3u8
+// 提供 DASH MPD 和 HLS m3u8 的动态生成接口。
+// 支持通过查询参数控制可见清晰度列表，实现版权保护：
+//   - renditions 参数：逗号分隔的清晰度名称白名单（如 1080p,720p）
+//   - max_height 参数：最大允许高度（如 720 表示只返回 720p 及以下）
+//   - 不传参数则返回全部清晰度
 type ManifestHandler struct {
 	builder *manifest.Builder
 }
@@ -25,22 +26,22 @@ func NewManifestHandler(builder *manifest.Builder) *ManifestHandler {
 
 // ServeMPD 动态构建 DASH MPD 播放清单。
 //
-// GET /api/v1/manifest/dash/{job_id}.mpd
+// GET /v1/manifest/dash/{job_id}.mpd
+//
+// 查询参数：
+//   - renditions: 逗号分隔的清晰度白名单（版权保护，如 renditions=720p,480p）
+//   - max_height: 最大允许高度（如 max_height=720）
 func (h *ManifestHandler) ServeMPD(w http.ResponseWriter, r *http.Request) {
-	jobID, err := strconv.ParseUint(r.PathValue("job_id"), 10, 64)
-	if err != nil {
+	jobID, err := strconv.ParseUint(getPathValue(r, "job_id"), 10, 64)
+	if err != nil || jobID == 0 {
 		http.Error(w, "invalid job_id", http.StatusBadRequest)
 		return
 	}
 
-	if h.builder == nil {
-		http.Error(w, "manifest builder not available", http.StatusServiceUnavailable)
-		return
-	}
+	filter := parseRenditionFilter(r)
 
-	mpd, err := h.builder.BuildMPD(r.Context(), jobID)
+	mpd, err := h.builder.BuildMPD(r.Context(), jobID, filter)
 	if err != nil {
-		logx.Error("manifest.mpd.build_failed", err, logx.Fields{"job_id": jobID})
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -52,22 +53,22 @@ func (h *ManifestHandler) ServeMPD(w http.ResponseWriter, r *http.Request) {
 
 // ServeMasterM3U8 动态构建 HLS Master 播放清单。
 //
-// GET /api/v1/manifest/hls/{job_id}.m3u8
+// GET /v1/manifest/hls/{job_id}.m3u8
+//
+// 查询参数：
+//   - renditions: 逗号分隔的清晰度白名单
+//   - max_height: 最大允许高度
 func (h *ManifestHandler) ServeMasterM3U8(w http.ResponseWriter, r *http.Request) {
-	jobID, err := strconv.ParseUint(r.PathValue("job_id"), 10, 64)
-	if err != nil {
+	jobID, err := strconv.ParseUint(getPathValue(r, "job_id"), 10, 64)
+	if err != nil || jobID == 0 {
 		http.Error(w, "invalid job_id", http.StatusBadRequest)
 		return
 	}
 
-	if h.builder == nil {
-		http.Error(w, "manifest builder not available", http.StatusServiceUnavailable)
-		return
-	}
+	filter := parseRenditionFilter(r)
 
-	m3u8, err := h.builder.BuildM3U8(r.Context(), jobID)
+	m3u8, err := h.builder.BuildM3U8(r.Context(), jobID, filter)
 	if err != nil {
-		logx.Error("manifest.m3u8.build_failed", err, logx.Fields{"job_id": jobID})
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -79,31 +80,22 @@ func (h *ManifestHandler) ServeMasterM3U8(w http.ResponseWriter, r *http.Request
 
 // ServeVariantM3U8 动态构建 HLS Variant 播放清单。
 //
-// GET /api/v1/manifest/hls/{job_id}/{rendition}.m3u8
+// GET /v1/manifest/hls/{job_id}/{rendition}.m3u8
 func (h *ManifestHandler) ServeVariantM3U8(w http.ResponseWriter, r *http.Request) {
-	jobID, err := strconv.ParseUint(r.PathValue("job_id"), 10, 64)
-	if err != nil {
+	jobID, err := strconv.ParseUint(getPathValue(r, "job_id"), 10, 64)
+	if err != nil || jobID == 0 {
 		http.Error(w, "invalid job_id", http.StatusBadRequest)
 		return
 	}
 
-	rendition := r.PathValue("rendition")
+	rendition := getPathValue(r, "rendition")
 	if rendition == "" {
-		http.Error(w, "missing rendition", http.StatusBadRequest)
-		return
-	}
-
-	if h.builder == nil {
-		http.Error(w, "manifest builder not available", http.StatusServiceUnavailable)
+		http.Error(w, "invalid rendition", http.StatusBadRequest)
 		return
 	}
 
 	m3u8, err := h.builder.BuildVariantM3U8(r.Context(), jobID, rendition)
 	if err != nil {
-		logx.Error("manifest.variant_m3u8.build_failed", err, logx.Fields{
-			"job_id":    jobID,
-			"rendition": rendition,
-		})
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -111,4 +103,38 @@ func (h *ManifestHandler) ServeVariantM3U8(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "public, max-age=5")
 	w.Write([]byte(m3u8))
+}
+
+// parseRenditionFilter 从请求参数解析清晰度过滤条件。
+//
+// 支持两种过滤方式：
+//   - renditions=720p,480p  按名称白名单过滤
+//   - max_height=720        按最大高度过滤
+// 两者同时存在时取交集。
+func parseRenditionFilter(r *http.Request) manifest.RenditionFilter {
+	filter := manifest.RenditionFilter{}
+
+	renditionsParam := r.URL.Query().Get("renditions")
+	if renditionsParam != "" {
+		for _, r := range strings.Split(renditionsParam, ",") {
+			name := strings.TrimSpace(r)
+			if name != "" {
+				filter.AllowedNames = append(filter.AllowedNames, name)
+			}
+		}
+	}
+
+	maxHeightParam := r.URL.Query().Get("max_height")
+	if maxHeightParam != "" {
+		if h, err := strconv.Atoi(maxHeightParam); err == nil && h > 0 {
+			filter.MaxHeight = h
+		}
+	}
+
+	return filter
+}
+
+// getPathValue 从 URL 路径中获取命名参数。
+func getPathValue(r *http.Request, key string) string {
+	return r.PathValue(key)
 }

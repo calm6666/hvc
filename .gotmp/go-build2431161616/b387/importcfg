@@ -1,0 +1,5 @@
+# import config
+packagefile hvc/internal/config=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b001\_pkg_.a
+packagefile hvc/internal/infra/db/mysql=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b220\_pkg_.a
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b245\_pkg_.a
+packagefile hvc/internal/service/live=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b388\_pkg_.a

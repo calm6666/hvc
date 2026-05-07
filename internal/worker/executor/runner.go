@@ -18,6 +18,7 @@ import (
 	"hvc/pkg/logx"
 )
 
+// Runner 管理 FFmpeg 进程的启动、进度解析和停止。
 type Runner struct {
 	ffmpegPath      string
 	totalDurationMs int64
@@ -25,10 +26,12 @@ type Runner struct {
 	cancelFn        context.CancelFunc
 }
 
+// NewRunner 创建 FFmpeg 执行器，自动查找 FFmpeg 二进制路径。
 func NewRunner() *Runner {
 	return &Runner{ffmpegPath: ffmpegprocess.FindFFmpeg()}
 }
 
+// Run 启动 FFmpeg 进程执行转码，返回进度通道。
 func (r *Runner) Run(ctx context.Context, job model.TranscodeJob, pipeline planner.Pipeline, totalDurationMs int64) (<-chan model.TranscodeProgress, error) {
 	r.totalDurationMs = totalDurationMs
 
@@ -73,6 +76,7 @@ func (r *Runner) Run(ctx context.Context, job model.TranscodeJob, pipeline plann
 	return ch, nil
 }
 
+// Stop 停止 FFmpeg 进程，force 为 true 时发送 SIGKILL 强制终止。
 func (r *Runner) Stop(force bool) {
 	if r.cancelFn != nil {
 		r.cancelFn()

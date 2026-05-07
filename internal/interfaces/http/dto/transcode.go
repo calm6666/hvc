@@ -5,20 +5,20 @@ import "hvc/internal/model"
 
 // CreateJobRequest 创建转码任务请求 DTO。
 type CreateJobRequest struct {
-	RequestID        string                `json:"request_id" binding:"required"`
-	BizKey           string                `json:"biz_key"`
-	SourceURL        string                `json:"source_url" binding:"required"`
-	ProfileID        uint64                `json:"profile_id"`
-	Priority         int                   `json:"priority"`
-	EnableWatermark  bool                  `json:"enable_watermark"`
-	Watermark        *WatermarkDTO         `json:"watermark,omitempty"`
-	VideoOptions     *VideoOptionsDTO      `json:"video_options,omitempty"`
-	SegmentOptions   *SegmentOptionsDTO    `json:"segment_options,omitempty"`
-	ThumbnailOptions *ThumbnailOptionsDTO  `json:"thumbnail_options,omitempty"`
-	StorageOptions   *StorageOptionsDTO    `json:"storage_options,omitempty"`
-	ScheduleOptions  *ScheduleOptionsDTO   `json:"schedule_options,omitempty"`
-	Renditions       []RenditionOptionDTO  `json:"renditions,omitempty"`
-	CallbackURL      string                `json:"callback_url"`
+	RequestID        string               `json:"request_id" binding:"required"`
+	BizKey           string               `json:"biz_key"`
+	SourceURL        string               `json:"source_url" binding:"required"`
+	ProfileID        uint64               `json:"profile_id"`
+	Priority         int                  `json:"priority"`
+	EnableWatermark  bool                 `json:"enable_watermark"`
+	Watermark        *WatermarkDTO        `json:"watermark,omitempty"`
+	VideoOptions     *VideoOptionsDTO     `json:"video_options,omitempty"`
+	SegmentOptions   *SegmentOptionsDTO   `json:"segment_options,omitempty"`
+	ThumbnailOptions *ThumbnailOptionsDTO `json:"thumbnail_options,omitempty"`
+	StorageOptions   *StorageOptionsDTO   `json:"storage_options,omitempty"`
+	ScheduleOptions  *ScheduleOptionsDTO  `json:"schedule_options,omitempty"`
+	Renditions       []RenditionOptionDTO `json:"renditions,omitempty"`
+	CallbackURL      string               `json:"callback_url"`
 }
 
 // WatermarkDTO 水印配置 DTO。
@@ -96,6 +96,7 @@ func (r *CreateJobRequest) ToModel() model.CreateJobRequest {
 		ProfileID:       r.ProfileID,
 		Priority:        r.Priority,
 		EnableWatermark: r.EnableWatermark,
+		CallbackURL:     r.CallbackURL,
 	}
 
 	if r.Watermark != nil {

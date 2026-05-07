@@ -1,0 +1,16 @@
+# import config
+packagefile context=D:\hilihili\server\hvc\.gocache\b4\b4183b72b01ee34c104f2643ea9dc36e464f79f396a677679e635b2811db203c-d
+packagefile crypto/hmac=D:\hilihili\server\hvc\.gocache\2e\2ea4a32110b28c454459cef642f955c5b3ed48cda4ade2e6462a3a6f77d09913-d
+packagefile crypto/sha256=D:\hilihili\server\hvc\.gocache\06\06338781b813675094bb2f5aa4bd1fb47e6d9decf3d29894a47624897f3dae2d-d
+packagefile encoding/hex=D:\hilihili\server\hvc\.gocache\c1\c13fec21a6694d028533d125e73e71d4783ed2c3b35bd93cc9311587890e5689-d
+packagefile fmt=D:\hilihili\server\hvc\.gocache\9d\9dbda6e832b423d90ca1c95ac9172eccafed6efaeed208ed6a80a0c79adc0121-d
+packagefile hvc/internal/config=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b001\_pkg_.a
+packagefile hvc/internal/infra/db/mysql=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b220\_pkg_.a
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b245\_pkg_.a
+packagefile hvc/pkg/idgen=D:\hilihili\server\hvc\.gocache\35\35483ca11bba7fcba2ab03c7c35c6702694c67fadeccd3a7963965b2ac11c5ec-d
+packagefile hvc/pkg/logx=D:\hilihili\server\hvc\.gocache\bb\bb08e73f64ee8b88298f0f157def7f73e6cd37fcd2ee7e71736109292b5b1085-d
+packagefile net/url=D:\hilihili\server\hvc\.gocache\f1\f19b6d9aa9f5ed5cb5e447ee1dd5427189d3490b42951fe53fe3a9a0f6ace771-d
+packagefile strconv=D:\hilihili\server\hvc\.gocache\3f\3f234232dacf33a8ad1915ecae2866501227e43ee673d71499dfd0f52af54ee1-d
+packagefile strings=D:\hilihili\server\hvc\.gocache\66\6645e12e1f8b109c5a45aea4ea5919430c735ffd4ebba6c0531951579e9a3498-d
+packagefile sync=D:\hilihili\server\hvc\.gocache\09\09c2923ed3c8240439feccf8199974e0f1b6541a484686ca0538f9a17719d7a7-d
+packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d

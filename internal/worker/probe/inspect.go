@@ -12,8 +12,10 @@ import (
 	"os/exec"
 )
 
+// Result 是 ffprobe 探测结果的类型别名。
 type Result = ffprobe.Result
 
+// Inspect 使用默认 30 秒超时探测源视频信息。
 func Inspect(sourceURL string) Result {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -24,6 +26,7 @@ func Inspect(sourceURL string) Result {
 	return result
 }
 
+// InspectWithContext 使用指定上下文探测源视频信息。
 func InspectWithContext(ctx context.Context, sourceURL string) (Result, error) {
 	path := ffmpegprocess.FindFFprobe()
 	args := []string{

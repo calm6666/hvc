@@ -23,12 +23,14 @@ var defaultClient = &http.Client{
 	},
 }
 
+// DownloadResult 表示文件下载结果。
 type DownloadResult struct {
 	FilePath    string
 	ContentSize int64
 	StatusCode  int
 }
 
+// Fetch 发起 HTTP GET 请求并返回响应。
 func Fetch(ctx context.Context, url string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -38,6 +40,7 @@ func Fetch(ctx context.Context, url string) (*http.Response, error) {
 	return defaultClient.Do(req)
 }
 
+// FetchHead 发起 HTTP HEAD 请求并返回响应。
 func FetchHead(ctx context.Context, url string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
@@ -47,6 +50,7 @@ func FetchHead(ctx context.Context, url string) (*http.Response, error) {
 	return defaultClient.Do(req)
 }
 
+// DownloadToFile 下载文件到本地路径。
 func DownloadToFile(ctx context.Context, url string, destPath string) (DownloadResult, error) {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return DownloadResult{}, fmt.Errorf("create dest dir failed: %w", err)
@@ -93,6 +97,7 @@ func DownloadToFile(ctx context.Context, url string, destPath string) (DownloadR
 	}, nil
 }
 
+// DownloadRange 使用 Range 请求下载文件的指定范围到本地路径。
 func DownloadRange(ctx context.Context, url string, destPath string, offset int64, length int64) (DownloadResult, error) {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return DownloadResult{}, fmt.Errorf("create dest dir failed: %w", err)
@@ -134,6 +139,7 @@ func DownloadRange(ctx context.Context, url string, destPath string, offset int6
 	}, nil
 }
 
+// ContentLength 通过 HEAD 请求获取远程文件大小。
 func ContentLength(ctx context.Context, url string) (int64, error) {
 	resp, err := FetchHead(ctx, url)
 	if err != nil {

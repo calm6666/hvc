@@ -188,6 +188,7 @@ func selectPreset(executionHW string) string {
 	}
 }
 
+// BuildFFmpegArgs 根据转码管道配置构建 FFmpeg 命令行参数。
 func BuildFFmpegArgs(pipeline Pipeline) []string {
 	args := []string{"-hide_banner", "-y"}
 

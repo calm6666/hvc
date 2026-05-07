@@ -1,0 +1,1751 @@
+{
+  "info": {
+    "name": "HVC API Collection",
+    "description": "HTTP collection for public, admin, and internal HVC endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Healthz",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/healthz",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public / Transcode",
+      "item": [
+        {
+          "name": "Create Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"req-001\",\n  \"biz_key\": \"biz-video-001\",\n  \"source_url\": \"https://example.com/video.mp4\",\n  \"profile_id\": 0,\n  \"priority\": 5,\n  \"enable_watermark\": true,\n  \"watermark\": {\n    \"image_url\": \"https://example.com/wm.png\",\n    \"anchor\": 2,\n    \"x_ratio\": 0.02,\n    \"y_ratio\": 0.02,\n    \"width_ratio\": 0.12,\n    \"opacity\": 0.8,\n    \"safe_margin_ratio\": 0.03\n  },\n  \"segment_options\": {\n    \"segment_duration_sec\": 6,\n    \"support_dash\": true,\n    \"support_hls\": true\n  },\n  \"thumbnail_options\": {\n    \"enable_sprite\": true,\n    \"sprite_rows\": 5,\n    \"sprite_cols\": 10,\n    \"thumb_interval_sec\": 10,\n    \"thumb_width\": 160,\n    \"thumb_height\": 90,\n    \"sprite_image_format\": \"jpg\",\n    \"sprite_storage_prefix\": \"hvc/thumbnails\",\n    \"enable_binary_index\": true,\n    \"binary_storage_prefix\": \"hvc/thumbnails/bin\",\n    \"binary_max_size_bytes\": 1048576\n  },\n  \"storage_options\": {\n    \"bucket_prefix\": \"hvc/runtime\"\n  },\n  \"callback_url\": \"grpc://127.0.0.1:9000/transcode.callback.Service/Notify\",\n  \"schedule_options\": {\n    \"preferred_hwaccel\": \"nvidia\"\n  },\n  \"renditions\": [\n    {\n      \"name\": \"1080p\",\n      \"width\": 0,\n      \"height\": 1080,\n      \"video_codec\": \"\",\n      \"video_bitrate_kbps\": 5000,\n      \"video_maxrate_kbps\": 5500,\n      \"video_bufsize_kbps\": 10000,\n      \"preset\": \"p4\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/transcode/job/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "transcode",
+                "job",
+                "create"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Query Progress",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/transcode/job/progress?request_id=req-001",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "transcode",
+                "job",
+                "progress"
+              ],
+              "query": [
+                {
+                  "key": "request_id",
+                  "value": "req-001"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public / Manifest",
+      "item": [
+        {
+          "name": "DASH MPD",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/manifest/dash/{{job_id}}.mpd",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "manifest",
+                "dash",
+                "{{job_id}}.mpd"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DASH MPD Filtered",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/manifest/dash/{{job_id}}.mpd?renditions=720p,480p&max_height=720",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "manifest",
+                "dash",
+                "{{job_id}}.mpd"
+              ],
+              "query": [
+                {
+                  "key": "renditions",
+                  "value": "720p,480p"
+                },
+                {
+                  "key": "max_height",
+                  "value": "720"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "HLS Master",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/manifest/hls/{{job_id}}.m3u8",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "manifest",
+                "hls",
+                "{{job_id}}.m3u8"
+              ]
+            }
+          }
+        },
+        {
+          "name": "HLS Variant",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/manifest/hls/{{job_id}}/1080p.m3u8",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "manifest",
+                "hls",
+                "{{job_id}}",
+                "1080p.m3u8"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public / Live",
+      "item": [
+        {
+          "name": "Get Playback",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/live/channel/playback?channel_key=live-001",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "live",
+                "channel",
+                "playback"
+              ],
+              "query": [
+                {
+                  "key": "channel_key",
+                  "value": "live-001"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "admin",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "admin123",
+                  "type": "text"
+                },
+                {
+                  "key": "otp_code",
+                  "value": "",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Who Am I",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ping",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/ping",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "ping"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Runtime Config",
+      "item": [
+        {
+          "name": "List Runtime Versions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/runtime/versions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "runtime",
+                "versions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Runtime",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enable_http_server\": true,\n  \"enable_callback\": true,\n  \"default_profile_id\": 0,\n  \"max_global_transcode_sessions\": 100,\n  \"job_lease_ttl_sec\": 300,\n  \"worker_heartbeat_timeout_sec\": 30,\n  \"allow_request_override_profile\": true,\n  \"allow_request_override_segment_duration\": true,\n  \"allow_request_override_hwaccel\": true,\n  \"scheduler_loop_interval_ms\": 1000,\n  \"worker_loop_interval_ms\": 1000,\n  \"single_job_upload_concurrency\": 4,\n  \"require_hardware_encode\": false,\n  \"allow_software_decode_fallback\": true,\n  \"require_hardware_watermark\": false,\n  \"node_cpu_safety_limit_percent\": 85,\n  \"node_memory_safety_limit_percent\": 85,\n  \"node_gpu_safety_limit_percent\": 90,\n  \"callback_http_url\": \"https://callback.example.com/transcode\",\n  \"callback_mq_topic\": \"transcode.job.callback\",\n  \"enable_grpc_server\": true,\n  \"grpc_listen_address\": \":9090\",\n  \"enable_mq_consumer\": true,\n  \"mq_queue_name\": \"hvc.transcode.create\",\n  \"mq_host\": \"127.0.0.1\",\n  \"mq_port\": 5672,\n  \"mq_username\": \"guest\",\n  \"mq_password\": \"guest\",\n  \"mq_vhost\": \"/\",\n  \"mq_consumer_tag\": \"hvc-runtime\",\n  \"mq_prefetch_count\": 16,\n  \"mq_loop_interval_ms\": 15000,\n  \"worker_object_prefix\": \"hvc/runtime\",\n  \"change_summary\": \"enable grpc and mq hot reload\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/runtime/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "runtime",
+                "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Publish Runtime",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"config_version\": {{config_version}},\n  \"publish_reason\": \"activate runtime config\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/publish",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "publish"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Callback Config",
+      "item": [
+        {
+          "name": "List Callback Configs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/callback/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "callback",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upsert Callback Config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callback_config_id\": 0,\n  \"callback_name\": \"biz-http-callback\",\n  \"callback_type\": 1,\n  \"target_url\": \"https://your-system.example.com/callback\",\n  \"rpc_endpoint\": \"\",\n  \"rpc_service_name\": \"\",\n  \"mq_exchange\": \"\",\n  \"mq_routing_key\": \"\",\n  \"timeout_ms\": 5000,\n  \"retry_times\": 3,\n  \"enabled\": true,\n  \"priority\": 10,\n  \"registry_id\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/callback/upsert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "callback",
+                "upsert"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Enable Callback Config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callback_config_id\": 1,\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/callback/enabled",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "callback",
+                "enabled"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Naming Template",
+      "item": [
+        {
+          "name": "List Naming Templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/naming-template/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "naming-template",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Configure Naming Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"template_id\": 2,\n  \"custom_template\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/naming-template/configure",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "naming-template",
+                "configure"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Activate Naming Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"template\": \"{job_id}-{resolution}-{media_type}-{number}.m4s\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/naming-template/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "naming-template",
+                "activate"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Config Center",
+      "item": [
+        {
+          "name": "List Bootstrap Config Sources",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config-center/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config-center",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upsert Bootstrap Config Source",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"binding_id\": 0,\n  \"binding_name\": \"prod-bootstrap-source\",\n  \"provider_type\": \"nacos\",\n  \"endpoint\": \"http://nacos:8848\",\n  \"namespace\": \"production\",\n  \"auth_mode\": \"token\",\n  \"access_key\": \"\",\n  \"secret_key\": \"\",\n  \"token\": \"\",\n  \"enabled\": true,\n  \"priority\": 10\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config-center/upsert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config-center",
+                "upsert"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Enable Bootstrap Config Source",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"binding_id\": 1,\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config-center/enabled",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config-center",
+                "enabled"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / RBAC",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/user/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "user",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upsert User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"operator\",\n  \"password_hash\": \"$2a$10$...\",\n  \"display_name\": \"operator\",\n  \"status\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/user/upsert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "user",
+                "upsert"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set User Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"admin_user_id\": 2,\n  \"status\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/user/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "user",
+                "status"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/role/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "role",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upsert Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_key\": \"operator\",\n  \"role_name\": \"operator\",\n  \"role_desc\": \"ops role\",\n  \"status\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/role/upsert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "role",
+                "upsert"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/permission/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "permission",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upsert Permission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"perm_key\": \"transcode.job.read\",\n  \"perm_name\": \"read transcode jobs\",\n  \"perm_desc\": \"read transcode job list and progress\",\n  \"module\": \"transcode\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/permission/upsert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "permission",
+                "upsert"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bind User Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 2,\n  \"role_id\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/user-role/bind",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "user-role",
+                "bind"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bind Role Permission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_id\": 2,\n  \"perm_id\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/role-permission/bind",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "role-permission",
+                "bind"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Cluster",
+      "item": [
+        {
+          "name": "List Nodes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/node/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "node",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Node Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/node/detail?node_id=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "node",
+                "detail"
+              ],
+              "query": [
+                {
+                  "key": "node_id",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Node Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/node/metrics?node_id=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "node",
+                "metrics"
+              ],
+              "query": [
+                {
+                  "key": "node_id",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/member/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "member",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Node Enabled",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"node_id\": 1,\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/node/enabled",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "node",
+                "enabled"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Node Quarantined",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"node_id\": 1,\n  \"quarantined\": true,\n  \"reason\": \"GPU maintenance\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/node/quarantined",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "node",
+                "quarantined"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Transcode",
+      "item": [
+        {
+          "name": "List Jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/transcode/job/list?page=1&page_size=20&status=0&biz_key=&request_id=",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "transcode",
+                "job",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "0"
+                },
+                {
+                  "key": "biz_key",
+                  "value": ""
+                },
+                {
+                  "key": "request_id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Job Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/transcode/job/detail?job_id={{job_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "transcode",
+                "job",
+                "detail"
+              ],
+              "query": [
+                {
+                  "key": "job_id",
+                  "value": "{{job_id}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Job Progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/transcode/job/progress?job_id={{job_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "transcode",
+                "job",
+                "progress"
+              ],
+              "query": [
+                {
+                  "key": "job_id",
+                  "value": "{{job_id}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Retry Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_id\": {{job_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/transcode/job/retry",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "transcode",
+                "job",
+                "retry"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_id\": {{job_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/transcode/job/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "transcode",
+                "job",
+                "cancel"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Monitor",
+      "item": [
+        {
+          "name": "Snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/transcode/monitor/snapshot",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "transcode",
+                "monitor",
+                "snapshot"
+              ]
+            },
+            "description": "Returns raw monitor snapshot JSON. WebSocket endpoint /v1/admin/transcode/monitor/ws is documented in API_DOC.md."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Live",
+      "item": [
+        {
+          "name": "Create Channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_key\": \"live-001\",\n  \"channel_name\": \"test-live\",\n  \"profile_id\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/live/channel/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "live",
+                "channel",
+                "create"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Channel Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/live/channel/detail?channel_id={{channel_id}}&channel_key=",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "live",
+                "channel",
+                "detail"
+              ],
+              "query": [
+                {
+                  "key": "channel_id",
+                  "value": "{{channel_id}}"
+                },
+                {
+                  "key": "channel_key",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_id\": 1,\n  \"channel_name\": \"updated-live\",\n  \"enable_watermark\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/live/channel/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "live",
+                "channel",
+                "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Start Channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_id\": 1,\n  \"node_id\": 0,\n  \"worker_id\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/live/channel/start",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "live",
+                "channel",
+                "start"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stop Channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/live/channel/stop",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "live",
+                "channel",
+                "stop"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Audit",
+      "item": [
+        {
+          "name": "List Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/audit/list?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "audit",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Internal / Worker",
+      "item": [
+        {
+          "name": "Worker Heartbeat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"node_id\": 1,\n  \"worker_id\": \"worker-node1-001\",\n  \"startup_instance_id\": \"inst-20260507-001\",\n  \"machine_fingerprint\": \"fp-abc123\",\n  \"timestamp\": \"2026-05-07T10:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/worker/heartbeat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "worker",
+                "heartbeat"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Worker Metrics",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"node_id\": 1,\n  \"worker_id\": \"worker-node1-001\",\n  \"startup_instance_id\": \"inst-20260507-001\",\n  \"machine_fingerprint\": \"fp-abc123\",\n  \"cpu_usage_percent\": 45,\n  \"memory_usage_percent\": 60,\n  \"gpu_memory_usage_percent\": 70,\n  \"upload_queue_depth\": 2,\n  \"active_transcode_sessions\": 3,\n  \"gpu_capabilities\": [\n    {\n      \"gpu_device_id\": 1,\n      \"gpu_uuid\": \"GPU-abc123\",\n      \"gpu_index\": 0,\n      \"encode_codecs\": [\"h264\", \"hevc\"],\n      \"decode_codecs\": [\"h264\", \"hevc\"],\n      \"execution_hw_types\": [\"nvidia\"],\n      \"max_sessions\": 3,\n      \"supports_filter\": true\n    }\n  ],\n  \"timestamp\": \"2026-05-07T10:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/worker/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "worker",
+                "metrics"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Renew Lease",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_id\": {{job_id}},\n  \"worker_id\": \"worker-node1-001\",\n  \"lease_generation\": 1,\n  \"expire_at\": \"2026-05-07T10:05:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/jobs/lease/renew",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "jobs",
+                "lease",
+                "renew"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Report Upload Succeeded",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segment_id\": 100,\n  \"object_etag\": \"abc123def456\",\n  \"object_size_bytes\": 524288\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/segments/upload-succeeded",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "segments",
+                "upload-succeeded"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Report Upload Failed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segment_id\": 100,\n  \"retry_count\": 1,\n  \"error_message\": \"connection refused\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/segments/upload-failed",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "segments",
+                "upload-failed"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "job_id",
+      "value": "1893456789012345678"
+    },
+    {
+      "key": "config_version",
+      "value": "1893456789012345678"
+    }
+  ]
+}
+

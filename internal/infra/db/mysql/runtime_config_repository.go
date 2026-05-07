@@ -29,6 +29,19 @@ func (r *RuntimeConfigRepository) Save(ctx context.Context, record RuntimeConfig
 	return r.db.WithContext(ctx).Create(&record).Error
 }
 
+// EnsureBootstrapPublished 在没有已发布版本时写入一条首启默认版本。
+func (r *RuntimeConfigRepository) EnsureBootstrapPublished(ctx context.Context, record RuntimeConfigRecord) error {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&RuntimeConfigRecord{}).Where("published = ?", true).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	record.Published = true
+	return r.db.WithContext(ctx).Create(&record).Error
+}
+
 // MarkPublished 切换当前发布版本。
 func (r *RuntimeConfigRepository) MarkPublished(ctx context.Context, configVersion uint64, publishedBy string) error {
 	now := time.Now()

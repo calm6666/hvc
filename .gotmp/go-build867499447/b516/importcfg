@@ -1,0 +1,15 @@
+# import config
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gocache\b0\b0d2ccff21af2e639cd8b568ba599bd0de5730835348a7ff8b711751becb73b2-d
+packagefile reflect=D:\hilihili\server\hvc\.gocache\a5\a54936ab5aac77a5cc72c9c5bb6fd88aeb39e62077db748221fef5869ad35292-d
+packagefile testing=D:\hilihili\server\hvc\.gocache\88\8886ab1870be8ce572c19e58348d3f241793c1453598aef5c6c6921a10d4e497-d
+packagefile bufio=D:\hilihili\server\hvc\.gocache\0a\0a977f005d1a2f0b2737ea507a521ce6fcddda0b6072b44c4d9cf58859856491-d
+packagefile bytes=D:\hilihili\server\hvc\.gocache\f0\f0f9d526fd399ece393495cbca881da350bf4fb26d83b4584dfd0fc6c6dc106a-d
+packagefile hvc/internal/infra/ffmpeg/process=D:\hilihili\server\hvc\.gocache\d0\d03bdf088995b430e11a68b0f4f4277be12f0ffa88097af2947ced5e108eba66-d
+packagefile hvc/internal/infra/gpu/amf=D:\hilihili\server\hvc\.gocache\77\77dd81751588acb7361c00effb3e6d840e99e6f435d7f6d35b853b3b40cb9564-d
+packagefile hvc/internal/infra/gpu/qsv=D:\hilihili\server\hvc\.gocache\78\785b0bf696f2c05052c87de43128817cd5f358b3c46871d2e6ddd534da837f7c-d
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gocache\b0\b0d2ccff21af2e639cd8b568ba599bd0de5730835348a7ff8b711751becb73b2-d
+packagefile os/exec=D:\hilihili\server\hvc\.gocache\88\888ec8247f94280e20161843df9bfdbd6bc04eed3e170f575b090dd947399556-d
+packagefile sort=D:\hilihili\server\hvc\.gocache\c8\c83b16b45b0c0680efdd365194e1609507e3a01feed17a7c803fd04c0c881bb2-d
+packagefile strconv=D:\hilihili\server\hvc\.gocache\3f\3f234232dacf33a8ad1915ecae2866501227e43ee673d71499dfd0f52af54ee1-d
+packagefile strings=D:\hilihili\server\hvc\.gocache\66\6645e12e1f8b109c5a45aea4ea5919430c735ffd4ebba6c0531951579e9a3498-d
+packagefile hvc/internal/infra/gpu=D:\hilihili\server\hvc\.gocache\62\62b9321f02ed51e2ea12259de8355a371d27417ed7b1e36b672a6ffce8991ae6-d

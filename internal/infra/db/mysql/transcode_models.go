@@ -29,10 +29,13 @@ type TranscodeJobRequestOverrideRecord struct {
 	OverrideThumbBinaryMaxSizeBytes  uint64    `gorm:"column:override_thumb_binary_max_size_bytes"`
 	OverrideBucketPrefix             string    `gorm:"column:override_bucket_prefix"`
 	OverrideSegmentPrefix            string    `gorm:"column:override_segment_prefix"`
+	OverrideCallbackURL              string    `gorm:"column:override_callback_url"`
 	CreatedAt                        time.Time `gorm:"column:created_at"`
 }
 
-func (TranscodeJobRequestOverrideRecord) TableName() string { return "t_transcode_job_request_override" }
+func (TranscodeJobRequestOverrideRecord) TableName() string {
+	return "t_transcode_job_request_override"
+}
 
 // TranscodeProfileRecord 表示转码模板主表映射。
 type TranscodeProfileRecord struct {

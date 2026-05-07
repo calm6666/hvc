@@ -5,9 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
-	transcodeusecase "hvc/internal/usecase/transcode"
+	transcodesvc "hvc/internal/service/transcode"
 	"hvc/pkg/logx"
 )
 
@@ -15,19 +14,13 @@ var errJobNotFound = errors.New("job not found")
 
 // TranscodeHandler 处理转码公共接口。
 type TranscodeHandler struct {
-	createJobUseCase          *transcodeusecase.CreateJobUseCase
-	queryProgressUseCase      *transcodeusecase.QueryProgressUseCase
-	jobRepository             *mysql.JobRepository
-	jobRequestOverrideRepo    *mysql.JobRequestOverrideRepository
+	service *transcodesvc.Service
 }
 
 // NewTranscodeHandler 创建转码处理器。
-func NewTranscodeHandler(createJobUseCase *transcodeusecase.CreateJobUseCase, queryProgressUseCase *transcodeusecase.QueryProgressUseCase, jobRepository *mysql.JobRepository, jobRequestOverrideRepo *mysql.JobRequestOverrideRepository) *TranscodeHandler {
+func NewTranscodeHandler(service *transcodesvc.Service) *TranscodeHandler {
 	return &TranscodeHandler{
-		createJobUseCase:       createJobUseCase,
-		queryProgressUseCase:   queryProgressUseCase,
-		jobRepository:          jobRepository,
-		jobRequestOverrideRepo: jobRequestOverrideRepo,
+		service: service,
 	}
 }
 
@@ -51,25 +44,7 @@ func (h *TranscodeHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		"enable_watermark": req.EnableWatermark,
 	})
 
-	if existing, ok := h.jobRepository.FindByRequestID(r.Context(), req.RequestID); ok {
-		logx.Info("http.transcode.create.idempotent_hit", logx.Fields{
-			"request_id": req.RequestID,
-			"job_id":     existing.JobID,
-		})
-		logx.WriteJSON(w, http.StatusOK, model.Response{
-			Code:    0,
-			Message: "ok",
-			Data: model.CreateJobResponseData{
-				JobID:      existing.JobID,
-				RequestID:  existing.RequestID,
-				Status:     existing.Status,
-				StatusName: existing.ProgressStage,
-			},
-		})
-		return
-	}
-
-	result, err := h.createJobUseCase.Execute(req)
+	result, err := h.service.CreateJob(r.Context(), req)
 	if err != nil {
 		logx.Error("http.transcode.create.execute", err, logx.Fields{
 			"request_id": req.RequestID,
@@ -78,39 +53,15 @@ func (h *TranscodeHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.jobRepository.Save(r.Context(), result.Job); err != nil {
-		logx.Error("http.transcode.create.save", err, logx.Fields{
-			"request_id": req.RequestID,
-			"job_id":     result.Job.JobID,
-		})
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save job failed"})
-		return
-	}
-	if result.RequestOverride != nil && h.jobRequestOverrideRepo != nil {
-		if err := h.jobRequestOverrideRepo.Save(r.Context(), *result.RequestOverride); err != nil {
-			logx.Error("http.transcode.create.save_override", err, logx.Fields{
-				"request_id": req.RequestID,
-				"job_id":     result.Job.JobID,
-			})
-			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save job override failed"})
-			return
-		}
-	}
-
 	logx.Info("http.transcode.create.success", logx.Fields{
 		"request_id": req.RequestID,
-		"job_id":     result.Job.JobID,
-		"status":     result.Job.Status,
+		"job_id":     result.JobID,
+		"status":     result.Status,
 	})
 	logx.WriteJSON(w, http.StatusOK, model.Response{
 		Code:    0,
 		Message: "ok",
-		Data: model.CreateJobResponseData{
-			JobID:      result.Job.JobID,
-			RequestID:  result.Job.RequestID,
-			Status:     result.Job.Status,
-			StatusName: result.Job.ProgressStage,
-		},
+		Data:    result,
 	})
 }
 
@@ -120,7 +71,7 @@ func (h *TranscodeHandler) QueryProgress(w http.ResponseWriter, r *http.Request)
 	logx.Info("http.transcode.progress.request", logx.Fields{
 		"request_id": requestID,
 	})
-	progress, err := h.queryProgressUseCase.Execute(r.Context(), requestID)
+	progress, err := h.service.QueryProgress(r.Context(), requestID)
 	if err != nil {
 		statusCode := http.StatusBadRequest
 		if errors.Is(err, errJobNotFound) {

@@ -1,0 +1,7 @@
+# import config
+packagefile os=D:\hilihili\server\hvc\.gocache\24\24d2f90ded35e12caf40b55bbb600a5ba661275ad0182e13eb9cd22e15a1b23f-d
+packagefile reflect=D:\hilihili\server\hvc\.gocache\a5\a54936ab5aac77a5cc72c9c5bb6fd88aeb39e62077db748221fef5869ad35292-d
+packagefile testing=D:\hilihili\server\hvc\.gocache\88\8886ab1870be8ce572c19e58348d3f241793c1453598aef5c6c6921a10d4e497-d
+packagefile testing/internal/testdeps=D:\hilihili\server\hvc\.gocache\d8\d8b568a4b4404b8810334cdac665038ad624893942da15419f88dff081dc17af-d
+packagefile runtime=D:\hilihili\server\hvc\.gocache\d8\d8ded27fec0d0f65bdd62b623bc8a53f4a4410a5ff9d2e3db0b707a95e1eaf5e-d
+packagefile hvc/internal/callback=D:\hilihili\server\hvc\.gotmp\go-build867499447\b473\_pkg_.a

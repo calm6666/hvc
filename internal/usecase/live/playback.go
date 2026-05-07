@@ -18,6 +18,5 @@ func NewPlaybackUseCase(service *livesvc.ChannelService) *PlaybackUseCase {
 
 // Execute 查询直播播放信息。
 func (u *PlaybackUseCase) Execute(ctx context.Context, channelKey string) model.LivePlaybackInfo {
-	_ = ctx
-	return u.service.GetPlaybackInfo(channelKey)
+	return u.service.GetPlaybackInfoContext(ctx, channelKey)
 }

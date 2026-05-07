@@ -22,7 +22,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
               type: object
               required: [username, password]
@@ -66,10 +66,12 @@ paths:
   /v1/admin/config/runtime/update:
     post:
       summary: 更新运行配置
+      description: 运行期业务配置只从数据库已发布版本生效；本地 YAML 仅在空库首启时初始化默认值。
       description: |
-        更新动态运行配置（调度器、Worker、存储、回调等）。
+        更新动态运行配置（调度器、Worker、gRPC、MQ、回调等）。
         更新后生成新版本，需通过 /publish 发布生效。
-        支持动态修改分片命名模板、存储类型、回调地址等。
+        发布后会热更新新任务、待调度任务以及运行中的后台模块状态。
+        其中 gRPC 对外服务与 MQ 创建任务消费者支持按配置动态启停和换地址/换队列重建。
       tags: [Config]
       requestBody:
         required: true
@@ -77,6 +79,84 @@ paths:
           application/json:
             schema:
               type: object
+              properties:
+                default_profile_id:
+                  type: integer
+                  format: uint64
+                max_global_transcode_sessions:
+                  type: integer
+                job_lease_ttl_sec:
+                  type: integer
+                worker_heartbeat_timeout_sec:
+                  type: integer
+                allow_request_override_profile:
+                  type: boolean
+                allow_request_override_segment_duration:
+                  type: boolean
+                allow_request_override_hwaccel:
+                  type: boolean
+                scheduler_loop_interval_ms:
+                  type: integer
+                  description: 调度器扫描周期，单位毫秒
+                worker_loop_interval_ms:
+                  type: integer
+                  description: Worker 主循环周期，单位毫秒
+                single_job_upload_concurrency:
+                  type: integer
+                require_hardware_encode:
+                  type: boolean
+                allow_software_decode_fallback:
+                  type: boolean
+                require_hardware_watermark:
+                  type: boolean
+                node_cpu_safety_limit_percent:
+                  type: integer
+                node_memory_safety_limit_percent:
+                  type: integer
+                node_gpu_safety_limit_percent:
+                  type: integer
+                enable_http_server:
+                  type: boolean
+                  description: 发布后动态启停 HTTP 对外接口与 WebSocket 监控入口
+                enable_callback:
+                  type: boolean
+                  description: 发布后动态启停回调投递模块
+                callback_http_url:
+                  type: string
+                callback_mq_topic:
+                  type: string
+                  description: 默认 MQ 回调 routing key，供系统级 MQ 回调兜底使用
+                enable_grpc_server:
+                  type: boolean
+                  description: 发布后动态启停对外 gRPC 服务
+                grpc_listen_address:
+                  type: string
+                  description: gRPC 监听地址，格式如 :9090 或 0.0.0.0:9090
+                enable_mq_consumer:
+                  type: boolean
+                  description: 发布后动态启停 MQ 创建任务消费者
+                mq_queue_name:
+                  type: string
+                mq_host:
+                  type: string
+                mq_port:
+                  type: integer
+                mq_username:
+                  type: string
+                mq_password:
+                  type: string
+                mq_vhost:
+                  type: string
+                mq_consumer_tag:
+                  type: string
+                mq_prefetch_count:
+                  type: integer
+                mq_loop_interval_ms:
+                  type: integer
+                worker_object_prefix:
+                  type: string
+                change_summary:
+                  type: string
       responses:
         '200':
           description: 成功
@@ -119,9 +199,99 @@ paths:
         '200':
           description: 成功
 
+  /v1/admin/config/naming-template/list:
+    get:
+      summary: 查询分片命名模板方案列表
+      description: |
+        返回六种预置模板方案及其示例，以及当前生效的模板。
+        管理员可据此选择合适的方案。
+      tags: [NamingTemplate]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: object
+                    properties:
+                      templates:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                              description: 方案ID（1~6）
+                            name:
+                              type: string
+                            template:
+                              type: string
+                            example_init_video:
+                              type: string
+                            example_media_video:
+                              type: string
+                            example_init_audio:
+                              type: string
+                            description:
+                              type: string
+                      current_template:
+                        type: string
+
+  /v1/admin/config/naming-template/configure:
+    post:
+      summary: 配置命名模板
+      description: |
+        选择一种预置模板方案或自定义模板，写入待发布配置。
+        需通过 /v1/admin/config/publish 发布后生效。
+      tags: [NamingTemplate]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                template_id:
+                  type: integer
+                  description: 预置方案ID（1~6），与 custom_template 二选一
+                custom_template:
+                  type: string
+                  description: 自定义模板字符串（必须包含 {job_id} {media_type} {number}）
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config/naming-template/activate:
+    post:
+      summary: 立即生效命名模板
+      description: |
+        直接修改当前运行时配置中的分片命名模板，立即对新任务生效。
+        已运行中的任务不受影响。
+      tags: [NamingTemplate]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template]
+              properties:
+                template:
+                  type: string
+                  description: 命名模板字符串
+      responses:
+        '200':
+          description: 成功
+
   /v1/admin/config-center/list:
     get:
-      summary: 查询配置中心绑定列表
+      summary: 查询 bootstrap 配置源绑定列表
+      description: 查询外部 bootstrap 配置源元数据，不直接返回运行期业务配置。
       tags: [ConfigCenter]
       responses:
         '200':
@@ -129,7 +299,8 @@ paths:
 
   /v1/admin/config-center/upsert:
     post:
-      summary: 创建或更新配置中心绑定
+      summary: 创建或更新 bootstrap 配置源绑定
+      description: 维护 MySQL/集群注册/节点身份等启动基础配置来源，不直接发布运行期业务配置。
       tags: [ConfigCenter]
       responses:
         '200':
@@ -137,7 +308,8 @@ paths:
 
   /v1/admin/config-center/enabled:
     post:
-      summary: 启用/禁用配置中心绑定
+      summary: 启用/禁用 bootstrap 配置源绑定
+      description: 启用或禁用外部 bootstrap 配置源元数据，不影响已发布 runtime config 的热更新链路。
       tags: [ConfigCenter]
       responses:
         '200':
@@ -330,6 +502,10 @@ paths:
           in: query
           schema:
             type: string
+        - name: request_id
+          in: query
+          schema:
+            type: string
       responses:
         '200':
           description: 成功
@@ -402,10 +578,52 @@ paths:
         '200':
           description: 成功
 
+  /v1/admin/transcode/monitor/snapshot:
+    get:
+      summary: 监控快照
+      description: 返回当前转码监控快照原始 JSON，不包裹通用 code/message 响应体。
+      tags: [Monitor]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timestamp:
+                    type: integer
+                    format: int64
+                  mode:
+                    type: string
+                  pending_jobs:
+                    type: integer
+                  active_jobs:
+                    type: integer
+                  node_count:
+                    type: integer
+                  system_metrics:
+                    type: object
+                    properties:
+                      total_active_sessions:
+                        type: integer
+                      total_pending_jobs:
+                        type: integer
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        node_id:
+                          type: integer
+                          format: uint64
+                        online:
+                          type: boolean
+
   /v1/admin/transcode/monitor/ws:
     get:
       summary: WebSocket 实时监控
-      description: WebSocket 升级端点，连接后接收实时转码进度快照推送。
+      description: WebSocket 升级端点，连接后立即下发一次 snapshot，随后每 3 秒推送快照、每 30 秒推送 ping。
       tags: [Monitor]
       responses:
         '101':
@@ -438,6 +656,16 @@ paths:
     get:
       summary: 查询频道详情
       tags: [Live]
+      parameters:
+        - name: channel_id
+          in: query
+          schema:
+            type: integer
+            format: uint64
+        - name: channel_key
+          in: query
+          schema:
+            type: string
       responses:
         '200':
           description: 成功
@@ -446,6 +674,21 @@ paths:
     post:
       summary: 更新频道配置
       tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_id]
+              properties:
+                channel_id:
+                  type: integer
+                  format: uint64
+                channel_name:
+                  type: string
+                enable_watermark:
+                  type: boolean
       responses:
         '200':
           description: 成功
@@ -465,6 +708,11 @@ paths:
                 channel_id:
                   type: integer
                   format: uint64
+                node_id:
+                  type: integer
+                  format: uint64
+                worker_id:
+                  type: string
       responses:
         '200':
           description: 成功
@@ -473,6 +721,17 @@ paths:
     post:
       summary: 停止直播频道
       tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_id]
+              properties:
+                channel_id:
+                  type: integer
+                  format: uint64
       responses:
         '200':
           description: 成功

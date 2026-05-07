@@ -1,0 +1,14 @@
+# import config
+packagefile context=D:\hilihili\server\hvc\.gocache\b4\b4183b72b01ee34c104f2643ea9dc36e464f79f396a677679e635b2811db203c-d
+packagefile encoding/binary=D:\hilihili\server\hvc\.gocache\1f\1f53c567860b59ce6b257d620738e54fc26c01c992fc54728af5b642013cb1a6-d
+packagefile fmt=D:\hilihili\server\hvc\.gocache\9d\9dbda6e832b423d90ca1c95ac9172eccafed6efaeed208ed6a80a0c79adc0121-d
+packagefile hvc/internal/infra/ffmpeg/process=D:\hilihili\server\hvc\.gocache\d0\d03bdf088995b430e11a68b0f4f4277be12f0ffa88097af2947ced5e108eba66-d
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gocache\b0\b0d2ccff21af2e639cd8b568ba599bd0de5730835348a7ff8b711751becb73b2-d
+packagefile hvc/pkg/logx=D:\hilihili\server\hvc\.gocache\bb\bb08e73f64ee8b88298f0f157def7f73e6cd37fcd2ee7e71736109292b5b1085-d
+packagefile image=D:\hilihili\server\hvc\.gocache\86\860937aab53f091f7499f30109fb6ac21f78c0d28ad0640b16d6b1508eb9ffb5-d
+packagefile image/jpeg=D:\hilihili\server\hvc\.gocache\32\329415db0f36232d5bafe5c24cd37c4040496aaf64547d989ab2d5c3eec9811e-d
+packagefile os=D:\hilihili\server\hvc\.gocache\24\24d2f90ded35e12caf40b55bbb600a5ba661275ad0182e13eb9cd22e15a1b23f-d
+packagefile os/exec=D:\hilihili\server\hvc\.gocache\88\888ec8247f94280e20161843df9bfdbd6bc04eed3e170f575b090dd947399556-d
+packagefile path/filepath=D:\hilihili\server\hvc\.gocache\ff\ff372d706fe46868d0bdef8b59af133bd47045aac2cc49b428e73e83a41ac83d-d
+packagefile strconv=D:\hilihili\server\hvc\.gocache\3f\3f234232dacf33a8ad1915ecae2866501227e43ee673d71499dfd0f52af54ee1-d
+packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d

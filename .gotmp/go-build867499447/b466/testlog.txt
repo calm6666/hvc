@@ -1,0 +1,528 @@
+# test log
+open ..\..\configs\config.yaml
+getenv PATHEXT
+getenv NoDefaultCurrentDirectoryInExePath
+stat ffprobe.bat
+stat ffprobe.cmd
+stat ffprobe.com
+stat ffprobe.exe
+stat ffprobe.vbs
+stat ffprobe.vbe
+stat ffprobe.js
+stat ffprobe.jse
+stat ffprobe.wsf
+stat ffprobe.wsh
+stat ffprobe.msc
+stat ffprobe.py
+stat ffprobe.pyw
+stat ffprobe.cpl
+getenv path
+stat C:\Program Files\Go\bin\ffprobe.bat
+stat C:\Program Files\Go\bin\ffprobe.cmd
+stat C:\Program Files\Go\bin\ffprobe.com
+stat C:\Program Files\Go\bin\ffprobe.exe
+stat C:\Program Files\Go\bin\ffprobe.vbs
+stat C:\Program Files\Go\bin\ffprobe.vbe
+stat C:\Program Files\Go\bin\ffprobe.js
+stat C:\Program Files\Go\bin\ffprobe.jse
+stat C:\Program Files\Go\bin\ffprobe.wsf
+stat C:\Program Files\Go\bin\ffprobe.wsh
+stat C:\Program Files\Go\bin\ffprobe.msc
+stat C:\Program Files\Go\bin\ffprobe.py
+stat C:\Program Files\Go\bin\ffprobe.pyw
+stat C:\Program Files\Go\bin\ffprobe.cpl
+stat C:\Users\calm\.sbx-denybin\ffprobe.bat
+stat C:\Users\calm\.sbx-denybin\ffprobe.cmd
+stat C:\Users\calm\.sbx-denybin\ffprobe.com
+stat C:\Users\calm\.sbx-denybin\ffprobe.exe
+stat C:\Users\calm\.sbx-denybin\ffprobe.vbs
+stat C:\Users\calm\.sbx-denybin\ffprobe.vbe
+stat C:\Users\calm\.sbx-denybin\ffprobe.js
+stat C:\Users\calm\.sbx-denybin\ffprobe.jse
+stat C:\Users\calm\.sbx-denybin\ffprobe.wsf
+stat C:\Users\calm\.sbx-denybin\ffprobe.wsh
+stat C:\Users\calm\.sbx-denybin\ffprobe.msc
+stat C:\Users\calm\.sbx-denybin\ffprobe.py
+stat C:\Users\calm\.sbx-denybin\ffprobe.pyw
+stat C:\Users\calm\.sbx-denybin\ffprobe.cpl
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.bat
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.cmd
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.com
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.exe
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.vbs
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.vbe
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.js
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.jse
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.wsf
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.wsh
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.msc
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.py
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.pyw
+stat C:\Users\calm\.codex\tmp\arg0\codex-arg0B0jMqV\ffprobe.cpl
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.bat
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.cmd
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.com
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.exe
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.vbs
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.vbe
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.js
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.jse
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.wsf
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.wsh
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.msc
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.py
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.pyw
+stat C:\Users\calm\AppData\Local\nvm\v22.20.0\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\path\ffprobe.cpl
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.bat
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.cmd
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.com
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.exe
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.vbs
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.vbe
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.js
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.jse
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.wsf
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.wsh
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.msc
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.py
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.pyw
+stat C:\Program Files (x86)\Common Files\Intel\Shared Libraries\redist\intel64\compiler\ffprobe.cpl
+stat C:\Program Files\Python310\Scripts\ffprobe.bat
+stat C:\Program Files\Python310\Scripts\ffprobe.cmd
+stat C:\Program Files\Python310\Scripts\ffprobe.com
+stat C:\Program Files\Python310\Scripts\ffprobe.exe
+stat C:\Program Files\Python310\Scripts\ffprobe.vbs
+stat C:\Program Files\Python310\Scripts\ffprobe.vbe
+stat C:\Program Files\Python310\Scripts\ffprobe.js
+stat C:\Program Files\Python310\Scripts\ffprobe.jse
+stat C:\Program Files\Python310\Scripts\ffprobe.wsf
+stat C:\Program Files\Python310\Scripts\ffprobe.wsh
+stat C:\Program Files\Python310\Scripts\ffprobe.msc
+stat C:\Program Files\Python310\Scripts\ffprobe.py
+stat C:\Program Files\Python310\Scripts\ffprobe.pyw
+stat C:\Program Files\Python310\Scripts\ffprobe.cpl
+stat C:\Program Files\Python310\ffprobe.bat
+stat C:\Program Files\Python310\ffprobe.cmd
+stat C:\Program Files\Python310\ffprobe.com
+stat C:\Program Files\Python310\ffprobe.exe
+stat C:\Program Files\Python310\ffprobe.vbs
+stat C:\Program Files\Python310\ffprobe.vbe
+stat C:\Program Files\Python310\ffprobe.js
+stat C:\Program Files\Python310\ffprobe.jse
+stat C:\Program Files\Python310\ffprobe.wsf
+stat C:\Program Files\Python310\ffprobe.wsh
+stat C:\Program Files\Python310\ffprobe.msc
+stat C:\Program Files\Python310\ffprobe.py
+stat C:\Program Files\Python310\ffprobe.pyw
+stat C:\Program Files\Python310\ffprobe.cpl
+stat C:\Program Files\Python39\Scripts\ffprobe.bat
+stat C:\Program Files\Python39\Scripts\ffprobe.cmd
+stat C:\Program Files\Python39\Scripts\ffprobe.com
+stat C:\Program Files\Python39\Scripts\ffprobe.exe
+stat C:\Program Files\Python39\Scripts\ffprobe.vbs
+stat C:\Program Files\Python39\Scripts\ffprobe.vbe
+stat C:\Program Files\Python39\Scripts\ffprobe.js
+stat C:\Program Files\Python39\Scripts\ffprobe.jse
+stat C:\Program Files\Python39\Scripts\ffprobe.wsf
+stat C:\Program Files\Python39\Scripts\ffprobe.wsh
+stat C:\Program Files\Python39\Scripts\ffprobe.msc
+stat C:\Program Files\Python39\Scripts\ffprobe.py
+stat C:\Program Files\Python39\Scripts\ffprobe.pyw
+stat C:\Program Files\Python39\Scripts\ffprobe.cpl
+stat C:\Program Files\Python39\ffprobe.bat
+stat C:\Program Files\Python39\ffprobe.cmd
+stat C:\Program Files\Python39\ffprobe.com
+stat C:\Program Files\Python39\ffprobe.exe
+stat C:\Program Files\Python39\ffprobe.vbs
+stat C:\Program Files\Python39\ffprobe.vbe
+stat C:\Program Files\Python39\ffprobe.js
+stat C:\Program Files\Python39\ffprobe.jse
+stat C:\Program Files\Python39\ffprobe.wsf
+stat C:\Program Files\Python39\ffprobe.wsh
+stat C:\Program Files\Python39\ffprobe.msc
+stat C:\Program Files\Python39\ffprobe.py
+stat C:\Program Files\Python39\ffprobe.pyw
+stat C:\Program Files\Python39\ffprobe.cpl
+stat C:\Windows\system32\ffprobe.bat
+stat C:\Windows\system32\ffprobe.cmd
+stat C:\Windows\system32\ffprobe.com
+stat C:\Windows\system32\ffprobe.exe
+stat C:\Windows\system32\ffprobe.vbs
+stat C:\Windows\system32\ffprobe.vbe
+stat C:\Windows\system32\ffprobe.js
+stat C:\Windows\system32\ffprobe.jse
+stat C:\Windows\system32\ffprobe.wsf
+stat C:\Windows\system32\ffprobe.wsh
+stat C:\Windows\system32\ffprobe.msc
+stat C:\Windows\system32\ffprobe.py
+stat C:\Windows\system32\ffprobe.pyw
+stat C:\Windows\system32\ffprobe.cpl
+stat C:\Windows\ffprobe.bat
+stat C:\Windows\ffprobe.cmd
+stat C:\Windows\ffprobe.com
+stat C:\Windows\ffprobe.exe
+stat C:\Windows\ffprobe.vbs
+stat C:\Windows\ffprobe.vbe
+stat C:\Windows\ffprobe.js
+stat C:\Windows\ffprobe.jse
+stat C:\Windows\ffprobe.wsf
+stat C:\Windows\ffprobe.wsh
+stat C:\Windows\ffprobe.msc
+stat C:\Windows\ffprobe.py
+stat C:\Windows\ffprobe.pyw
+stat C:\Windows\ffprobe.cpl
+stat C:\Windows\System32\Wbem\ffprobe.bat
+stat C:\Windows\System32\Wbem\ffprobe.cmd
+stat C:\Windows\System32\Wbem\ffprobe.com
+stat C:\Windows\System32\Wbem\ffprobe.exe
+stat C:\Windows\System32\Wbem\ffprobe.vbs
+stat C:\Windows\System32\Wbem\ffprobe.vbe
+stat C:\Windows\System32\Wbem\ffprobe.js
+stat C:\Windows\System32\Wbem\ffprobe.jse
+stat C:\Windows\System32\Wbem\ffprobe.wsf
+stat C:\Windows\System32\Wbem\ffprobe.wsh
+stat C:\Windows\System32\Wbem\ffprobe.msc
+stat C:\Windows\System32\Wbem\ffprobe.py
+stat C:\Windows\System32\Wbem\ffprobe.pyw
+stat C:\Windows\System32\Wbem\ffprobe.cpl
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.bat
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.cmd
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.com
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.exe
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.vbs
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.vbe
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.js
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.jse
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.wsf
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.wsh
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.msc
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.py
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.pyw
+stat C:\Windows\System32\WindowsPowerShell\v1.0\ffprobe.cpl
+stat C:\Windows\System32\OpenSSH\ffprobe.bat
+stat C:\Windows\System32\OpenSSH\ffprobe.cmd
+stat C:\Windows\System32\OpenSSH\ffprobe.com
+stat C:\Windows\System32\OpenSSH\ffprobe.exe
+stat C:\Windows\System32\OpenSSH\ffprobe.vbs
+stat C:\Windows\System32\OpenSSH\ffprobe.vbe
+stat C:\Windows\System32\OpenSSH\ffprobe.js
+stat C:\Windows\System32\OpenSSH\ffprobe.jse
+stat C:\Windows\System32\OpenSSH\ffprobe.wsf
+stat C:\Windows\System32\OpenSSH\ffprobe.wsh
+stat C:\Windows\System32\OpenSSH\ffprobe.msc
+stat C:\Windows\System32\OpenSSH\ffprobe.py
+stat C:\Windows\System32\OpenSSH\ffprobe.pyw
+stat C:\Windows\System32\OpenSSH\ffprobe.cpl
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.bat
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.cmd
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.com
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.exe
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.vbs
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.vbe
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.js
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.jse
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.wsf
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.wsh
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.msc
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.py
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.pyw
+stat C:\Users\calm\AppData\Local\nvm\ffprobe.cpl
+stat C:\nvm4w\nodejs\ffprobe.bat
+stat C:\nvm4w\nodejs\ffprobe.cmd
+stat C:\nvm4w\nodejs\ffprobe.com
+stat C:\nvm4w\nodejs\ffprobe.exe
+stat C:\nvm4w\nodejs\ffprobe.vbs
+stat C:\nvm4w\nodejs\ffprobe.vbe
+stat C:\nvm4w\nodejs\ffprobe.js
+stat C:\nvm4w\nodejs\ffprobe.jse
+stat C:\nvm4w\nodejs\ffprobe.wsf
+stat C:\nvm4w\nodejs\ffprobe.wsh
+stat C:\nvm4w\nodejs\ffprobe.msc
+stat C:\nvm4w\nodejs\ffprobe.py
+stat C:\nvm4w\nodejs\ffprobe.pyw
+stat C:\nvm4w\nodejs\ffprobe.cpl
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.bat
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.cmd
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.com
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.exe
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.vbs
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.vbe
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.js
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.jse
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.wsf
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.wsh
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.msc
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.py
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.pyw
+stat C:\Program Files\Microsoft VS Code\bin\ffprobe.cpl
+stat C:\Program Files\Go\bin\ffprobe.bat
+stat C:\Program Files\Go\bin\ffprobe.cmd
+stat C:\Program Files\Go\bin\ffprobe.com
+stat C:\Program Files\Go\bin\ffprobe.exe
+stat C:\Program Files\Go\bin\ffprobe.vbs
+stat C:\Program Files\Go\bin\ffprobe.vbe
+stat C:\Program Files\Go\bin\ffprobe.js
+stat C:\Program Files\Go\bin\ffprobe.jse
+stat C:\Program Files\Go\bin\ffprobe.wsf
+stat C:\Program Files\Go\bin\ffprobe.wsh
+stat C:\Program Files\Go\bin\ffprobe.msc
+stat C:\Program Files\Go\bin\ffprobe.py
+stat C:\Program Files\Go\bin\ffprobe.pyw
+stat C:\Program Files\Go\bin\ffprobe.cpl
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.bat
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.cmd
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.com
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.exe
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.vbs
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.vbe
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.js
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.jse
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.wsf
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.wsh
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.msc
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.py
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.pyw
+stat C:\Program Files (x86)\Tencent\微信web开发者工具\dll\ffprobe.cpl
+stat C:\Program Files\Git\cmd\ffprobe.bat
+stat C:\Program Files\Git\cmd\ffprobe.cmd
+stat C:\Program Files\Git\cmd\ffprobe.com
+stat C:\Program Files\Git\cmd\ffprobe.exe
+stat C:\Program Files\Git\cmd\ffprobe.vbs
+stat C:\Program Files\Git\cmd\ffprobe.vbe
+stat C:\Program Files\Git\cmd\ffprobe.js
+stat C:\Program Files\Git\cmd\ffprobe.jse
+stat C:\Program Files\Git\cmd\ffprobe.wsf
+stat C:\Program Files\Git\cmd\ffprobe.wsh
+stat C:\Program Files\Git\cmd\ffprobe.msc
+stat C:\Program Files\Git\cmd\ffprobe.py
+stat C:\Program Files\Git\cmd\ffprobe.pyw
+stat C:\Program Files\Git\cmd\ffprobe.cpl
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.bat
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.cmd
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.com
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.exe
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.vbs
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.vbe
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.js
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.jse
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.wsf
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.wsh
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.msc
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.py
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.pyw
+stat C:\Program Files\MongoDB\Server\8.2\bin\ffprobe.cpl
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.bat
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.cmd
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.com
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.exe
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.vbs
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.vbe
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.js
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.jse
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.wsf
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.wsh
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.msc
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.py
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.pyw
+stat C:\Program Files\Docker\Docker\resources\bin\ffprobe.cpl
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.bat
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.cmd
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.com
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.exe
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.vbs
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.vbe
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.js
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.jse
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.wsf
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.wsh
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.msc
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.py
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.pyw
+stat C:\Program Files\MySQL\MySQL Server 8.0\bin\ffprobe.cpl
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.bat
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.cmd
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.com
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.exe
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.vbs
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.vbe
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.js
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.jse
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.wsf
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.wsh
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.msc
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.py
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.pyw
+stat C:\Program Files\Java\jdk-21\bin\ffprobe.cpl
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.bat
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.cmd
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.com
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.exe
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.vbs
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.vbe
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.js
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.jse
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.wsf
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.wsh
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.msc
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.py
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.pyw
+stat C:\Program Files\Java\jdk-21\jre\bin\ffprobe.cpl
+stat C:\Program Files\CMake\bin\ffprobe.bat
+stat C:\Program Files\CMake\bin\ffprobe.cmd
+stat C:\Program Files\CMake\bin\ffprobe.com
+stat C:\Program Files\CMake\bin\ffprobe.exe
+stat C:\Program Files\CMake\bin\ffprobe.vbs
+stat C:\Program Files\CMake\bin\ffprobe.vbe
+stat C:\Program Files\CMake\bin\ffprobe.js
+stat C:\Program Files\CMake\bin\ffprobe.jse
+stat C:\Program Files\CMake\bin\ffprobe.wsf
+stat C:\Program Files\CMake\bin\ffprobe.wsh
+stat C:\Program Files\CMake\bin\ffprobe.msc
+stat C:\Program Files\CMake\bin\ffprobe.py
+stat C:\Program Files\CMake\bin\ffprobe.pyw
+stat C:\Program Files\CMake\bin\ffprobe.cpl
+stat D:\Dev\vcpkg\ffprobe.bat
+stat D:\Dev\vcpkg\ffprobe.cmd
+stat D:\Dev\vcpkg\ffprobe.com
+stat D:\Dev\vcpkg\ffprobe.exe
+stat D:\Dev\vcpkg\ffprobe.vbs
+stat D:\Dev\vcpkg\ffprobe.vbe
+stat D:\Dev\vcpkg\ffprobe.js
+stat D:\Dev\vcpkg\ffprobe.jse
+stat D:\Dev\vcpkg\ffprobe.wsf
+stat D:\Dev\vcpkg\ffprobe.wsh
+stat D:\Dev\vcpkg\ffprobe.msc
+stat D:\Dev\vcpkg\ffprobe.py
+stat D:\Dev\vcpkg\ffprobe.pyw
+stat D:\Dev\vcpkg\ffprobe.cpl
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.bat
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.cmd
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.com
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.exe
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.vbs
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.vbe
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.js
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.jse
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.wsf
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.wsh
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.msc
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.py
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.pyw
+stat D:\Dev\vcpkg\installed\x64-windows\bin\ffprobe.cpl
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.bat
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.cmd
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.com
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.exe
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.vbs
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.vbe
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.js
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.jse
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.wsf
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.wsh
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.msc
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.py
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.pyw
+stat D:\Dev\vcpkg\installed\x64-windows\lib\ffprobe.cpl
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.bat
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.cmd
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.com
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.exe
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.vbs
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.vbe
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.js
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.jse
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.wsf
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.wsh
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.msc
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.py
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.pyw
+stat D:\Dev\vcpkg\installed\x64-windows\include\ffprobe.cpl
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.bat
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.cmd
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.com
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.exe
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.vbs
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.vbe
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.js
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.jse
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.wsf
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.wsh
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.msc
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.py
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.pyw
+stat D:\Dev\vcpkg\installed\x64-windows\tools\drogon\ffprobe.cpl
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.bat
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.cmd
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.com
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.exe
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.vbs
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.vbe
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.js
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.jse
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.wsf
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.wsh
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.msc
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.py
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.pyw
+stat C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\ffprobe.cpl
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.bat
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.cmd
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.com
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.exe
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.vbs
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.vbe
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.js
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.jse
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.wsf
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.wsh
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.msc
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.py
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.pyw
+stat C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\ffprobe.cpl
+stat C:\Program Files\dotnet\ffprobe.bat
+stat C:\Program Files\dotnet\ffprobe.cmd
+stat C:\Program Files\dotnet\ffprobe.com
+stat C:\Program Files\dotnet\ffprobe.exe
+stat C:\Program Files\dotnet\ffprobe.vbs
+stat C:\Program Files\dotnet\ffprobe.vbe
+stat C:\Program Files\dotnet\ffprobe.js
+stat C:\Program Files\dotnet\ffprobe.jse
+stat C:\Program Files\dotnet\ffprobe.wsf
+stat C:\Program Files\dotnet\ffprobe.wsh
+stat C:\Program Files\dotnet\ffprobe.msc
+stat C:\Program Files\dotnet\ffprobe.py
+stat C:\Program Files\dotnet\ffprobe.pyw
+stat C:\Program Files\dotnet\ffprobe.cpl
+stat D:\Programs\bazel\ffprobe.bat
+stat D:\Programs\bazel\ffprobe.cmd
+stat D:\Programs\bazel\ffprobe.com
+stat D:\Programs\bazel\ffprobe.exe
+stat D:\Programs\bazel\ffprobe.vbs
+stat D:\Programs\bazel\ffprobe.vbe
+stat D:\Programs\bazel\ffprobe.js
+stat D:\Programs\bazel\ffprobe.jse
+stat D:\Programs\bazel\ffprobe.wsf
+stat D:\Programs\bazel\ffprobe.wsh
+stat D:\Programs\bazel\ffprobe.msc
+stat D:\Programs\bazel\ffprobe.py
+stat D:\Programs\bazel\ffprobe.pyw
+stat D:\Programs\bazel\ffprobe.cpl
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.bat
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.cmd
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.com
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.exe
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.vbs
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.vbe
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.js
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.jse
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.wsf
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.wsh
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.msc
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.py
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.pyw
+stat D:\apache-jmeter-5.6.3\bin\ffprobe.cpl
+stat D:\ffmpeg-8.1-full_build\bin\ffprobe.bat
+stat D:\ffmpeg-8.1-full_build\bin\ffprobe.cmd
+stat D:\ffmpeg-8.1-full_build\bin\ffprobe.com
+stat D:\ffmpeg-8.1-full_build\bin\ffprobe.exe
+open ..\..\configs\config.yaml

@@ -1,39 +1,28 @@
-// Package live 提供直播会话管理器。
-//
-// Manager 负责管理所有活跃的直播频道和推流会话，
-// 包括频道的启动/停止、会话的状态机转换、断流恢复等。
-//
-// 支持集群模式和单机模式：
-//   - 集群模式：频道可被调度到任意节点，会话状态通过 Redis 同步
-//   - 单机模式：频道在本机执行，会话状态仅保存在内存
-//
-// 多 GPU 支持：
-//   - 直播转码任务同样受 GPU 会话数限制
-//   - 同一频道的不同清晰度可分配到不同 GPU
 package live
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"hvc/internal/model"
+	"hvc/pkg/idgen"
 	"hvc/pkg/logx"
 )
 
-// ChannelStore 频道存储接口，用于解耦具体仓储实现。
 type ChannelStore interface {
 	GetByID(ctx context.Context, channelID uint64) (*model.LiveChannel, error)
+	GetByKey(ctx context.Context, channelKey string) (*model.LiveChannel, error)
 	UpdateStatus(ctx context.Context, channelID uint64, status string, nodeID uint64, workerID string) error
 }
 
-// SessionStore 会话存储接口，用于解耦具体仓储实现。
 type SessionStore interface {
 	Save(ctx context.Context, session *model.LiveSession) error
 	UpdateStatus(ctx context.Context, sessionID uint64, status string, stoppedAt time.Time) error
+	FindLatestActiveByChannelID(ctx context.Context, channelID uint64) (*model.LiveSession, error)
 }
 
-// Manager 直播会话管理器。
 type Manager struct {
 	channelStore ChannelStore
 	sessionStore SessionStore
@@ -42,7 +31,6 @@ type Manager struct {
 	sessions     map[uint64]*model.LiveSession
 }
 
-// NewManager 创建直播会话管理器。
 func NewManager(channelStore ChannelStore, sessionStore SessionStore) *Manager {
 	return &Manager{
 		channelStore: channelStore,
@@ -52,46 +40,30 @@ func NewManager(channelStore ChannelStore, sessionStore SessionStore) *Manager {
 	}
 }
 
-// StartChannel 启动直播频道。
 func (m *Manager) StartChannel(ctx context.Context, channelID uint64, nodeID uint64, workerID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	channel, ok := m.channels[channelID]
-	if !ok {
-		if m.channelStore != nil {
-			var err error
-			channel, err = m.channelStore.GetByID(ctx, channelID)
-			if err != nil {
-				return err
-			}
-		}
-		if channel == nil {
-			channel = &model.LiveChannel{
-				ChannelID: channelID,
-				Status:    model.LiveChannelStatusIdle,
-			}
-		}
-		m.channels[channelID] = channel
+	channel, err := m.loadChannelByIDLocked(ctx, channelID)
+	if err != nil {
+		return err
 	}
-
-	if channel.Status != model.LiveChannelStatusIdle && channel.Status != model.LiveChannelStatusStopped {
-		logx.Info("live.manager.channel_already_active", logx.Fields{
-			"channel_id": channelID,
-			"status":     channel.Status,
-		})
+	if channel == nil {
+		return fmt.Errorf("live channel %d not found", channelID)
+	}
+	if channel.Status == model.LiveChannelStatusStarting || channel.Status == model.LiveChannelStatusLive {
 		return nil
 	}
 
 	channel.Status = model.LiveChannelStatusStarting
 	channel.AssignedNodeID = nodeID
 	channel.AssignedWorkerID = workerID
+	channel.UpdatedAt = time.Now()
+	m.channels[channelID] = channel
 
 	if m.channelStore != nil {
 		if err := m.channelStore.UpdateStatus(ctx, channelID, channel.Status, nodeID, workerID); err != nil {
-			logx.Error("live.manager.start_channel_db_failed", err, logx.Fields{
-				"channel_id": channelID,
-			})
+			return err
 		}
 	}
 
@@ -103,33 +75,50 @@ func (m *Manager) StartChannel(ctx context.Context, channelID uint64, nodeID uin
 	return nil
 }
 
-// StopChannel 停止直播频道。
 func (m *Manager) StopChannel(ctx context.Context, channelID uint64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	channel, ok := m.channels[channelID]
-	if !ok {
+	channel, err := m.loadChannelByIDLocked(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	if channel == nil {
 		return nil
 	}
 
 	channel.Status = model.LiveChannelStatusStopped
+	channel.AssignedNodeID = 0
+	channel.AssignedWorkerID = ""
+	channel.UpdatedAt = time.Now()
+	m.channels[channelID] = channel
 
 	if m.channelStore != nil {
 		if err := m.channelStore.UpdateStatus(ctx, channelID, channel.Status, 0, ""); err != nil {
-			logx.Error("live.manager.stop_channel_db_failed", err, logx.Fields{
-				"channel_id": channelID,
-			})
+			return err
 		}
 	}
 
-	for sessionID, session := range m.sessions {
-		if session.ChannelID == channelID {
-			session.Status = model.LiveSessionStatusStopped
-			now := time.Now()
-			session.StoppedAt = &now
-			delete(m.sessions, sessionID)
+	session, sessionID := m.findActiveSessionLocked(channelID)
+	if session == nil && m.sessionStore != nil {
+		session, err = m.sessionStore.FindLatestActiveByChannelID(ctx, channelID)
+		if err != nil {
+			return err
 		}
+		if session != nil {
+			sessionID = session.SessionID
+		}
+	}
+	if session != nil {
+		session.Status = model.LiveSessionStatusStopped
+		now := time.Now()
+		session.StoppedAt = &now
+		if m.sessionStore != nil {
+			if err := m.sessionStore.UpdateStatus(ctx, sessionID, session.Status, now); err != nil {
+				return err
+			}
+		}
+		delete(m.sessions, sessionID)
 	}
 
 	logx.Info("live.manager.channel_stopped", logx.Fields{
@@ -138,28 +127,45 @@ func (m *Manager) StopChannel(ctx context.Context, channelID uint64) error {
 	return nil
 }
 
-// OnPublish 推流开始回调。
 func (m *Manager) OnPublish(ctx context.Context, channelKey string, nodeID uint64, workerID string) (*model.LiveSession, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	channel, err := m.loadChannelByKeyLocked(ctx, channelKey)
+	if err != nil {
+		return nil, err
+	}
+	if channel == nil {
+		return nil, fmt.Errorf("live channel %s not found", channelKey)
+	}
+
 	session := &model.LiveSession{
+		SessionID:        idgen.Next(),
+		ChannelID:        channel.ChannelID,
 		ChannelKey:       channelKey,
 		Status:           model.LiveSessionStatusPublishing,
+		PushProtocol:     "rtmp",
 		AssignedNodeID:   nodeID,
 		AssignedWorkerID: workerID,
 		StartedAt:        time.Now(),
 	}
-
 	if m.sessionStore != nil {
 		if err := m.sessionStore.Save(ctx, session); err != nil {
-			logx.Error("live.manager.on_publish_save_failed", err, logx.Fields{
-				"channel_key": channelKey,
-			})
+			return nil, err
 		}
 	}
-
 	m.sessions[session.SessionID] = session
+
+	channel.Status = model.LiveChannelStatusLive
+	channel.AssignedNodeID = nodeID
+	channel.AssignedWorkerID = workerID
+	channel.UpdatedAt = time.Now()
+	m.channels[channel.ChannelID] = channel
+	if m.channelStore != nil {
+		if err := m.channelStore.UpdateStatus(ctx, channel.ChannelID, channel.Status, nodeID, workerID); err != nil {
+			return nil, err
+		}
+	}
 
 	logx.Info("live.manager.on_publish", logx.Fields{
 		"channel_key": channelKey,
@@ -169,76 +175,142 @@ func (m *Manager) OnPublish(ctx context.Context, channelKey string, nodeID uint6
 	return session, nil
 }
 
-// OnUnpublish 推流结束回调。
 func (m *Manager) OnUnpublish(ctx context.Context, channelKey string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for sessionID, session := range m.sessions {
-		if session.ChannelKey == channelKey && session.Status == model.LiveSessionStatusPublishing {
-			session.Status = model.LiveSessionStatusStopped
-			now := time.Now()
-			session.StoppedAt = &now
+	channel, err := m.loadChannelByKeyLocked(ctx, channelKey)
+	if err != nil {
+		return err
+	}
+	if channel == nil {
+		return nil
+	}
 
-			if m.sessionStore != nil {
-				if err := m.sessionStore.UpdateStatus(ctx, sessionID, session.Status, now); err != nil {
-					logx.Error("live.manager.on_unpublish_update_failed", err, logx.Fields{
-						"session_id": sessionID,
-					})
-				}
-			}
-
-			delete(m.sessions, sessionID)
-			logx.Info("live.manager.on_unpublish", logx.Fields{
-				"channel_key": channelKey,
-				"session_id":  sessionID,
-			})
-			break
+	session, sessionID := m.findActiveSessionLocked(channel.ChannelID)
+	if session == nil && m.sessionStore != nil {
+		session, err = m.sessionStore.FindLatestActiveByChannelID(ctx, channel.ChannelID)
+		if err != nil {
+			return err
+		}
+		if session != nil {
+			sessionID = session.SessionID
 		}
 	}
+	if session != nil {
+		session.Status = model.LiveSessionStatusStopped
+		now := time.Now()
+		session.StoppedAt = &now
+		if m.sessionStore != nil {
+			if err := m.sessionStore.UpdateStatus(ctx, sessionID, session.Status, now); err != nil {
+				return err
+			}
+		}
+		delete(m.sessions, sessionID)
+	}
+
+	channel.Status = model.LiveChannelStatusStopped
+	channel.AssignedNodeID = 0
+	channel.AssignedWorkerID = ""
+	channel.UpdatedAt = time.Now()
+	m.channels[channel.ChannelID] = channel
+	if m.channelStore != nil {
+		if err := m.channelStore.UpdateStatus(ctx, channel.ChannelID, channel.Status, 0, ""); err != nil {
+			return err
+		}
+	}
+
+	logx.Info("live.manager.on_unpublish", logx.Fields{
+		"channel_key": channelKey,
+		"session_id":  sessionID,
+	})
 	return nil
 }
 
-// OnInterrupt 推流中断回调。
 func (m *Manager) OnInterrupt(ctx context.Context, channelKey string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, session := range m.sessions {
-		if session.ChannelKey == channelKey && session.Status == model.LiveSessionStatusPublishing {
-			session.Status = model.LiveSessionStatusInterruptWaitResume
-			logx.Info("live.manager.on_interrupt", logx.Fields{
-				"channel_key": channelKey,
-				"session_id":  session.SessionID,
-			})
-			break
+	channel, _ := m.loadChannelByKeyLocked(ctx, channelKey)
+	if channel == nil {
+		return
+	}
+	session, sessionID := m.findActiveSessionLocked(channel.ChannelID)
+	if session == nil {
+		if m.sessionStore != nil {
+			session, _ = m.sessionStore.FindLatestActiveByChannelID(ctx, channel.ChannelID)
+			if session != nil {
+				sessionID = session.SessionID
+			}
 		}
 	}
+	if session != nil {
+		session.Status = model.LiveSessionStatusInterruptWaitResume
+		if m.sessionStore != nil {
+			_ = m.sessionStore.UpdateStatus(ctx, sessionID, session.Status, time.Time{})
+		}
+		m.sessions[sessionID] = session
+	}
+	channel.Status = model.LiveChannelStatusError
+	channel.UpdatedAt = time.Now()
+	m.channels[channel.ChannelID] = channel
+	if m.channelStore != nil {
+		_ = m.channelStore.UpdateStatus(ctx, channel.ChannelID, channel.Status, channel.AssignedNodeID, channel.AssignedWorkerID)
+	}
+	logx.Info("live.manager.on_interrupt", logx.Fields{
+		"channel_key": channelKey,
+		"session_id":  sessionID,
+	})
 }
 
-// GetChannel 获取频道信息。
 func (m *Manager) GetChannel(ctx context.Context, channelID uint64) (*model.LiveChannel, bool) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	channel, ok := m.channels[channelID]
-	return channel, ok
+	if channel, ok := m.channels[channelID]; ok {
+		item := *channel
+		m.mu.RUnlock()
+		return &item, true
+	}
+	m.mu.RUnlock()
+
+	if m.channelStore == nil {
+		return nil, false
+	}
+	channel, err := m.channelStore.GetByID(ctx, channelID)
+	if err != nil || channel == nil {
+		return nil, false
+	}
+	return channel, true
 }
 
-// GetActiveSession 获取频道的活跃会话。
 func (m *Manager) GetActiveSession(ctx context.Context, channelKey string) (*model.LiveSession, bool) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 	for _, session := range m.sessions {
 		if session.ChannelKey == channelKey &&
 			(session.Status == model.LiveSessionStatusPublishing ||
-				session.Status == model.LiveSessionStatusInterruptWaitResume) {
-			return session, true
+				session.Status == model.LiveSessionStatusInterruptWaitResume ||
+				session.Status == model.LiveSessionStatusResumed) {
+			item := *session
+			m.mu.RUnlock()
+			return &item, true
 		}
 	}
-	return nil, false
+	m.mu.RUnlock()
+
+	if m.channelStore == nil || m.sessionStore == nil {
+		return nil, false
+	}
+	channel, err := m.channelStore.GetByKey(ctx, channelKey)
+	if err != nil || channel == nil {
+		return nil, false
+	}
+	session, err := m.sessionStore.FindLatestActiveByChannelID(ctx, channel.ChannelID)
+	if err != nil || session == nil {
+		return nil, false
+	}
+	session.ChannelKey = channelKey
+	return session, true
 }
 
-// ActiveChannelCount 返回活跃频道数。
 func (m *Manager) ActiveChannelCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -251,9 +323,53 @@ func (m *Manager) ActiveChannelCount() int {
 	return count
 }
 
-// ActiveSessionCount 返回活跃会话数。
 func (m *Manager) ActiveSessionCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.sessions)
+}
+
+func (m *Manager) loadChannelByIDLocked(ctx context.Context, channelID uint64) (*model.LiveChannel, error) {
+	if channel, ok := m.channels[channelID]; ok {
+		return channel, nil
+	}
+	if m.channelStore == nil {
+		return nil, nil
+	}
+	channel, err := m.channelStore.GetByID(ctx, channelID)
+	if err != nil || channel == nil {
+		return channel, err
+	}
+	m.channels[channelID] = channel
+	return channel, nil
+}
+
+func (m *Manager) loadChannelByKeyLocked(ctx context.Context, channelKey string) (*model.LiveChannel, error) {
+	for _, channel := range m.channels {
+		if channel.ChannelKey == channelKey {
+			return channel, nil
+		}
+	}
+	if m.channelStore == nil {
+		return nil, nil
+	}
+	channel, err := m.channelStore.GetByKey(ctx, channelKey)
+	if err != nil || channel == nil {
+		return channel, err
+	}
+	m.channels[channel.ChannelID] = channel
+	return channel, nil
+}
+
+func (m *Manager) findActiveSessionLocked(channelID uint64) (*model.LiveSession, uint64) {
+	for sessionID, session := range m.sessions {
+		if session.ChannelID != channelID {
+			continue
+		}
+		switch session.Status {
+		case model.LiveSessionStatusPublishing, model.LiveSessionStatusInterruptWaitResume, model.LiveSessionStatusResumed:
+			return session, sessionID
+		}
+	}
+	return nil, 0
 }

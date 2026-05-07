@@ -1,0 +1,15 @@
+# import config
+packagefile encoding/json=D:\hilihili\server\hvc\.gocache\ef\ef224f26b95fa1070d909134b1a46a45abd5f642d57d809f245e3451417a1637-d
+packagefile errors=D:\hilihili\server\hvc\.gocache\80\8044b4c077c539b6e90ff9e4d0197f0c48f0c117813fd08e52b761257fd99e41-d
+packagefile hvc/internal/cluster=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b372\_pkg_.a
+packagefile hvc/internal/cluster/heartbeat=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b396\_pkg_.a
+packagefile hvc/internal/infra/db/mysql=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b220\_pkg_.a
+packagefile hvc/internal/manifest=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b397\_pkg_.a
+packagefile hvc/internal/model=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b245\_pkg_.a
+packagefile hvc/internal/service/live=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b388\_pkg_.a
+packagefile hvc/internal/service/transcode=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b390\_pkg_.a
+packagefile hvc/pkg/logx=D:\hilihili\server\hvc\.gocache\bb\bb08e73f64ee8b88298f0f157def7f73e6cd37fcd2ee7e71736109292b5b1085-d
+packagefile net/http=D:\hilihili\server\hvc\.gocache\f6\f64e4b596df7c160f354029e7b27e4eda7b2e4d1bef46228789e3545940235f1-d
+packagefile strconv=D:\hilihili\server\hvc\.gocache\3f\3f234232dacf33a8ad1915ecae2866501227e43ee673d71499dfd0f52af54ee1-d
+packagefile strings=D:\hilihili\server\hvc\.gocache\66\6645e12e1f8b109c5a45aea4ea5919430c735ffd4ebba6c0531951579e9a3498-d
+packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d
