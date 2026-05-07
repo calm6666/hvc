@@ -1,68 +1,121 @@
 syntax = "proto3";
+
+// 集群内部通信接口定义。
+//
+// 用于 Worker 节点与控制节点之间的心跳上报、进度同步和分片上传通知。
+// 集群内部通信优先使用 gRPC，HTTP 作为降级方案。
 package cluster.v1;
 
+// 节点信息。
 message NodeInfo {
+  // 节点 ID。
   uint64 node_id = 1;
+  // 节点主机地址。
   string host = 2;
+  // 是否启用。
   bool enabled = 3;
+  // 是否隔离（隔离后不再分配新任务）。
   bool quarantined = 4;
+  // 当前活跃转码会话数。
   int32 active_sessions = 5;
+  // CPU 使用率百分比。
   int32 cpu_usage_percent = 6;
+  // 内存使用率百分比。
   int32 memory_usage_percent = 7;
+  // GPU 显存使用率百分比。
   int32 gpu_memory_usage_percent = 8;
 }
 
+// GPU 能力描述。
 message GPUCapability {
+  // GPU 索引（同一节点内从 0 开始）。
   int32 gpu_index = 1;
+  // GPU 设备 ID（数据库主键）。
   uint64 gpu_device_id = 2;
+  // GPU UUID。
   string gpu_uuid = 3;
+  // GPU 型号名称。
   string gpu_name = 4;
+  // GPU 总显存（字节）。
   uint64 total_memory_bytes = 5;
+  // 支持的硬件编码器列表。
   repeated string encode_codecs = 6;
+  // 支持的硬件解码器列表。
   repeated string decode_codecs = 7;
+  // 支持的执行硬件类型列表。
   repeated string execution_hw_types = 8;
 }
 
+// Worker 心跳上报请求。
 message WorkerHeartbeatRequest {
+  // 节点 ID。
   uint64 node_id = 1;
+  // Worker 实例标识。
   string worker_id = 2;
+  // 启动实例 ID（每次启动唯一，用于区分重启）。
   string startup_instance_id = 3;
+  // 机器指纹（用于硬件变更检测）。
   string machine_fingerprint = 4;
 }
 
+// Worker 心跳上报响应。
 message WorkerHeartbeatResponse {
+  // 是否接受心跳。
   bool accepted = 1;
+  // 当前租约代数（用于乐观并发控制）。
   uint64 lease_generation = 2;
 }
 
+// Worker 进度上报请求。
 message ReportProgressRequest {
+  // 任务 ID。
   uint64 job_id = 1;
+  // 任务状态码。
   int32 status = 2;
+  // 当前阶段。
   string stage = 3;
+  // 进度千分比（0~1000）。
   int32 progress_permille = 4;
+  // 当前转码帧率。
   double fps = 5;
+  // 当前转码码率（kbps）。
   double bitrate_kbps = 6;
+  // 当前转码速度倍率。
   double speed = 7;
 }
 
+// Worker 进度上报响应。
 message ReportProgressResponse {
+  // 是否接受进度上报。
   bool accepted = 1;
 }
 
+// 分片上传完成通知请求。
 message SegmentUploadedRequest {
+  // 任务 ID。
   uint64 job_id = 1;
+  // 分片 ID。
   uint64 segment_id = 2;
+  // 对象存储键（按后台配置模板命名）。
   string object_key = 3;
+  // 对象大小（字节）。
   uint64 object_size_bytes = 4;
+  // 对象 ETag。
   string object_etag = 5;
 }
 
+// 分片上传完成通知响应。
 message SegmentUploadedResponse {
+  // 是否接受通知。
   bool accepted = 1;
 }
 
+// 集群内部通信服务。
 service ClusterInternalService {
+  // Worker 心跳上报。
   rpc WorkerHeartbeat(WorkerHeartbeatRequest) returns (WorkerHeartbeatResponse);
+  // Worker 进度上报。
   rpc ReportProgress(ReportProgressRequest) returns (ReportProgressResponse);
+  // 分片上传完成通知。
   rpc SegmentUploaded(SegmentUploadedRequest) returns (SegmentUploadedResponse);
 }

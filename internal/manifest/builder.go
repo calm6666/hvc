@@ -9,6 +9,7 @@ import (
 
 	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
+	"hvc/internal/worker/planner"
 	"hvc/pkg/logx"
 )
 
@@ -16,25 +17,32 @@ import (
 //
 // 根据数据库中的分片元数据，动态生成 DASH MPD 和 HLS m3u8 播放清单。
 // 不依赖磁盘上的 MPD/m3u8 文件，而是实时查询数据库构建。
+// 分片命名使用后台配置的模板，清单中的 URL 与对象存储中的实际文件名一致。
 type Builder struct {
-	segmentRepo *mysql.SegmentRepository
-	jobRepo     *mysql.JobRepository
-	playDomain  string
+	segmentRepo     *mysql.SegmentRepository
+	jobRepo         *mysql.JobRepository
+	playDomain      string
+	segmentTemplate string
 }
 
 // NewBuilder 创建动态清单构建器。
-func NewBuilder(segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository, playDomain string) *Builder {
+//
+// segmentTemplate 为后台配置的分片命名模板，
+// 用于生成清单中 SegmentTemplate 的 media 和 initialization 属性。
+func NewBuilder(segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository, playDomain string, segmentTemplate string) *Builder {
 	return &Builder{
-		segmentRepo: segmentRepo,
-		jobRepo:     jobRepo,
-		playDomain:  playDomain,
+		segmentRepo:     segmentRepo,
+		jobRepo:         jobRepo,
+		playDomain:      playDomain,
+		segmentTemplate: segmentTemplate,
 	}
 }
 
 // BuildMPD 动态构建 DASH MPD 播放清单。
 //
 // 从数据库查询指定任务的所有分片元数据，
-// 按清晰度分组，生成符合 MPEG-DASH 标准的 MPD XML。
+// 按清晰度和媒体类型分组，生成符合 MPEG-DASH 标准的 MPD XML。
+// 分片 URL 使用后台配置的命名模板渲染。
 func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
 	job, ok := b.jobRepo.GetByID(ctx, jobID)
 	if !ok {
@@ -46,7 +54,7 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
 		return "", fmt.Errorf("任务无分片数据: %d", jobID)
 	}
 
-	renditions := groupSegmentsByRendition(segments)
+	renditions := groupSegmentsByRenditionAndMediaType(segments)
 
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	durationS := float64(0)
@@ -73,11 +81,29 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
 
 	videoIdx := 0
 	audioIdx := 0
-	for rendName, segs := range renditions {
+
+	videoRenditions := make(map[string][]model.Segment)
+	audioRenditions := make(map[string][]model.Segment)
+	for key, segs := range renditions {
+		if strings.Contains(key, "-audio-") {
+			audioRenditions[key] = segs
+		} else {
+			videoRenditions[key] = segs
+		}
+	}
+
+	for rendKey, segs := range videoRenditions {
 		initSeg := findInitSegment(segs)
 		mediaSegs := findMediaSegments(segs)
 		if initSeg == nil || len(mediaSegs) == 0 {
 			continue
+		}
+
+		rend := planner.RenditionSpec{
+			Name:         initSeg.RenditionName,
+			QualityLabel: planner.QualityLabelFromHeight(initSeg.Height),
+			Width:        initSeg.Width,
+			Height:       initSeg.Height,
 		}
 
 		sb.WriteString(`<AdaptationSet`)
@@ -88,16 +114,19 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
 		sb.WriteString(` startWithSAP="1"`)
 		sb.WriteString(`>`)
 
+		initURL := b.objectURL(initSeg.ObjectKey)
+		mediaURL := b.renderMediaTemplateURL(jobID, rend, "video")
+
 		sb.WriteString(`<SegmentTemplate`)
 		sb.WriteString(fmt.Sprintf(` timescale="1000"`))
-		sb.WriteString(fmt.Sprintf(` initialization="%s"`, b.objectURL(initSeg.ObjectKey)))
-		sb.WriteString(fmt.Sprintf(` media="%s"`, b.mediaTemplateURL(rendName)))
+		sb.WriteString(fmt.Sprintf(` initialization="%s"`, initURL))
+		sb.WriteString(fmt.Sprintf(` media="%s"`, mediaURL))
 		sb.WriteString(fmt.Sprintf(` duration="%d"`, job.SegmentDurationSec*1000))
 		sb.WriteString(fmt.Sprintf(` startNumber="1"`))
 		sb.WriteString(`/>`)
 
 		sb.WriteString(`<Representation`)
-		sb.WriteString(fmt.Sprintf(` id="%s"`, rendName))
+		sb.WriteString(fmt.Sprintf(` id="%s"`, rendKey))
 		sb.WriteString(fmt.Sprintf(` bandwidth="%d"`, initSeg.VideoBitrateKbps*1000))
 		sb.WriteString(fmt.Sprintf(` width="%d"`, initSeg.Width))
 		sb.WriteString(fmt.Sprintf(` height="%d"`, initSeg.Height))
@@ -106,35 +135,64 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64) (string, error) {
 
 		sb.WriteString(`</AdaptationSet>`)
 		videoIdx++
+	}
 
-		if audioIdx == 0 {
-			sb.WriteString(`<AdaptationSet`)
-			sb.WriteString(fmt.Sprintf(` id="%d"`, videoIdx))
-			sb.WriteString(` mimeType="audio/mp4"`)
-			sb.WriteString(` contentType="audio"`)
-			sb.WriteString(` segmentAlignment="true"`)
-			sb.WriteString(` startWithSAP="1"`)
-			sb.WriteString(`>`)
-
-			audioInit := findInitSegment(segs)
-			sb.WriteString(`<SegmentTemplate`)
-			sb.WriteString(fmt.Sprintf(` timescale="1000"`))
-			sb.WriteString(fmt.Sprintf(` initialization="%s"`, b.objectURL(audioInit.ObjectKey)))
-			sb.WriteString(fmt.Sprintf(` media="%s"`, b.mediaTemplateURL(rendName)))
-			sb.WriteString(fmt.Sprintf(` duration="%d"`, job.SegmentDurationSec*1000))
-			sb.WriteString(fmt.Sprintf(` startNumber="1"`))
-			sb.WriteString(`/>`)
-
-			sb.WriteString(`<Representation`)
-			sb.WriteString(fmt.Sprintf(` id="audio-%s"`, rendName))
-			sb.WriteString(fmt.Sprintf(` bandwidth="%d"`, initSeg.AudioBitrateKbps*1000))
-			sb.WriteString(` audioSamplingRate="44100"`)
-			sb.WriteString(` codecs="mp4a.40.2"`)
-			sb.WriteString(`/>`)
-
-			sb.WriteString(`</AdaptationSet>`)
-			audioIdx++
+	for rendKey, segs := range audioRenditions {
+		initSeg := findInitSegment(segs)
+		if initSeg == nil {
+			continue
 		}
+
+		videoSegs, ok := videoRenditions[strings.Replace(rendKey, "-audio-", "-video-", 1)]
+		var rend planner.RenditionSpec
+		if ok {
+			videoInit := findInitSegment(videoSegs)
+			if videoInit != nil {
+				rend = planner.RenditionSpec{
+					Name:         videoInit.RenditionName,
+					QualityLabel: planner.QualityLabelFromHeight(videoInit.Height),
+					Width:        videoInit.Width,
+					Height:       videoInit.Height,
+				}
+			}
+		}
+		if rend.QualityLabel == "" {
+			rend = planner.RenditionSpec{
+				Name:         initSeg.RenditionName,
+				QualityLabel: planner.QualityLabelFromHeight(initSeg.Height),
+				Width:        initSeg.Width,
+				Height:       initSeg.Height,
+			}
+		}
+
+		sb.WriteString(`<AdaptationSet`)
+		sb.WriteString(fmt.Sprintf(` id="%d"`, videoIdx+audioIdx))
+		sb.WriteString(` mimeType="audio/mp4"`)
+		sb.WriteString(` contentType="audio"`)
+		sb.WriteString(` segmentAlignment="true"`)
+		sb.WriteString(` startWithSAP="1"`)
+		sb.WriteString(`>`)
+
+		initURL := b.objectURL(initSeg.ObjectKey)
+		mediaURL := b.renderMediaTemplateURL(jobID, rend, "audio")
+
+		sb.WriteString(`<SegmentTemplate`)
+		sb.WriteString(fmt.Sprintf(` timescale="1000"`))
+		sb.WriteString(fmt.Sprintf(` initialization="%s"`, initURL))
+		sb.WriteString(fmt.Sprintf(` media="%s"`, mediaURL))
+		sb.WriteString(fmt.Sprintf(` duration="%d"`, job.SegmentDurationSec*1000))
+		sb.WriteString(fmt.Sprintf(` startNumber="1"`))
+		sb.WriteString(`/>`)
+
+		sb.WriteString(`<Representation`)
+		sb.WriteString(fmt.Sprintf(` id="%s"`, rendKey))
+		sb.WriteString(fmt.Sprintf(` bandwidth="%d"`, initSeg.AudioBitrateKbps*1000))
+		sb.WriteString(` audioSamplingRate="44100"`)
+		sb.WriteString(` codecs="mp4a.40.2"`)
+		sb.WriteString(`/>`)
+
+		sb.WriteString(`</AdaptationSet>`)
+		audioIdx++
 	}
 
 	sb.WriteString(`</Period>`)
@@ -235,15 +293,30 @@ func (b *Builder) BuildVariantM3U8(ctx context.Context, jobID uint64, renditionN
 	return sb.String(), nil
 }
 
+// renderMediaTemplateURL 根据命名模板渲染 DASH SegmentTemplate 的 media 属性 URL。
+//
+// 使用 $Number$ 作为 FFmpeg/DASH 标准占位符，
+// 其余占位符按后台配置模板渲染。
+func (b *Builder) renderMediaTemplateURL(jobID uint64, rend planner.RenditionSpec, mediaType string) string {
+	tmpl := b.segmentTemplate
+	if tmpl == "" {
+		tmpl = "{job_id}-{media_type}-{number}.m4s"
+	}
+	result := tmpl
+	result = strings.ReplaceAll(result, "{job_id}", fmt.Sprintf("%d", jobID))
+	result = strings.ReplaceAll(result, "{media_type}", mediaType)
+	result = strings.ReplaceAll(result, "{number}", "$Number$")
+	result = strings.ReplaceAll(result, "{resolution}", rend.Resolution())
+	result = strings.ReplaceAll(result, "{quality}", rend.QualityLabel)
+	result = strings.ReplaceAll(result, "{timestamp}", "$Time$")
+	return b.objectURL(result)
+}
+
 func (b *Builder) objectURL(objectKey string) string {
 	if b.playDomain != "" {
 		return fmt.Sprintf("%s/%s", b.playDomain, objectKey)
 	}
 	return objectKey
-}
-
-func (b *Builder) mediaTemplateURL(rendName string) string {
-	return fmt.Sprintf("%s/seg-%s-$Number$.m4s", rendName, rendName)
 }
 
 func (b *Builder) variantM3U8URL(jobID uint64, rendName string) string {
@@ -258,6 +331,27 @@ func groupSegmentsByRendition(segments []model.Segment) map[string][]model.Segme
 			name = "source"
 		}
 		result[name] = append(result[name], seg)
+	}
+	return result
+}
+
+// groupSegmentsByRenditionAndMediaType 按清晰度和媒体类型分组。
+//
+// 键格式为 "renditionName-media-video" 或 "renditionName-media-audio"，
+// 用于 MPD 生成时区分视频和音频 AdaptationSet。
+func groupSegmentsByRenditionAndMediaType(segments []model.Segment) map[string][]model.Segment {
+	result := make(map[string][]model.Segment)
+	for _, seg := range segments {
+		name := seg.RenditionName
+		if name == "" {
+			name = "source"
+		}
+		mediaTypeStr := "video"
+		if seg.MediaType == 2 {
+			mediaTypeStr = "audio"
+		}
+		key := fmt.Sprintf("%s-%s", name, mediaTypeStr)
+		result[key] = append(result[key], seg)
 	}
 	return result
 }
@@ -299,13 +393,10 @@ func codecString(videoCodec string) string {
 	}
 }
 
-// SegmentRepository 查询接口（如果 mysql.SegmentRepository 没有 ListByJobID 方法）。
-// 这里用类型断言或方法扩展来确保接口可用。
 type segmentLister interface {
 	ListByJobID(ctx context.Context, jobID uint64) []model.Segment
 }
 
-// EnsureBuilderDependencies 确保构建器依赖完整。
 func EnsureBuilderDependencies(builder *Builder) {
 	if builder == nil {
 		logx.Info("manifest.builder.nil", nil)

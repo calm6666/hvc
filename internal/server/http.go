@@ -16,30 +16,32 @@ import (
 
 // HTTPServer 表示 HTTP 服务。
 type HTTPServer struct {
-	listenAddress      string
-	systemHandler      *handler.SystemHandler
-	transcodeHandler   *publichttp.TranscodeHandler
-	clusterHandler     *publichttp.ClusterHandler
-	liveHandler        *publichttp.LiveHandler
-	authHandler        *adminhttp.AuthHandler
-	configHandler      *adminhttp.ConfigHandler
-	callbackHandler    *adminhttp.CallbackHandler
-	rbacHandler        *adminhttp.RBACHandler
-	writeRBACHandler   *adminhttp.WriteRBAC
-	configCenterHandle *adminhttp.ConfigCenterHandler
-	adminClusterHandle *adminhttp.ClusterHandler
+	listenAddress        string
+	systemHandler        *handler.SystemHandler
+	transcodeHandler     *publichttp.TranscodeHandler
+	clusterHandler       *publichttp.ClusterHandler
+	liveHandler          *publichttp.LiveHandler
+	manifestHandler      *publichttp.ManifestHandler
+	authHandler          *adminhttp.AuthHandler
+	configHandler        *adminhttp.ConfigHandler
+	callbackHandler      *adminhttp.CallbackHandler
+	rbacHandler          *adminhttp.RBACHandler
+	writeRBACHandler     *adminhttp.WriteRBAC
+	configCenterHandle   *adminhttp.ConfigCenterHandler
+	adminClusterHandle   *adminhttp.ClusterHandler
 	adminTranscodeHandle *adminhttp.TranscodeHandler
-	adminLiveHandle     *adminhttp.LiveHandler
+	adminLiveHandle      *adminhttp.LiveHandler
 }
 
 // NewHTTPServer 创建 HTTP 服务。
-func NewHTTPServer(cfg config.ServerConfig, systemHandler *handler.SystemHandler, transcodeHandler *publichttp.TranscodeHandler, clusterHandler *publichttp.ClusterHandler, liveHandler *publichttp.LiveHandler, authHandler *adminhttp.AuthHandler, configHandler *adminhttp.ConfigHandler, callbackHandler *adminhttp.CallbackHandler, rbacHandler *adminhttp.RBACHandler, writeRBACHandler *adminhttp.WriteRBAC, configCenterHandler *adminhttp.ConfigCenterHandler, adminClusterHandler *adminhttp.ClusterHandler, adminTranscodeHandler *adminhttp.TranscodeHandler, adminLiveHandler *adminhttp.LiveHandler) *HTTPServer {
+func NewHTTPServer(cfg config.ServerConfig, systemHandler *handler.SystemHandler, transcodeHandler *publichttp.TranscodeHandler, clusterHandler *publichttp.ClusterHandler, liveHandler *publichttp.LiveHandler, manifestHandler *publichttp.ManifestHandler, authHandler *adminhttp.AuthHandler, configHandler *adminhttp.ConfigHandler, callbackHandler *adminhttp.CallbackHandler, rbacHandler *adminhttp.RBACHandler, writeRBACHandler *adminhttp.WriteRBAC, configCenterHandler *adminhttp.ConfigCenterHandler, adminClusterHandler *adminhttp.ClusterHandler, adminTranscodeHandler *adminhttp.TranscodeHandler, adminLiveHandler *adminhttp.LiveHandler) *HTTPServer {
 	return &HTTPServer{
 		listenAddress:        cfg.ListenAddress,
 		systemHandler:        systemHandler,
 		transcodeHandler:     transcodeHandler,
 		clusterHandler:       clusterHandler,
 		liveHandler:          liveHandler,
+		manifestHandler:      manifestHandler,
 		authHandler:          authHandler,
 		configHandler:        configHandler,
 		callbackHandler:      callbackHandler,
@@ -59,6 +61,9 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/v1/transcode/job/create", s.transcodeHandler.CreateJob)
 	mux.HandleFunc("/v1/transcode/job/progress", s.transcodeHandler.QueryProgress)
 	mux.HandleFunc("/v1/live/channel/playback", s.liveHandler.GetPlaybackInfo)
+	mux.HandleFunc("/v1/manifest/dash/{job_id}.mpd", s.manifestHandler.ServeMPD)
+	mux.HandleFunc("/v1/manifest/hls/{job_id}.m3u8", s.manifestHandler.ServeMasterM3U8)
+	mux.HandleFunc("/v1/manifest/hls/{job_id}/{rendition}.m3u8", s.manifestHandler.ServeVariantM3U8)
 	mux.HandleFunc("/v1/internal/worker/heartbeat", s.clusterHandler.ReportHeartbeat)
 	mux.HandleFunc("/v1/internal/worker/metrics", s.clusterHandler.ReportMetrics)
 	mux.HandleFunc("/v1/internal/jobs/lease/renew", s.clusterHandler.RenewLease)

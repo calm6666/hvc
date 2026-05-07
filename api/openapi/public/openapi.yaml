@@ -1,7 +1,11 @@
 openapi: 3.0.3
 info:
   title: HVC 公共转码 API
-  description: 视频点播转码服务公共接口
+  description: |
+    视频点播转码服务公共接口。
+    
+    提供转码任务创建、进度查询、清单获取和直播播放信息查询。
+    除集群内部 gRPC 通信外，所有对外接口均通过 HTTP 暴露。
   version: 1.0.0
 
 servers:
@@ -9,9 +13,13 @@ servers:
     description: 本地开发环境
 
 paths:
-  /api/v1/transcode/job:
+  /v1/transcode/job/create:
     post:
       summary: 创建转码任务
+      description: |
+        提交一个视频转码任务。
+        系统根据配置自动选择编码阶梯、硬件加速类型和存储目标。
+        通过 request_id 保证幂等，重复提交返回已有任务。
       operationId: createTranscodeJob
       tags: [Transcode]
       requestBody:
@@ -28,9 +36,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreateJobResponse'
 
-  /api/v1/transcode/progress:
+  /v1/transcode/job/progress:
     get:
       summary: 查询转码进度
+      description: |
+        通过 request_id 查询转码任务实时进度。
+        返回当前阶段、进度千分比、帧率、码率和速度等信息。
       operationId: queryTranscodeProgress
       tags: [Transcode]
       parameters:
@@ -47,29 +58,86 @@ paths:
               schema:
                 $ref: '#/components/schemas/QueryProgressResponse'
 
-  /api/v1/cluster/nodes:
+  /v1/manifest/dash/{job_id}.mpd:
     get:
-      summary: 查询集群节点列表
-      operationId: listClusterNodes
-      tags: [Cluster]
+      summary: 动态构建 DASH MPD 播放清单
+      description: |
+        根据数据库中的分片元数据，实时生成 MPEG-DASH MPD 播放清单。
+        不依赖磁盘文件，分片 URL 使用后台配置的命名模板。
+      operationId: serveMPD
+      tags: [Manifest]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: uint64
       responses:
         '200':
-          description: 成功
+          description: MPD XML 内容
           content:
-            application/json:
+            application/dash+xml:
               schema:
-                type: object
-                properties:
-                  code:
-                    type: integer
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/NodeInfo'
+                type: string
 
-  /api/v1/live/channel/playback:
+  /v1/manifest/hls/{job_id}.m3u8:
+    get:
+      summary: 动态构建 HLS Master 播放清单
+      description: |
+        根据数据库中的分片元数据，实时生成 HLS fMP4 Master m3u8。
+        每个清晰度对应一个 Variant Stream。
+      operationId: serveMasterM3U8
+      tags: [Manifest]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        '200':
+          description: m3u8 内容
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+
+  /v1/manifest/hls/{job_id}/{rendition}.m3u8:
+    get:
+      summary: 动态构建 HLS Variant 播放清单
+      description: |
+        根据数据库中的分片元数据，实时生成指定清晰度的 HLS fMP4 Variant m3u8。
+        包含 init segment 和所有 media segment 的 URL。
+      operationId: serveVariantM3U8
+      tags: [Manifest]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: uint64
+        - name: rendition
+          in: path
+          required: true
+          schema:
+            type: string
+            description: 清晰度名称（如 1080p、720p）
+      responses:
+        '200':
+          description: m3u8 内容
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+
+  /v1/live/channel/playback:
     get:
       summary: 查询直播播放信息
+      description: |
+        根据频道标识查询直播播放地址，包括 HLS Master URL 和 HTTP-FLV URL。
       operationId: getLivePlayback
       tags: [Live]
       parameters:
@@ -100,7 +168,7 @@ components:
           description: 业务侧资源主键
         source_url:
           type: string
-          description: 源视频地址
+          description: 源视频地址（支持 HTTP/HTTPS/S3/本地路径）
         profile_id:
           type: integer
           format: uint64
@@ -111,6 +179,8 @@ components:
         enable_watermark:
           type: boolean
           description: 是否启用水印
+        watermark:
+          $ref: '#/components/schemas/Watermark'
         segment_options:
           $ref: '#/components/schemas/SegmentOptions'
         storage_options:
@@ -119,21 +189,54 @@ components:
           $ref: '#/components/schemas/ScheduleOptions'
         renditions:
           type: array
+          description: 自定义输出清晰度列表（空则使用默认编码阶梯）
           items:
             $ref: '#/components/schemas/RenditionOption'
+
+    Watermark:
+      type: object
+      properties:
+        image_url:
+          type: string
+          description: 水印图片地址
+        anchor:
+          type: integer
+          description: 锚点位置 1=左上 2=右上 3=左下 4=右下
+        x_ratio:
+          type: number
+          description: X 轴偏移比例
+        y_ratio:
+          type: number
+          description: Y 轴偏移比例
+        width_ratio:
+          type: number
+          description: 水印宽度占视频宽度比例
+        opacity:
+          type: number
+          description: 透明度 0.0~1.0
+        safe_margin_ratio:
+          type: number
+          description: 安全边距比例
 
     SegmentOptions:
       type: object
       properties:
         segment_duration_sec:
           type: integer
-          default: 4
+          default: 6
+          description: 分片时长（秒）
         support_dash:
           type: boolean
           default: true
+          description: 是否支持 DASH 协议输出
         support_hls:
           type: boolean
           default: true
+          description: 是否支持 HLS 协议输出
+        naming_template_id:
+          type: integer
+          format: uint64
+          description: 分片命名模板 ID
 
     StorageOptions:
       type: object
@@ -141,40 +244,55 @@ components:
         storage_id:
           type: integer
           format: uint64
+          description: 存储配置 ID，0 使用默认
         bucket_prefix:
           type: string
+          description: 存储桶前缀
         segment_prefix:
           type: string
+          description: 分片前缀
 
     ScheduleOptions:
       type: object
       properties:
         preferred_hwaccel:
           type: string
-          description: 偏好硬件加速类型 (nvidia/intel_qsv/amd_amf/vaapi)
+          description: 偏好硬件加速类型 (nvidia/intel_qsv/amd_amf/vaapi/videotoolbox/software)
         allow_software_decode_fallback:
           type: boolean
           default: true
+          description: 硬件不支持时是否允许软解降级
+        max_wait_seconds:
+          type: integer
+          description: 等待调度的最大秒数
 
     RenditionOption:
       type: object
       properties:
         name:
           type: string
+          description: 清晰度名称
         width:
           type: integer
+          description: 输出宽度（0 自动计算）
         height:
           type: integer
+          description: 输出高度（0 自动计算）
         video_codec:
           type: string
+          description: 视频编码器
         video_bitrate_kbps:
           type: integer
+          description: 视频码率
         video_maxrate_kbps:
           type: integer
+          description: 视频最大码率
         video_bufsize_kbps:
           type: integer
+          description: 视频缓冲区大小
         preset:
           type: string
+          description: 编码器预设
 
     CreateJobResponse:
       type: object
@@ -189,6 +307,7 @@ components:
             job_id:
               type: integer
               format: uint64
+              description: 任务 ID（雪花 ID）
             request_id:
               type: string
             status:
@@ -213,8 +332,10 @@ components:
               type: integer
             stage:
               type: string
+              description: 当前阶段 queued/probing/transcoding/uploading/completed/failed
             progress_permille:
               type: integer
+              description: 进度千分比 0~1000
             current_fps:
               type: number
             current_bitrate_kbps:

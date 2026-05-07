@@ -1,34 +1,105 @@
+# ============================================================
+# HVC 视频转码服务 - Systemd 服务单元配置
+# ============================================================
+#
+# 功能：
+#   - 开机自启动
+#   - 进程崩溃自动重启
+#   - 资源限制
+#   - 日志输出到 journald
+#
+# 安装方法：
+#   sudo cp deployments/systemd/hvc-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable hvc-server
+#   sudo systemctl start hvc-server
+#
+# 管理命令：
+#   sudo systemctl status hvc-server
+#   sudo systemctl restart hvc-server
+#   sudo systemctl stop hvc-server
+#   journalctl -u hvc-server -f
+# ============================================================
+
 [Unit]
+# 服务描述
 Description=HVC Video Transcoding Server
-After=network.target mysql.service redis.service rabbitmq.service
-Wants=mysql.service redis.service rabbitmq.service
+# 文档地址
+Documentation=https://github.com/hilihili/hvc
+# 依赖服务：网络和数据库就绪后再启动
+After=network-online.target mysql.service redis.service
+Wants=network-online.target
 
 [Service]
+# ---- 进程类型 ----
+# simple：主进程即为服务进程
 Type=simple
+
+# ---- 执行命令 ----
+# 二进制文件路径
+ExecStart=/usr/local/bin/hvc-server --config /etc/hvc/config.yaml
+# 重启时先执行停止命令
+ExecStop=/bin/kill -SIGTERM $MAINPID
+
+# ---- 重启策略 ----
+# 总是重启（包括异常退出和正常退出）
+Restart=always
+# 重启间隔（秒），防止频繁重启
+RestartSec=5
+
+# ---- 启动用户和组 ----
+# 使用专用用户运行，避免 root 权限
 User=hvc
 Group=hvc
-ExecStart=/usr/local/bin/hvc-server --config /etc/hvc/config.yaml
-Restart=on-failure
-RestartSec=5
-LimitNOFILE=65536
-LimitNPROC=4096
 
-Environment=HOME=/var/lib/hvc
-Environment=TMPDIR=/var/tmp/hvc
+# ---- 环境变量 ----
+# 运行模式：standalone=单机 / cluster=集群
+Environment=HVC_RUN_MODE=standalone
+# 日志级别
+Environment=HVC_LOG_LEVEL=info
+# 配置文件路径
+Environment=HVC_CONFIG_PATH=/etc/hvc/config.yaml
 
+# ---- 工作目录 ----
 WorkingDirectory=/var/lib/hvc
 
-ReadWritePaths=/var/tmp/hvc /var/log/hvc
-ReadOnlyPaths=/etc/hvc
+# ---- 资源限制 ----
+# 最大打开文件数（转码任务需要大量文件描述符）
+LimitNOFILE=65536
+# 最大进程数
+LimitNPROC=4096
+# 核心转储大小（unlimited 表示不限制）
+LimitCORE=infinity
 
+# ---- 安全加固 ----
+# 禁止获取新特权
 NoNewPrivileges=true
+# 保护系统目录（只读）
 ProtectSystem=strict
+# 保护 /home 目录
 ProtectHome=true
-PrivateTmp=true
+# 允许写入的目录
+ReadWritePaths=/var/lib/hvc /tmp/hvc /var/log/hvc
+# 禁止加载内核模块
+ProtectKernelModules=true
+# 禁止修改内核参数
+ProtectKernelTunables=true
 
+# ---- 日志配置 ----
+# 日志输出到标准输出（journald 自动收集）
 StandardOutput=journal
 StandardError=journal
+# Syslog 标识
 SyslogIdentifier=hvc-server
 
+# ---- 优雅终止 ----
+# SIGTERM 后等待 60 秒再发送 SIGKILL
+TimeoutStopSec=60
+# 发送 SIGTERM 信号终止
+KillSignal=SIGTERM
+# 只终止主进程，不终止子进程组
+KillMode=process
+
 [Install]
+# 开机自启动目标
 WantedBy=multi-user.target

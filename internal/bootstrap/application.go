@@ -11,6 +11,7 @@ import (
 	"hvc/internal/config"
 	"hvc/internal/configcenter"
 	"hvc/internal/handler"
+	"hvc/internal/manifest"
 	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/infra/db/mysql"
 	adminhttp "hvc/internal/interfaces/http/admin"
@@ -98,6 +99,8 @@ func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
 	queryProgressUseCase := transcodeusecase.NewQueryProgressUseCase(jobRepository, progressStore)
 	loginUseCase := &authusecase.LoginUseCase{}
 	transcodeHandler := publichttp.NewTranscodeHandler(createJobUseCase, queryProgressUseCase, jobRepository, jobRequestOverrideRepository)
+	manifestBuilder := manifest.NewBuilder(segmentRepository, jobRepository, dynamicConfigValue.Storage.PlayDomain, dynamicConfigValue.Worker.SegmentTemplate)
+	manifestHandler := publichttp.NewManifestHandler(manifestBuilder)
 	clusterHandler := publichttp.NewClusterHandler(clusterCache, leaseCache, jobRepository, segmentRepository, workerInstanceRepository)
 	liveHandler := publichttp.NewLiveHandler(channelService)
 	authHandler := adminhttp.NewAuthHandler(loginUseCase, adminRepository)
@@ -113,7 +116,7 @@ func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
 	return &Application{
 		baseConfig:    baseConfig,
 		dynamicConfig: effectiveConfig,
-		httpServer:    server.NewHTTPServer(baseConfig.Server, systemHandler, transcodeHandler, clusterHandler, liveHandler, authHandler, configHandler, callbackHandler, rbacHandler, writeRBACHandler, configCenterHandler, adminClusterHandler, adminTranscodeHandler, adminLiveHandler),
+		httpServer:    server.NewHTTPServer(baseConfig.Server, systemHandler, transcodeHandler, clusterHandler, liveHandler, manifestHandler, authHandler, configHandler, callbackHandler, rbacHandler, writeRBACHandler, configCenterHandler, adminClusterHandler, adminTranscodeHandler, adminLiveHandler),
 		coordinator:   coordinator,
 		clusterCache:  clusterCache,
 		leaseCache:    leaseCache,

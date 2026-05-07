@@ -42,6 +42,7 @@ func buildRenditions(job model.TranscodeJob, probeResult ffprobe.Result, executi
 	specs := []RenditionSpec{
 		{
 			Name:             "source",
+			QualityLabel:     QualityLabelFromHeight(sourceHeight),
 			Width:            sourceWidth,
 			Height:           sourceHeight,
 			VideoCodec:       selectEncoder("h264", executionHW),
@@ -78,6 +79,7 @@ func buildRenditions(job model.TranscodeJob, probeResult ffprobe.Result, executi
 
 		spec := RenditionSpec{
 			Name:             preset.Name,
+			QualityLabel:     QualityLabelFromHeight(targetHeight),
 			Width:            targetWidth,
 			Height:           targetHeight,
 			VideoCodec:       selectEncoder("h264", executionHW),
@@ -110,6 +112,7 @@ func buildRenditions(job model.TranscodeJob, probeResult ffprobe.Result, executi
 			}
 			customSpecs = append(customSpecs, RenditionSpec{
 				Name:             r.Name,
+				QualityLabel:     QualityLabelFromHeight(targetHeight),
 				Width:            targetWidth,
 				Height:           targetHeight,
 				VideoCodec:       codec,
@@ -257,7 +260,10 @@ func BuildFFmpegArgs(pipeline Pipeline) []string {
 			args = append(args, "-g", fmt.Sprintf("%d", gop))
 		}
 		args = append(args, "-keyint_min", fmt.Sprintf("%d", gopValue(rend, pipeline)))
+		_ = i
+	}
 
+	for _, rend := range pipeline.Renditions {
 		args = append(args, "-map", "0:a")
 		args = append(args, "-c:a", rend.AudioCodec)
 		args = append(args, "-b:a", fmt.Sprintf("%dk", rend.AudioBitrateKbps))
@@ -267,7 +273,6 @@ func BuildFFmpegArgs(pipeline Pipeline) []string {
 		if rend.AudioSampleRate > 0 {
 			args = append(args, "-ar", fmt.Sprintf("%d", rend.AudioSampleRate))
 		}
-		_ = i
 	}
 
 	if len(pipeline.Renditions) > 0 {
@@ -276,8 +281,8 @@ func BuildFFmpegArgs(pipeline Pipeline) []string {
 		args = append(args, "-window_size", "0")
 		args = append(args, "-extra_window_size", "0")
 		args = append(args, "-remove_at_exit", "1")
-		args = append(args, "-init_seg_name", renderSegmentTemplate(pipeline.SegmentNaming.SegmentTemplate, pipeline, RenditionSpec{}, 0))
-		args = append(args, "-media_seg_name", renderSegmentTemplate(pipeline.SegmentNaming.SegmentTemplate, pipeline, RenditionSpec{}, -1))
+		args = append(args, "-init_seg_name", "init-$RepresentationID$.m4s")
+		args = append(args, "-media_seg_name", "seg-$RepresentationID$-$Number$.m4s")
 
 		adaptationSets := "id=0,streams=v id=1,streams=a"
 		args = append(args, "-adaptation_sets", adaptationSets)
@@ -309,31 +314,77 @@ func osTempDir() string {
 	return dir
 }
 
-// renderSegmentTemplate 渲染分片命名模板。
+// RenderSegmentName 根据模板渲染分片名称，用于对象存储和数据库存储。
+//
+// FFmpeg 管道输出的分片名不管（保证跨操作系统兼容性），
+// 存入对象存储和数据库中的分片名必须按后台配置的模板命名。
 //
 // 模板占位符：
-//   - {job_id}       任务 ID
-//   - {rendition}    清晰度名称
-//   - {rendition_id} 清晰度序号
+//   - {job_id}       任务 ID（雪花 ID）
+//   - {media_type}   媒体类型（video / audio）
 //   - {number}       分片序号（0=init, 1/2/3...=media）
-//   - {timestamp}    分片起始时间戳
-//
-// 当 number=0 时，生成 init segment 名称（索引为 0）。
-// 当 number=-1 时，生成 FFmpeg 的 $Number$ 占位符（用于 -media_seg_name）。
-// 当 number>0 时，生成具体序号的 media segment 名称。
-func renderSegmentTemplate(template string, pipeline Pipeline, rend RenditionSpec, number int) string {
+//   - {resolution}   视频分辨率（宽_高，如 1920_1080）
+//   - {quality}      清晰度标签（如 1080p、720p）
+//   - {timestamp}    分片起始时间戳（毫秒）
+func RenderSegmentName(template string, jobID uint64, rend RenditionSpec, mediaType string, number int, timestampMS int64) string {
 	result := template
-	result = strings.ReplaceAll(result, "{job_id}", "0")
-	result = strings.ReplaceAll(result, "{rendition}", rend.Name)
-	result = strings.ReplaceAll(result, "{rendition_id}", fmt.Sprintf("%d", 0))
-	if number == -1 {
-		result = strings.ReplaceAll(result, "{number}", "$Number$")
-		result = strings.ReplaceAll(result, "{timestamp}", "$Time$")
-	} else {
-		result = strings.ReplaceAll(result, "{number}", fmt.Sprintf("%d", number))
-		result = strings.ReplaceAll(result, "{timestamp}", "0")
-	}
+	result = strings.ReplaceAll(result, "{job_id}", fmt.Sprintf("%d", jobID))
+	result = strings.ReplaceAll(result, "{media_type}", mediaType)
+	result = strings.ReplaceAll(result, "{number}", fmt.Sprintf("%d", number))
+	result = strings.ReplaceAll(result, "{resolution}", rend.Resolution())
+	result = strings.ReplaceAll(result, "{quality}", rend.QualityLabel)
+	result = strings.ReplaceAll(result, "{timestamp}", fmt.Sprintf("%d", timestampMS))
 	return result
+}
+
+// QualityLabelFromHeight 根据视频高度映射清晰度标签。
+//
+// 映射规则：
+//   - ≥ 2160 → 4k
+//   - ≥ 1440 → 2k
+//   - ≥ 1080 → 1080p
+//   - ≥ 720  → 720p
+//   - ≥ 480  → 480p
+//   - ≥ 360  → 360p
+//   - < 360  → 240p
+func QualityLabelFromHeight(height int) string {
+	switch {
+	case height >= 2160:
+		return "4k"
+	case height >= 1440:
+		return "2k"
+	case height >= 1080:
+		return "1080p"
+	case height >= 720:
+		return "720p"
+	case height >= 480:
+		return "480p"
+	case height >= 360:
+		return "360p"
+	default:
+		return "240p"
+	}
+}
+
+// MapRepIDToRendition 将 FFmpeg 输出的 RepresentationID 映射到清晰度规格和媒体类型。
+//
+// FFmpeg DASH muxer 按输出流顺序分配 RepresentationID。
+// 当前 BuildFFmpegArgs 先输出所有视频流，再输出所有音频流：
+//   - 视频流：repID 0 ~ N-1（N = len(renditions)）
+//   - 音频流：repID N ~ 2N-1
+func MapRepIDToRendition(repID int, renditions []RenditionSpec) (RenditionSpec, string) {
+	n := len(renditions)
+	if n == 0 {
+		return RenditionSpec{}, "video"
+	}
+	if repID < n {
+		return renditions[repID], "video"
+	}
+	audioIdx := repID - n
+	if audioIdx < n {
+		return renditions[audioIdx], "audio"
+	}
+	return renditions[0], "video"
 }
 
 // buildWatermarkFilter 构建水印滤镜字符串。

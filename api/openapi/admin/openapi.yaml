@@ -1,7 +1,12 @@
 openapi: 3.0.3
 info:
   title: HVC 后台管理 API
-  description: 视频转码服务后台管理接口
+  description: |
+    视频转码服务后台管理接口。
+    
+    包含认证、配置管理、回调管理、RBAC 权限、集群管理、
+    转码任务管理、直播频道管理、审计日志等模块。
+    所有管理接口需要 JWT 认证和 RBAC 权限校验。
   version: 1.0.0
 
 servers:
@@ -9,9 +14,10 @@ servers:
     description: 本地开发环境
 
 paths:
-  /admin/auth/login:
+  /v1/admin/auth/login:
     post:
       summary: 管理员登录
+      description: 使用用户名密码登录，返回 JWT Token。支持 OTP 二次验证和账户锁定。
       tags: [Auth]
       requestBody:
         required: true
@@ -25,11 +31,14 @@ paths:
                   type: string
                 password:
                   type: string
+                otp_code:
+                  type: string
+                  description: OTP 验证码（启用二步验证时必填）
       responses:
         '200':
           description: 成功
 
-  /admin/auth/logout:
+  /v1/admin/auth/logout:
     post:
       summary: 管理员登出
       tags: [Auth]
@@ -37,7 +46,268 @@ paths:
         '200':
           description: 成功
 
-  /admin/transcode/job/list:
+  /v1/admin/auth/me:
+    get:
+      summary: 获取当前用户信息
+      tags: [Auth]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config/runtime/versions:
+    get:
+      summary: 查询运行配置版本列表
+      description: 查询所有历史配置版本，支持回滚到指定版本。
+      tags: [Config]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config/runtime/update:
+    post:
+      summary: 更新运行配置
+      description: |
+        更新动态运行配置（调度器、Worker、存储、回调等）。
+        更新后生成新版本，需通过 /publish 发布生效。
+        支持动态修改分片命名模板、存储类型、回调地址等。
+      tags: [Config]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config/publish:
+    post:
+      summary: 发布配置版本
+      tags: [Config]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config/callback/list:
+    get:
+      summary: 查询回调配置列表
+      description: 查询所有回调目标配置（HTTP/gRPC/MQ），支持动态启用/禁用。
+      tags: [Callback]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config/callback/upsert:
+    post:
+      summary: 创建或更新回调配置
+      description: |
+        动态配置回调目标。支持三种回调方式：
+        - HTTP 回调：转码完成后向指定 URL 发送 POST 请求
+        - gRPC 回调：调用指定 gRPC 服务
+        - MQ 回调：发送消息到指定消息队列
+      tags: [Callback]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config/callback/enabled:
+    post:
+      summary: 启用/禁用回调配置
+      tags: [Callback]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config-center/list:
+    get:
+      summary: 查询配置中心绑定列表
+      tags: [ConfigCenter]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config-center/upsert:
+    post:
+      summary: 创建或更新配置中心绑定
+      tags: [ConfigCenter]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/config-center/enabled:
+    post:
+      summary: 启用/禁用配置中心绑定
+      tags: [ConfigCenter]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/user/list:
+    get:
+      summary: 查询用户列表
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/role/list:
+    get:
+      summary: 查询角色列表
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/permission/list:
+    get:
+      summary: 查询权限列表
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/role/upsert:
+    post:
+      summary: 创建或更新角色
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/permission/upsert:
+    post:
+      summary: 创建或更新权限
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/user/upsert:
+    post:
+      summary: 创建或更新用户
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/user/status:
+    post:
+      summary: 启用/禁用用户
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/user-role/bind:
+    post:
+      summary: 绑定用户角色
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/system/role-permission/bind:
+    post:
+      summary: 绑定角色权限
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/audit/list:
+    get:
+      summary: 查询审计日志
+      tags: [Audit]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: action_name
+          in: query
+          schema:
+            type: string
+        - name: admin_user_id
+          in: query
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/cluster/node/list:
+    get:
+      summary: 查询集群节点列表
+      description: 查询所有注册节点的状态、指标和 GPU 能力。
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/cluster/node/detail:
+    get:
+      summary: 查询节点详情
+      tags: [Cluster]
+      parameters:
+        - name: node_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/cluster/node/metrics:
+    get:
+      summary: 查询节点指标
+      tags: [Cluster]
+      parameters:
+        - name: node_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/cluster/member/list:
+    get:
+      summary: 查询集群成员列表
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/cluster/node/enabled:
+    post:
+      summary: 启用/禁用节点
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/cluster/node/quarantined:
+    post:
+      summary: 隔离/取消隔离节点
+      description: 隔离后节点不再分配新任务，已有任务继续执行。
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/transcode/job/list:
     get:
       summary: 任务列表
       tags: [Transcode]
@@ -64,7 +334,7 @@ paths:
         '200':
           description: 成功
 
-  /admin/transcode/job/detail:
+  /v1/admin/transcode/job/detail:
     get:
       summary: 任务详情
       tags: [Transcode]
@@ -79,7 +349,7 @@ paths:
         '200':
           description: 成功
 
-  /admin/transcode/job/retry:
+  /v1/admin/transcode/job/retry:
     post:
       summary: 重试失败任务
       tags: [Transcode]
@@ -98,7 +368,7 @@ paths:
         '200':
           description: 成功
 
-  /admin/transcode/job/cancel:
+  /v1/admin/transcode/job/cancel:
     post:
       summary: 取消任务
       tags: [Transcode]
@@ -117,7 +387,7 @@ paths:
         '200':
           description: 成功
 
-  /admin/transcode/job/progress:
+  /v1/admin/transcode/job/progress:
     get:
       summary: 后台管理进度查询
       tags: [Transcode]
@@ -132,16 +402,16 @@ paths:
         '200':
           description: 成功
 
-  /admin/transcode/monitor/ws:
+  /v1/admin/transcode/monitor/ws:
     get:
       summary: WebSocket 实时监控
+      description: WebSocket 升级端点，连接后接收实时转码进度快照推送。
       tags: [Monitor]
-      description: WebSocket 升级端点，连接后接收实时快照推送
       responses:
         '101':
           description: WebSocket 升级成功
 
-  /admin/live/channel/create:
+  /v1/admin/live/channel/create:
     post:
       summary: 创建直播频道
       tags: [Live]
@@ -164,7 +434,23 @@ paths:
         '200':
           description: 成功
 
-  /admin/live/channel/start:
+  /v1/admin/live/channel/detail:
+    get:
+      summary: 查询频道详情
+      tags: [Live]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/live/channel/update:
+    post:
+      summary: 更新频道配置
+      tags: [Live]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/live/channel/start:
     post:
       summary: 启动直播频道
       tags: [Live]
@@ -183,62 +469,10 @@ paths:
         '200':
           description: 成功
 
-  /admin/cluster/node/list:
-    get:
-      summary: 查询集群节点
-      tags: [Cluster]
-      responses:
-        '200':
-          description: 成功
-
-  /admin/config/runtime:
-    get:
-      summary: 获取运行配置
-      tags: [Config]
-      responses:
-        '200':
-          description: 成功
-
-  /admin/rbac/role/list:
-    get:
-      summary: 查询角色列表
-      tags: [RBAC]
-      responses:
-        '200':
-          description: 成功
-
-  /admin/rbac/permission/list:
-    get:
-      summary: 查询权限列表
-      tags: [RBAC]
-      responses:
-        '200':
-          description: 成功
-
-  /admin/audit/list:
-    get:
-      summary: 查询审计日志
-      tags: [Audit]
-      parameters:
-        - name: page
-          in: query
-          schema:
-            type: integer
-            default: 1
-        - name: page_size
-          in: query
-          schema:
-            type: integer
-            default: 20
-        - name: action_name
-          in: query
-          schema:
-            type: string
-        - name: admin_user_id
-          in: query
-          schema:
-            type: integer
-            format: uint64
+  /v1/admin/live/channel/stop:
+    post:
+      summary: 停止直播频道
+      tags: [Live]
       responses:
         '200':
           description: 成功

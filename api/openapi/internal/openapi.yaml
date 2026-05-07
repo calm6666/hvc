@@ -1,13 +1,20 @@
 openapi: 3.0.3
 info:
   title: HVC 集群内部 API
-  description: 集群节点间通信接口（gRPC 优先，HTTP 降级）
+  description: |
+    集群节点间通信接口（gRPC 优先，HTTP 降级）。
+    
+    这些接口仅用于集群内部通信，不对外暴露。
+    包括 Worker 心跳上报、进度同步、分片上传通知和租约续约。
   version: 1.0.0
 
 paths:
-  /internal/worker/heartbeat:
+  /v1/internal/worker/heartbeat:
     post:
       summary: Worker 心跳上报
+      description: |
+        Worker 定期上报心跳，包含节点 ID、Worker 标识和机器指纹。
+        控制节点根据心跳判断 Worker 是否存活，并返回租约代数。
       tags: [Worker]
       requestBody:
         required: true
@@ -19,19 +26,46 @@ paths:
                 node_id:
                   type: integer
                   format: uint64
+                  description: 节点 ID
                 worker_id:
                   type: string
+                  description: Worker 实例标识
                 startup_instance_id:
                   type: string
+                  description: 启动实例 ID（每次启动唯一）
                 machine_fingerprint:
                   type: string
+                  description: 机器指纹（用于硬件变更检测）
       responses:
         '200':
           description: 成功
 
-  /internal/worker/progress:
+  /v1/internal/worker/metrics:
     post:
-      summary: Worker 进度上报
+      summary: Worker 指标上报
+      description: |
+        Worker 定期上报节点指标，包括 CPU、内存、GPU 显存使用率等。
+        调度器根据指标决定是否向该节点分配新任务。
+      tags: [Worker]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/internal/jobs/lease/renew:
+    post:
+      summary: 任务租约续约
+      description: |
+        Worker 续约当前执行的任务租约，防止任务被调度器回收。
+        使用乐观并发控制（lease_generation）防止续约冲突。
+      tags: [Worker]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/internal/segments/upload-failed:
+    post:
+      summary: 分片上传失败通知
+      description: Worker 上报分片上传失败，系统记录错误信息并安排重试。
       tags: [Worker]
       requestBody:
         required: true
@@ -40,28 +74,21 @@ paths:
             schema:
               type: object
               properties:
-                job_id:
+                segment_id:
                   type: integer
                   format: uint64
-                status:
-                  type: integer
-                stage:
+                error_message:
                   type: string
-                progress_permille:
-                  type: integer
-                fps:
-                  type: number
-                bitrate_kbps:
-                  type: number
-                speed:
-                  type: number
       responses:
         '200':
           description: 成功
 
-  /internal/worker/segment-uploaded:
+  /v1/internal/segments/upload-succeeded:
     post:
-      summary: 分片上传完成通知
+      summary: 分片上传成功通知
+      description: |
+        Worker 上报分片上传成功，包含对象存储键、大小和 ETag。
+        对象存储键按后台配置的分片命名模板生成。
       tags: [Worker]
       requestBody:
         required: true
@@ -70,14 +97,12 @@ paths:
             schema:
               type: object
               properties:
-                job_id:
-                  type: integer
-                  format: uint64
                 segment_id:
                   type: integer
                   format: uint64
                 object_key:
                   type: string
+                  description: 对象存储键（按模板命名）
                 object_size_bytes:
                   type: integer
                   format: uint64

@@ -18,6 +18,11 @@
       "description": "转码失败通知队列"
     },
     {
+      "name": "hvc.transcode.progress",
+      "routing_key": "transcode.job.progress",
+      "description": "转码进度更新队列，用于 WebSocket 实时推送"
+    },
+    {
       "name": "hvc.live.stream.start",
       "routing_key": "live.stream.start",
       "description": "直播推流开始事件"
@@ -30,38 +35,66 @@
   ],
   "message_schemas": {
     "transcode.job.create": {
-      "request_id": "string, 外部请求唯一标识",
+      "request_id": "string, 外部请求唯一标识，用于幂等控制",
       "biz_key": "string, 业务侧资源主键",
-      "source_url": "string, 源视频地址",
+      "source_url": "string, 源视频地址（支持 HTTP/HTTPS/S3/本地路径）",
       "profile_id": "uint64, 转码模板 ID",
-      "priority": "int, 优先级",
+      "priority": "int, 优先级，数值越大越优先",
       "enable_watermark": "bool, 是否启用水印",
+      "watermark": {
+        "image_url": "string, 水印图片地址",
+        "anchor": "int, 锚点位置 1=左上 2=右上 3=左下 4=右下",
+        "x_ratio": "double, X 轴偏移比例",
+        "y_ratio": "double, Y 轴偏移比例",
+        "width_ratio": "double, 水印宽度占视频宽度比例",
+        "opacity": "double, 透明度 0.0~1.0"
+      },
       "segment_options": {
-        "segment_duration_sec": "int, 分片时长",
-        "support_dash": "bool",
-        "support_hls": "bool"
+        "segment_duration_sec": "int, 分片时长（秒），默认 6",
+        "support_dash": "bool, 是否支持 DASH 协议输出",
+        "support_hls": "bool, 是否支持 HLS 协议输出",
+        "naming_template_id": "uint64, 分片命名模板 ID"
       },
       "storage_options": {
-        "storage_id": "uint64",
-        "bucket_prefix": "string",
-        "segment_prefix": "string"
+        "storage_id": "uint64, 存储配置 ID，0 使用默认",
+        "bucket_prefix": "string, 存储桶前缀",
+        "segment_prefix": "string, 分片前缀"
       },
       "schedule_options": {
-        "preferred_hwaccel": "string",
-        "allow_software_decode_fallback": "bool"
-      }
+        "preferred_hwaccel": "string, 偏好硬件加速类型 nvidia/intel_qsv/amd_amf/vaapi/software",
+        "allow_software_decode_fallback": "bool, 硬件不支持时是否允许软解降级",
+        "max_wait_seconds": "int, 等待调度的最大秒数"
+      },
+      "renditions": [
+        {
+          "name": "string, 清晰度名称",
+          "width": "int, 输出宽度（0 自动计算）",
+          "height": "int, 输出高度（0 自动计算）",
+          "video_bitrate_kbps": "int, 视频码率"
+        }
+      ]
     },
     "transcode.job.completed": {
-      "job_id": "uint64",
-      "request_id": "string",
-      "status": "int",
-      "segment_count": "int"
+      "job_id": "uint64, 任务 ID（雪花 ID）",
+      "request_id": "string, 外部请求唯一标识",
+      "status": "int, 任务状态码",
+      "segment_count": "int, 总分片数",
+      "duration_ms": "int64, 视频时长（毫秒）",
+      "renditions": ["string, 输出清晰度列表"]
     },
     "transcode.job.failed": {
-      "job_id": "uint64",
-      "request_id": "string",
-      "error_code": "string",
-      "error_message": "string"
+      "job_id": "uint64, 任务 ID",
+      "request_id": "string, 外部请求唯一标识",
+      "error_code": "string, 错误码（PROBE_FAILED/RUN_FAILED等）",
+      "error_message": "string, 错误描述信息"
+    },
+    "transcode.job.progress": {
+      "job_id": "uint64, 任务 ID",
+      "stage": "string, 当前阶段 queued/probing/transcoding/uploading/completed/failed",
+      "progress_permille": "int, 进度千分比 0~1000",
+      "current_fps": "double, 当前转码帧率",
+      "current_bitrate_kbps": "double, 当前转码码率",
+      "current_speed": "double, 当前转码速度倍率"
     }
   }
 }

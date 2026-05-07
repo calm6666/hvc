@@ -1,20 +1,69 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# ============================================================
+# HVC 视频转码服务 - 开发环境启动脚本
+# ============================================================
+#
+# 功能：
+#   - 启动热重载开发服务器（使用 air）
+#   - 自动检测并安装 air
+#   - 支持自定义配置文件路径
+#
+# 使用方法：
+#   ./scripts/dev/dev.sh                  # 默认启动
+#   ./scripts/dev/dev.sh /path/to/config  # 指定配置文件
+#
+# 前置依赖：
+#   - Go 1.22+
+#   - air（热重载工具，脚本会自动安装）
+#   - FFmpeg（转码核心依赖）
+# ============================================================
+
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+CONFIG_PATH="${1:-${PROJECT_ROOT}/configs/config.yaml}"
 
-echo "=== Starting HVC Dev Environment ==="
+echo "=========================================="
+echo "  HVC 开发环境启动"
+echo "=========================================="
+echo "  项目根目录: ${PROJECT_ROOT}"
+echo "  配置文件:   ${CONFIG_PATH}"
+echo "=========================================="
 
-cd "$PROJECT_ROOT"
-
-if [ ! -f "configs/config.yaml" ]; then
-    echo "Error: configs/config.yaml not found"
-    exit 1
+# ---- 检查 FFmpeg ----
+echo "[1/3] 检查 FFmpeg..."
+if ! command -v ffmpeg &>/dev/null; then
+  echo "  警告：未检测到 FFmpeg，转码功能将不可用"
+  echo "  安装方法："
+  echo "    Ubuntu/Debian: sudo apt install ffmpeg"
+  echo "    CentOS/RHEL:   sudo yum install ffmpeg"
+  echo "    macOS:         brew install ffmpeg"
+  echo "    Windows:       choco install ffmpeg"
+else
+  FFMPEG_VERSION=$(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}')
+  echo "  FFmpeg 版本: ${FFMPEG_VERSION}"
 fi
 
-echo "Running go mod tidy..."
-go mod tidy
+# ---- 检查并安装 air ----
+echo "[2/3] 检查 air 热重载工具..."
+if ! command -v air &>/dev/null; then
+  echo "  未检测到 air，正在安装..."
+  go install github.com/air-verse/air@latest
+  echo "  air 安装完成"
+else
+  echo "  air 已安装"
+fi
 
-echo "Starting HVC server in dev mode..."
-go run ./cmd/server --config configs/config.yaml
+# ---- 启动开发服务器 ----
+echo "[3/3] 启动热重载开发服务器..."
+cd "${PROJECT_ROOT}"
+
+# 设置环境变量
+export HVC_CONFIG_PATH="${CONFIG_PATH}"
+export HVC_RUN_MODE=standalone
+export HVC_LOG_LEVEL=debug
+
+# 启动 air 热重载
+# air 会自动检测 .air.toml 配置文件
+# 默认监控 .go 文件变更，自动重新编译和重启
+exec air

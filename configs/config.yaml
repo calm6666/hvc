@@ -139,9 +139,16 @@ worker:
   # 上传最大重试次数。
   upload_max_retry_count: 3
   # 分片命名模板（init 和 media 统一，number=0 为 init）。
-  # 占位符：{job_id} {rendition} {rendition_id} {number} {timestamp}
+  # 占位符：{job_id} {media_type} {number} {resolution} {quality} {timestamp}
+  # 六种预置方案：
+  #   方案一：{job_id}-{media_type}-{number}.m4s
+  #   方案二：{job_id}-{resolution}-{media_type}-{number}.m4s
+  #   方案三：{job_id}-{quality}-{media_type}-{number}.m4s
+  #   方案四：{job_id}-{media_type}-{number}-{timestamp}.m4s
+  #   方案五：{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s
+  #   方案六：{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s
   # 后台管理界面可动态修改。
-  segment_template: "{job_id}/{rendition}/seg-{number}.m4s"
+  segment_template: "{job_id}-{media_type}-{number}.m4s"
 
 grpc:
   # gRPC 服务监听地址。

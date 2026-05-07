@@ -1,84 +1,254 @@
+# ============================================================
+# HVC 视频转码服务 - Docker Compose 编排配置
+# ============================================================
+#
+# 包含以下服务：
+#   - hvc-server：转码服务主进程
+#   - mysql：数据库
+#   - redis：缓存 + 分布式锁
+#   - etcd：服务注册与发现
+#   - rabbitmq：消息队列
+#   - minio：对象存储（S3 兼容）
+#   - nginx：反向代理 + 负载均衡
+#
+# 使用方法：
+#   docker compose up -d
+#   docker compose logs -f hvc-server
+#   docker compose down
+# ============================================================
+
 version: "3.8"
 
 services:
+  # ---- 转码服务主进程 ----
   hvc-server:
     build:
       context: ../..
       dockerfile: deployments/docker/Dockerfile
+    container_name: hvc-server
+    # 主机名，用于集群内节点标识
+    hostname: hvc-server
+    # 重启策略：除非手动停止，否则总是重启
+    restart: unless-stopped
     ports:
+      # HTTP 公共 API + 管理后台
       - "8080:8080"
+      # gRPC 集群内部通信
       - "9090:9090"
+    # 环境变量
     environment:
-      - HVC_CONFIG=/etc/hvc/config.yaml
+      # 运行模式：standalone=单机 / cluster=集群
+      - HVC_RUN_MODE=standalone
+      # 配置文件路径
+      - HVC_CONFIG_PATH=/etc/hvc/config.yaml
+      # 日志级别：debug/info/warn/error
+      - HVC_LOG_LEVEL=info
+    # 挂载配置文件（只读）
     volumes:
       - ../../configs/config.yaml:/etc/hvc/config.yaml:ro
+      # 本地存储目录（storage_type=local 时使用）
+      - hvc-media-data:/data/hvc/media
+      # 临时转码输出目录
+      - hvc-tmp-data:/tmp/hvc
+    # 依赖服务（先启动依赖再启动主服务）
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    restart: unless-stopped
-
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: hvc
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ../../sql/000_full_project_schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      etcd:
+        condition: service_started
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          # CPU 限制（2 核）
+          cpus: "2.0"
+          # 内存限制（4GB）
+          memory: 4G
+    # 健康检查
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/system/health"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 3
+      start_period: 30s
+    # 网络配置
+    networks:
+      - hvc-net
 
+  # ---- MySQL 数据库 ----
+  mysql:
+    image: mysql:8.0
+    container_name: hvc-mysql
+    hostname: mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      # root 密码（生产环境请修改）
+      - MYSQL_ROOT_PASSWORD=hvc_root_pwd
+      # 数据库名
+      - MYSQL_DATABASE=hvc
+      # 应用用户
+      - MYSQL_USER=hvc
+      # 应用密码（生产环境请修改）
+      - MYSQL_PASSWORD=hvc_pwd
+    # 数据持久化
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 初始化 SQL 脚本（首次启动时执行）
+      - ../../scripts/migrate/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # MySQL 配置优化
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=512M
+      --max-connections=200
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-phvc_root_pwd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - hvc-net
+
+  # ---- Redis 缓存 + 分布式锁 ----
+  redis:
+    image: redis:7-alpine
+    container_name: hvc-redis
+    hostname: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    # Redis 持久化配置
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hvc-net
+
+  # ---- etcd 服务注册与发现 ----
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.11
+    container_name: hvc-etcd
+    hostname: etcd
+    restart: unless-stopped
+    ports:
+      # 客户端通信端口
+      - "2379:2379"
+      # 集群内部通信端口
+      - "2380:2380"
+    environment:
+      # etcd 集群配置（单节点模式）
+      - ETCD_NAME=hvc-etcd-1
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER=hvc-etcd-1=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER_TOKEN=hvc-etcd-cluster
+      - ETCD_INITIAL_CLUSTER_STATE=new
+    volumes:
+      - etcd-data:/etcd-data
+    networks:
+      - hvc-net
+
+  # ---- RabbitMQ 消息队列 ----
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: hvc-rabbitmq
+    hostname: rabbitmq
+    restart: unless-stopped
+    ports:
+      # AMQP 协议端口
+      - "5672:5672"
+      # 管理界面端口
+      - "15672:15672"
+    environment:
+      # 默认用户名和密码（生产环境请修改）
+      - RABBITMQ_DEFAULT_USER=hvc
+      - RABBITMQ_DEFAULT_PASS=hvc_mq_pwd
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - hvc-net
+
+  # ---- MinIO 对象存储（S3 兼容） ----
   minio:
     image: minio/minio:latest
+    container_name: hvc-minio
+    hostname: minio
+    restart: unless-stopped
     ports:
+      # API 端口
       - "9000:9000"
+      # 管理控制台端口
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    volumes:
-      - minio_data:/data
+      # Access Key（生产环境请修改）
+      - MINIO_ROOT_USER=minioadmin
+      # Secret Key（生产环境请修改）
+      - MINIO_ROOT_PASSWORD=minioadmin
+    # 启动命令：同时启动 API 服务和控制台
     command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hvc-net
 
+# ---- 数据卷定义 ----
 volumes:
-  mysql_data:
-  redis_data:
-  rabbitmq_data:
-  minio_data:
+  # MySQL 数据持久化
+  mysql-data:
+    driver: local
+  # Redis 数据持久化
+  redis-data:
+    driver: local
+  # etcd 数据持久化
+  etcd-data:
+    driver: local
+  # RabbitMQ 数据持久化
+  rabbitmq-data:
+    driver: local
+  # MinIO 对象存储数据
+  minio-data:
+    driver: local
+  # HVC 本地存储媒体文件
+  hvc-media-data:
+    driver: local
+  # HVC 临时转码文件
+  hvc-tmp-data:
+    driver: local
+
+# ---- 网络定义 ----
+networks:
+  hvc-net:
+    driver: bridge
+    ipam:
+      config:
+        # 子网地址段
+        - subnet: 172.28.0.0/16

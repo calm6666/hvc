@@ -222,6 +222,7 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 	}
 
 	naming := planner.DefaultSegmentNamingConfig()
+	naming.JobID = job.JobID
 	if m.cfg.Worker.SegmentTemplate != "" {
 		naming.SegmentTemplate = m.cfg.Worker.SegmentTemplate
 	}
@@ -295,24 +296,31 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 	})
 
 	for _, seg := range discoverResult.Segments {
-		mediaType := 1
-		if seg.MediaType == 2 {
-			mediaType = 2
+		segmentType := "media"
+		if seg.IsInit {
+			segmentType = "init"
 		}
 		_, saveErr := m.segmentRepository.Save(ctx, model.Segment{
-			JobID:         job.JobID,
-			RenditionID:   uint64(seg.RepresentationID),
-			MediaType:     mediaType,
-			IsInitSegment: seg.IsInit,
-			SequenceNo:    seg.SequenceNo,
-			DurationMS:    job.SegmentDurationSec * 1000,
-			SupportDash:   job.SupportDash,
-			SupportHLS:    job.SupportHLS,
-			CodecName:     probeResult.VideoCodec,
-			ObjectKey:     seg.ObjectKey,
-			UploadStatus:  model.SegmentUploadPending,
-			CreatedAt:     time.Now(),
-			UpdatedAt:     time.Now(),
+			JobID:            job.JobID,
+			RenditionID:      uint64(seg.RepresentationID),
+			RenditionName:    seg.RenditionName,
+			SegmentType:      segmentType,
+			MediaType:        seg.MediaType,
+			IsInitSegment:    seg.IsInit,
+			SequenceNo:       seg.SequenceNo,
+			DurationMS:       job.SegmentDurationSec * 1000,
+			Width:            seg.Width,
+			Height:           seg.Height,
+			VideoBitrateKbps: seg.VideoBitrateKbps,
+			AudioBitrateKbps: seg.AudioBitrateKbps,
+			VideoCodec:       seg.VideoCodec,
+			SupportDash:      job.SupportDash,
+			SupportHLS:       job.SupportHLS,
+			CodecName:        probeResult.VideoCodec,
+			ObjectKey:        seg.ObjectKey,
+			UploadStatus:     model.SegmentUploadPending,
+			CreatedAt:        time.Now(),
+			UpdatedAt:        time.Now(),
 		})
 		if saveErr != nil {
 			logx.Error("worker.segment.save_failed", saveErr, logx.Fields{

@@ -1,63 +1,167 @@
 syntax = "proto3";
+
+// 转码服务公共接口定义。
+//
+// 提供转码任务创建和进度查询两个核心 RPC，
+// 供外部业务系统通过 gRPC 调用。
 package transcode.v1;
 
+// 通用错误信息。
 message Error {
+  // 错误码，0 表示成功，非 0 表示具体错误。
   int32 code = 1;
+  // 错误描述信息。
   string message = 2;
 }
 
+// 分片配置选项。
 message SegmentOptions {
+  // 是否支持 DASH 协议输出。
   bool support_dash = 1;
+  // 是否支持 HLS 协议输出。
   bool support_hls = 2;
+  // 分片时长（秒），默认 6。
   int32 segment_duration_sec = 3;
+  // 分片命名模板 ID，关联 t_config_naming_template 表。
+  // 六种预置方案：
+  //   方案一：{job_id}-{media_type}-{number}.m4s
+  //   方案二：{job_id}-{resolution}-{media_type}-{number}.m4s
+  //   方案三：{job_id}-{quality}-{media_type}-{number}.m4s
+  //   方案四：{job_id}-{media_type}-{number}-{timestamp}.m4s
+  //   方案五：{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s
+  //   方案六：{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s
   uint64 naming_template_id = 4;
 }
 
+// 对象存储配置选项。
 message StorageOptions {
+  // 存储配置 ID，关联 t_storage_config 表。
+  // 0 表示使用系统默认存储。
   uint64 storage_id = 1;
+  // 存储桶前缀。
   string bucket_prefix = 2;
+  // 分片前缀。
   string segment_prefix = 3;
 }
 
+// 调度配置选项。
 message ScheduleOptions {
+  // 偏好硬件加速类型：nvidia / intel_qsv / amd_amf / vaapi / videotoolbox / software。
   string preferred_hwaccel = 1;
+  // 硬件不支持时是否允许软解降级。
   bool allow_software_decode_fallback = 2;
+  // 等待调度的最大秒数，超时则任务失败。
   int32 max_wait_seconds = 3;
 }
 
-message CreateJobRequest {
-  string request_id = 1;
-  string biz_key = 2;
-  string source_url = 3;
-  uint64 profile_id = 4;
-  int32 priority = 5;
-  bool enable_watermark = 6;
-  SegmentOptions segment_options = 7;
-  StorageOptions storage_options = 8;
-  ScheduleOptions schedule_options = 9;
+// 水印配置。
+message Watermark {
+  // 水印图片地址。
+  string image_url = 1;
+  // 锚点位置：1=左上 2=右上 3=左下 4=右下。
+  int32 anchor = 2;
+  // X 轴偏移比例（0.0~1.0）。
+  double x_ratio = 3;
+  // Y 轴偏移比例（0.0~1.0）。
+  double y_ratio = 4;
+  // 水印宽度占视频宽度比例（0.0~1.0）。
+  double width_ratio = 5;
+  // 水印透明度（0.0~1.0，1.0 完全不透明）。
+  double opacity = 6;
+  // 安全边距比例，水印与视频边缘的最小距离。
+  double safe_margin_ratio = 7;
 }
 
+// 单个输出清晰度配置。
+message RenditionOption {
+  // 清晰度名称（如 1080p、720p）。
+  string name = 1;
+  // 输出宽度（0 表示自动按源宽高比计算）。
+  int32 width = 2;
+  // 输出高度（0 表示自动按源宽高比计算）。
+  int32 height = 3;
+  // 视频编码器（空则使用默认）。
+  string video_codec = 4;
+  // 视频码率（kbps）。
+  int32 video_bitrate_kbps = 5;
+  // 视频最大码率（kbps）。
+  int32 video_maxrate_kbps = 6;
+  // 视频缓冲区大小（kbps）。
+  int32 video_bufsize_kbps = 7;
+  // 编码器预设。
+  string preset = 8;
+}
+
+// 创建转码任务请求。
+message CreateJobRequest {
+  // 外部请求唯一标识，用于幂等控制。
+  string request_id = 1;
+  // 业务侧资源主键，用于关联业务系统。
+  string biz_key = 2;
+  // 源视频地址（支持 HTTP/HTTPS/S3/本地路径）。
+  string source_url = 3;
+  // 转码模板 ID（0 表示使用默认模板）。
+  uint64 profile_id = 4;
+  // 优先级，数值越大越优先。
+  int32 priority = 5;
+  // 是否启用水印。
+  bool enable_watermark = 6;
+  // 分片配置。
+  SegmentOptions segment_options = 7;
+  // 存储配置。
+  StorageOptions storage_options = 8;
+  // 调度配置。
+  ScheduleOptions schedule_options = 9;
+  // 水印配置（enable_watermark=true 时必填）。
+  Watermark watermark = 10;
+  // 自定义输出清晰度列表（空则使用默认编码阶梯）。
+  repeated RenditionOption renditions = 11;
+}
+
+// 创建转码任务响应。
 message CreateJobResponse {
+  // 错误信息。
   Error error = 1;
+  // 任务 ID（雪花 ID）。
   uint64 job_id = 2;
+  // 请求 ID（回传）。
   string request_id = 3;
+  // 任务状态码。
   int32 status = 4;
+  // 任务状态名称。
   string status_name = 5;
 }
 
+// 查询转码进度请求。
 message QueryProgressRequest {
+  // 外部请求唯一标识。
   string request_id = 1;
 }
 
+// 查询转码进度响应。
 message QueryProgressResponse {
+  // 错误信息。
   Error error = 1;
+  // 任务 ID。
   uint64 job_id = 2;
+  // 任务状态码。
   int32 status = 3;
+  // 当前阶段：queued/probing/transcoding/uploading/completed/failed。
   string stage = 4;
+  // 进度千分比（0~1000）。
   int32 progress_permille = 5;
+  // 当前转码帧率。
+  double current_fps = 6;
+  // 当前转码码率（kbps）。
+  double current_bitrate_kbps = 7;
+  // 当前转码速度倍率。
+  double current_speed = 8;
 }
 
+// 转码服务公共接口。
 service TranscodePublicService {
+  // 创建转码任务。
   rpc CreateJob(CreateJobRequest) returns (CreateJobResponse);
+  // 查询转码进度。
   rpc QueryProgress(QueryProgressRequest) returns (QueryProgressResponse);
 }

@@ -1,56 +1,150 @@
 {
-  "sample_jobs": [
+  "jobs": [
     {
-      "request_id": "fixture-001",
-      "source_url": "https://example.com/sample_1080p.mp4",
-      "segment_options": {
-        "segment_duration_sec": 6,
-        "support_dash": true,
-        "support_hls": true
-      }
+      "job_id": 1893456789012345678,
+      "request_id": "req-test-001",
+      "biz_key": "biz-video-001",
+      "source_url": "https://example.com/test-1080p.mp4",
+      "status": 1,
+      "priority": 5,
+      "segment_duration_sec": 6,
+      "support_dash": true,
+      "support_hls": true,
+      "enable_watermark": false,
+      "segment_template": "{job_id}-{resolution}-{media_type}-{number}.m4s"
     },
     {
-      "request_id": "fixture-002",
-      "source_url": "https://example.com/sample_4k.mp4",
+      "job_id": 1893456789012345679,
+      "request_id": "req-test-002",
+      "biz_key": "biz-video-002",
+      "source_url": "https://example.com/test-720p.mp4",
+      "status": 1,
+      "priority": 3,
+      "segment_duration_sec": 6,
+      "support_dash": true,
+      "support_hls": true,
       "enable_watermark": true,
-      "segment_options": {
-        "segment_duration_sec": 4,
-        "support_dash": true,
-        "support_hls": true
-      },
-      "schedule_options": {
-        "preferred_hwaccel": "nvidia"
-      }
-    },
-    {
-      "request_id": "fixture-003",
-      "source_url": "https://example.com/sample_720p.mp4",
-      "renditions": [
-        {"name": "480p", "height": 480, "video_bitrate_kbps": 1400},
-        {"name": "360p", "height": 360, "video_bitrate_kbps": 800}
-      ]
+      "segment_template": "{job_id}-{quality}-{media_type}-{number}.m4s"
     }
   ],
-  "sample_probe_results": [
+  "segments": [
     {
-      "video_codec": "h264",
-      "audio_codec": "aac",
+      "job_id": 1893456789012345678,
+      "rendition_name": "1080p",
+      "segment_type": "init",
+      "media_type": 1,
+      "is_init_segment": true,
+      "sequence_no": 0,
       "width": 1920,
       "height": 1080,
-      "fps": 30.0,
-      "duration_ms": 60000,
       "video_bitrate_kbps": 5000,
-      "audio_bitrate_kbps": 128
+      "audio_bitrate_kbps": 128,
+      "video_codec": "h264_nvenc",
+      "object_key": "hvc/1893456789012345678-1920_1080-video-0.m4s",
+      "upload_status": 0
     },
     {
-      "video_codec": "hevc",
-      "audio_codec": "aac",
-      "width": 3840,
-      "height": 2160,
-      "fps": 60.0,
-      "duration_ms": 120000,
-      "video_bitrate_kbps": 20000,
-      "audio_bitrate_kbps": 256
+      "job_id": 1893456789012345678,
+      "rendition_name": "1080p",
+      "segment_type": "media",
+      "media_type": 1,
+      "is_init_segment": false,
+      "sequence_no": 1,
+      "duration_ms": 6000,
+      "width": 1920,
+      "height": 1080,
+      "video_bitrate_kbps": 5000,
+      "audio_bitrate_kbps": 128,
+      "video_codec": "h264_nvenc",
+      "object_key": "hvc/1893456789012345678-1920_1080-video-1.m4s",
+      "upload_status": 0
+    },
+    {
+      "job_id": 1893456789012345678,
+      "rendition_name": "1080p",
+      "segment_type": "init",
+      "media_type": 2,
+      "is_init_segment": true,
+      "sequence_no": 0,
+      "width": 1920,
+      "height": 1080,
+      "audio_bitrate_kbps": 128,
+      "object_key": "hvc/1893456789012345678-1920_1080-audio-0.m4s",
+      "upload_status": 0
+    },
+    {
+      "job_id": 1893456789012345678,
+      "rendition_name": "720p",
+      "segment_type": "init",
+      "media_type": 1,
+      "is_init_segment": true,
+      "sequence_no": 0,
+      "width": 1280,
+      "height": 720,
+      "video_bitrate_kbps": 2800,
+      "audio_bitrate_kbps": 128,
+      "video_codec": "h264_nvenc",
+      "object_key": "hvc/1893456789012345678-1280_720-video-0.m4s",
+      "upload_status": 0
     }
+  ],
+  "naming_templates": [
+    {
+      "id": 1,
+      "name": "方案一：简洁模式",
+      "template": "{job_id}-{media_type}-{number}.m4s",
+      "example_init_video": "1893456789012345678-video-0.m4s",
+      "example_media_video": "1893456789012345678-video-1.m4s",
+      "example_init_audio": "1893456789012345678-audio-0.m4s"
+    },
+    {
+      "id": 2,
+      "name": "方案二：分辨率模式",
+      "template": "{job_id}-{resolution}-{media_type}-{number}.m4s",
+      "example_init_video": "1893456789012345678-1920_1080-video-0.m4s",
+      "example_media_video": "1893456789012345678-1920_1080-video-1.m4s",
+      "example_init_audio": "1893456789012345678-1920_1080-audio-0.m4s"
+    },
+    {
+      "id": 3,
+      "name": "方案三：清晰度标签模式",
+      "template": "{job_id}-{quality}-{media_type}-{number}.m4s",
+      "example_init_video": "1893456789012345678-1080p-video-0.m4s",
+      "example_media_video": "1893456789012345678-1080p-video-1.m4s",
+      "example_init_audio": "1893456789012345678-1080p-audio-0.m4s"
+    },
+    {
+      "id": 4,
+      "name": "方案四：简洁+时间戳模式",
+      "template": "{job_id}-{media_type}-{number}-{timestamp}.m4s",
+      "example_init_video": "1893456789012345678-video-0-0.m4s",
+      "example_media_video": "1893456789012345678-video-1-6000.m4s",
+      "example_init_audio": "1893456789012345678-audio-0-0.m4s"
+    },
+    {
+      "id": 5,
+      "name": "方案五：分辨率+时间戳模式",
+      "template": "{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s",
+      "example_init_video": "1893456789012345678-1920_1080-video-0-0.m4s",
+      "example_media_video": "1893456789012345678-1920_1080-video-1-6000.m4s",
+      "example_init_audio": "1893456789012345678-1920_1080-audio-0-0.m4s"
+    },
+    {
+      "id": 6,
+      "name": "方案六：清晰度标签+时间戳模式",
+      "template": "{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s",
+      "example_init_video": "1893456789012345678-1080p-video-0-0.m4s",
+      "example_media_video": "1893456789012345678-1080p-video-1-6000.m4s",
+      "example_init_audio": "1893456789012345678-1080p-audio-0-0.m4s"
+    }
+  ],
+  "quality_labels": [
+    {"height": 2160, "label": "4k"},
+    {"height": 1440, "label": "2k"},
+    {"height": 1080, "label": "1080p"},
+    {"height": 720, "label": "720p"},
+    {"height": 480, "label": "480p"},
+    {"height": 360, "label": "360p"},
+    {"height": 240, "label": "240p"}
   ]
 }

@@ -1,141 +1,234 @@
+# ============================================================
+# HVC 视频转码服务 - Kubernetes 部署配置
+# ============================================================
+#
+# 包含以下资源：
+#   - Namespace：hvc 命名空间
+#   - ConfigMap：配置文件
+#   - Secret：敏感信息
+#   - Deployment：无状态服务部署
+#   - Service：服务暴露
+#   - HorizontalPodAutoscaler：自动扩缩容
+#
+# 使用方法：
+#   kubectl apply -f deployments/k8s/deployment.yaml
+#   kubectl get pods -n hvc
+#   kubectl logs -f deployment/hvc-server -n hvc
+# ============================================================
+
+# ---- 命名空间 ----
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hvc
+  labels:
+    app: hvc
+
+---
+# ---- 配置文件 ConfigMap ----
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: hvc-config
   namespace: hvc
 data:
-  config.yaml: |
-    server:
-      listen_address: ":8080"
-      advertise_ip: ""
-      service_name: "hili-video-cloud"
-      node_id: 0
-      worker_id: ""
-    mysql:
-      dsn: "root:root@tcp(mysql-svc:3306)/hvc?parseTime=true&charset=utf8mb4"
-    redis:
-      addrs:
-        - "redis-svc:6379"
-    mq:
-      rabbitmq_dsn: "amqp://guest:guest@rabbitmq-svc:5672/"
-    storage:
-      endpoint: "minio-svc:9000"
-      bucket: "hvc-media"
-      access_key_id: "minioadmin"
-      secret_access_key: "minioadmin"
-    grpc:
-      listen_address: ":9090"
+  # 运行模式：standalone=单机 / cluster=集群
+  HVC_RUN_MODE: "cluster"
+  # 日志级别
+  HVC_LOG_LEVEL: "info"
+  # MySQL 地址
+  HVC_MYSQL_HOST: "hvc-mysql.hvc.svc.cluster.local"
+  # MySQL 端口
+  HVC_MYSQL_PORT: "3306"
+  # MySQL 数据库名
+  HVC_MYSQL_DATABASE: "hvc"
+  # Redis 地址
+  HVC_REDIS_HOST: "hvc-redis.hvc.svc.cluster.local"
+  # Redis 端口
+  HVC_REDIS_PORT: "6379"
+  # etcd 地址
+  HVC_ETCD_ENDPOINTS: "http://hvc-etcd.hvc.svc.cluster.local:2379"
+  # RabbitMQ 地址
+  HVC_RABBITMQ_HOST: "hvc-rabbitmq.hvc.svc.cluster.local"
+  # MinIO 地址
+  HVC_MINIO_ENDPOINT: "hvc-minio.hvc.svc.cluster.local:9000"
+
 ---
+# ---- 敏感信息 Secret ----
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hvc-secret
+  namespace: hvc
+type: Opaque
+stringData:
+  # MySQL 用户名和密码
+  HVC_MYSQL_USER: "hvc"
+  HVC_MYSQL_PASSWORD: "hvc_pwd"
+  # Redis 密码
+  HVC_REDIS_PASSWORD: ""
+  # MinIO Access Key 和 Secret Key
+  HVC_MINIO_ACCESS_KEY: "minioadmin"
+  HVC_MINIO_SECRET_KEY: "minioadmin"
+  # JWT 签名密钥（生产环境请修改为随机强密码）
+  HVC_JWT_SECRET: "change-me-in-production"
+
+---
+# ---- 无状态服务 Deployment ----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hvc-control
+  name: hvc-server
   namespace: hvc
   labels:
-    app: hvc
-    role: control
+    app: hvc-server
 spec:
+  # 副本数（配合 HPA 自动扩缩容）
   replicas: 2
   selector:
     matchLabels:
-      app: hvc
-      role: control
+      app: hvc-server
   template:
     metadata:
       labels:
-        app: hvc
-        role: control
+        app: hvc-server
     spec:
       containers:
         - name: hvc-server
+          # 镜像地址（替换为实际镜像仓库地址）
           image: hvc-server:latest
+          # 镜像拉取策略：Always=总是拉取 / IfNotPresent=本地不存在时拉取
+          imagePullPolicy: IfNotPresent
           ports:
+            # HTTP 服务端口
             - containerPort: 8080
+              name: http
+              protocol: TCP
+            # gRPC 服务端口
             - containerPort: 9090
-          volumeMounts:
-            - name: config
-              mountPath: /etc/hvc
+              name: grpc
+              protocol: TCP
+          # 环境变量 - 从 ConfigMap 和 Secret 注入
+          envFrom:
+            - configMapRef:
+                name: hvc-config
+            - secretRef:
+                name: hvc-secret
+          # 资源请求和限制
           resources:
             requests:
+              # CPU 请求（保证最低 500m）
               cpu: "500m"
-              memory: "512Mi"
+              # 内存请求（保证最低 1GB）
+              memory: "1Gi"
             limits:
-              cpu: "2"
-              memory: "2Gi"
+              # CPU 限制（最大 2 核）
+              cpu: "2000m"
+              # 内存限制（最大 4GB）
+              memory: "4Gi"
+          # 存活探针：检测进程是否健康
           livenessProbe:
             httpGet:
-              path: /api/v1/system/info
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 15
+              path: /v1/system/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # 就绪探针：检测是否可以接收流量
           readinessProbe:
             httpGet:
-              path: /api/v1/system/info
-              port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 10
-      volumes:
-        - name: config
-          configMap:
-            name: hvc-config
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hvc-worker
-  namespace: hvc
-  labels:
-    app: hvc
-    role: worker
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: hvc
-      role: worker
-  template:
-    metadata:
-      labels:
-        app: hvc
-        role: worker
-    spec:
-      containers:
-        - name: hvc-worker
-          image: hvc-server:latest
-          env:
-            - name: HVC_MODE
-              value: "worker"
+              path: /v1/system/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # 启动探针：检测应用是否启动完成
+          startupProbe:
+            httpGet:
+              path: /v1/system/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          # 挂载卷
           volumeMounts:
-            - name: config
-              mountPath: /etc/hvc
-          resources:
-            requests:
-              cpu: "2"
-              memory: "4Gi"
-              nvidia.com/gpu: "1"
-            limits:
-              cpu: "4"
-              memory: "8Gi"
-              nvidia.com/gpu: "1"
+            # 配置文件挂载
+            - name: config-volume
+              mountPath: /etc/hvc/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            # 临时转码输出目录
+            - name: tmp-volume
+              mountPath: /tmp/hvc
+      # 卷定义
       volumes:
-        - name: config
+        # 配置文件卷
+        - name: config-volume
           configMap:
-            name: hvc-config
+            name: hvc-config-file
+        # 临时目录（emptyDir，Pod 删除后数据丢失）
+        - name: tmp-volume
+          emptyDir:
+            medium: ""
+      # 优雅终止宽限期（秒）
+      terminationGracePeriodSeconds: 60
+
 ---
+# ---- Service 服务暴露 ----
 apiVersion: v1
 kind: Service
 metadata:
-  name: hvc-svc
+  name: hvc-server
   namespace: hvc
+  labels:
+    app: hvc-server
 spec:
+  # ClusterIP=集群内部访问 / NodePort=节点端口 / LoadBalancer=外部负载均衡
+  type: ClusterIP
   selector:
-    app: hvc
-    role: control
+    app: hvc-server
   ports:
+    # HTTP 端口
     - name: http
       port: 8080
-      targetPort: 8080
+      targetPort: http
+      protocol: TCP
+    # gRPC 端口
     - name: grpc
       port: 9090
-      targetPort: 9090
-  type: ClusterIP
+      targetPort: grpc
+      protocol: TCP
+
+---
+# ---- HorizontalPodAutoscaler 自动扩缩容 ----
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hvc-server-hpa
+  namespace: hvc
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hvc-server
+  # 最小副本数
+  minReplicas: 2
+  # 最大副本数
+  maxReplicas: 10
+  metrics:
+    # CPU 使用率指标：超过 70% 时扩容
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # 内存使用率指标：超过 80% 时扩容
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
