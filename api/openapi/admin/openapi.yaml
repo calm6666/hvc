@@ -1,0 +1,244 @@
+openapi: 3.0.3
+info:
+  title: HVC 后台管理 API
+  description: 视频转码服务后台管理接口
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+
+paths:
+  /admin/auth/login:
+    post:
+      summary: 管理员登录
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+
+  /admin/auth/logout:
+    post:
+      summary: 管理员登出
+      tags: [Auth]
+      responses:
+        '200':
+          description: 成功
+
+  /admin/transcode/job/list:
+    get:
+      summary: 任务列表
+      tags: [Transcode]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: integer
+        - name: biz_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+
+  /admin/transcode/job/detail:
+    get:
+      summary: 任务详情
+      tags: [Transcode]
+      parameters:
+        - name: job_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /admin/transcode/job/retry:
+    post:
+      summary: 重试失败任务
+      tags: [Transcode]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [job_id]
+              properties:
+                job_id:
+                  type: integer
+                  format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /admin/transcode/job/cancel:
+    post:
+      summary: 取消任务
+      tags: [Transcode]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [job_id]
+              properties:
+                job_id:
+                  type: integer
+                  format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /admin/transcode/job/progress:
+    get:
+      summary: 后台管理进度查询
+      tags: [Transcode]
+      parameters:
+        - name: job_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /admin/transcode/monitor/ws:
+    get:
+      summary: WebSocket 实时监控
+      tags: [Monitor]
+      description: WebSocket 升级端点，连接后接收实时快照推送
+      responses:
+        '101':
+          description: WebSocket 升级成功
+
+  /admin/live/channel/create:
+    post:
+      summary: 创建直播频道
+      tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_key]
+              properties:
+                channel_key:
+                  type: string
+                channel_name:
+                  type: string
+                profile_id:
+                  type: integer
+                  format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /admin/live/channel/start:
+    post:
+      summary: 启动直播频道
+      tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_id]
+              properties:
+                channel_id:
+                  type: integer
+                  format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /admin/cluster/node/list:
+    get:
+      summary: 查询集群节点
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+
+  /admin/config/runtime:
+    get:
+      summary: 获取运行配置
+      tags: [Config]
+      responses:
+        '200':
+          description: 成功
+
+  /admin/rbac/role/list:
+    get:
+      summary: 查询角色列表
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /admin/rbac/permission/list:
+    get:
+      summary: 查询权限列表
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+
+  /admin/audit/list:
+    get:
+      summary: 查询审计日志
+      tags: [Audit]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: action_name
+          in: query
+          schema:
+            type: string
+        - name: admin_user_id
+          in: query
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        '200':
+          description: 成功

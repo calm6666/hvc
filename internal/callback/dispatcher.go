@@ -3,6 +3,7 @@ package callback
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -13,16 +14,18 @@ import (
 
 // Dispatcher 表示回调投递模块。
 type Dispatcher struct {
-	cfg              config.DynamicRuntimeConfig
-	outboxRepository *mysql.OutboxRepository
-	httpClient       *http.Client
+	cfg                    config.DynamicRuntimeConfig
+	outboxRepository       *mysql.OutboxRepository
+	callbackConfigRepo     *mysql.CallbackConfigRepository
+	httpClient             *http.Client
 }
 
 // NewDispatcher 创建回调投递模块。
-func NewDispatcher(cfg config.DynamicRuntimeConfig, outboxRepository *mysql.OutboxRepository) *Dispatcher {
+func NewDispatcher(cfg config.DynamicRuntimeConfig, outboxRepository *mysql.OutboxRepository, callbackConfigRepo *mysql.CallbackConfigRepository) *Dispatcher {
 	return &Dispatcher{
-		cfg:              cfg,
-		outboxRepository: outboxRepository,
+		cfg:                cfg,
+		outboxRepository:   outboxRepository,
+		callbackConfigRepo: callbackConfigRepo,
 		httpClient: &http.Client{
 			Timeout: cfg.Callback.HTTPTimeout,
 		},
@@ -67,7 +70,23 @@ func (d *Dispatcher) Start(ctx context.Context) error {
 }
 
 func (d *Dispatcher) dispatchHTTP(ctx context.Context, payload string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://127.0.0.1:18080/callback", bytes.NewBufferString(payload))
+	targetURL := d.cfg.Callback.HTTPURL
+	if d.callbackConfigRepo != nil {
+		configs := d.callbackConfigRepo.ListEnabled(ctx)
+		for _, item := range configs {
+			if item.CallbackType == 1 && item.TargetURL != "" {
+				targetURL = item.TargetURL
+				break
+			}
+		}
+	}
+	if targetURL == "" {
+		logx.Error("callback.dispatch.no_url_configured", nil, logx.Fields{
+			"event_payload": payload[:min(len(payload), 200)],
+		})
+		return fmt.Errorf("回调 URL 未配置，请在后台配置回调地址")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewBufferString(payload))
 	if err != nil {
 		return err
 	}

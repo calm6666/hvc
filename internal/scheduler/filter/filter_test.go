@@ -1,0 +1,69 @@
+package filter
+
+import (
+	"testing"
+
+	"hvc/internal/config"
+	"hvc/internal/model"
+)
+
+func TestApply_MatchPreferredExecutionHW(t *testing.T) {
+	filter := NewFilter(config.DynamicRuntimeConfig{
+		Scheduler: config.SchedulerConfig{
+			NodeCPUSafetyLimitPercent:    100,
+			NodeMemorySafetyLimitPercent: 100,
+			NodeGPUSafetyLimitPercent:    100,
+			MaxNodeTranscodeSessions:     100,
+			MaxNodeUploadConcurrency:     100,
+		},
+	})
+	candidate := model.DispatchCandidate{
+		NodeID:                    1,
+		Enabled:                   true,
+		SupportsHardwareWatermark: true,
+		Metrics: model.NodeMetrics{
+			GPUCapabilities: []model.GPUCapability{{
+				GPUUUID:          "gpu-1",
+				GPUIndex:         0,
+				ExecutionHWTypes: []string{model.ExecutionHWNVIDIA},
+				EncodeCodecs:     []string{"h264", "hevc"},
+			}},
+		},
+	}
+	passed := filter.Apply(model.CreateJobRequest{
+		ScheduleOptions: &model.ScheduleOptions{PreferredHWAccel: model.ExecutionHWNVIDIA},
+	}, []model.DispatchCandidate{candidate})
+	if len(passed) != 1 {
+		t.Fatalf("expected candidate to pass, got %d", len(passed))
+	}
+}
+
+func TestApply_RejectMismatchedPreferredExecutionHW(t *testing.T) {
+	filter := NewFilter(config.DynamicRuntimeConfig{
+		Scheduler: config.SchedulerConfig{
+			NodeCPUSafetyLimitPercent:    100,
+			NodeMemorySafetyLimitPercent: 100,
+			NodeGPUSafetyLimitPercent:    100,
+			MaxNodeTranscodeSessions:     100,
+			MaxNodeUploadConcurrency:     100,
+		},
+	})
+	candidate := model.DispatchCandidate{
+		NodeID:  1,
+		Enabled: true,
+		Metrics: model.NodeMetrics{
+			GPUCapabilities: []model.GPUCapability{{
+				GPUUUID:          "gpu-1",
+				GPUIndex:         0,
+				ExecutionHWTypes: []string{model.ExecutionHWNVIDIA},
+				EncodeCodecs:     []string{"h264", "hevc"},
+			}},
+		},
+	}
+	passed := filter.Apply(model.CreateJobRequest{
+		ScheduleOptions: &model.ScheduleOptions{PreferredHWAccel: model.ExecutionHWAppleVideoToolbox},
+	}, []model.DispatchCandidate{candidate})
+	if len(passed) != 0 {
+		t.Fatalf("expected candidate to be filtered out, got %d", len(passed))
+	}
+}

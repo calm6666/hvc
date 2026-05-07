@@ -14,10 +14,18 @@ type Segment struct {
 	SegmentID          uint64
 	JobID              uint64
 	RenditionID        uint64
+	RenditionName      string
+	SegmentType        string
 	MediaType          int
 	IsInitSegment      bool
 	SequenceNo         int
 	DurationMS         int
+	Width              int
+	Height             int
+	VideoBitrateKbps   int
+	AudioBitrateKbps   int
+	VideoCodec         string
+	AudioCodec         string
 	SupportDash        bool
 	SupportHLS         bool
 	CodecName          string

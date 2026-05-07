@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hvc-config
+  namespace: hvc
+data:
+  config.yaml: |
+    server:
+      listen_address: ":8080"
+      advertise_ip: ""
+      service_name: "hili-video-cloud"
+      node_id: 0
+      worker_id: ""
+    mysql:
+      dsn: "root:root@tcp(mysql-svc:3306)/hvc?parseTime=true&charset=utf8mb4"
+    redis:
+      addrs:
+        - "redis-svc:6379"
+    mq:
+      rabbitmq_dsn: "amqp://guest:guest@rabbitmq-svc:5672/"
+    storage:
+      endpoint: "minio-svc:9000"
+      bucket: "hvc-media"
+      access_key_id: "minioadmin"
+      secret_access_key: "minioadmin"
+    grpc:
+      listen_address: ":9090"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hvc-control
+  namespace: hvc
+  labels:
+    app: hvc
+    role: control
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hvc
+      role: control
+  template:
+    metadata:
+      labels:
+        app: hvc
+        role: control
+    spec:
+      containers:
+        - name: hvc-server
+          image: hvc-server:latest
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/hvc
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/system/info
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/v1/system/info
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: hvc-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hvc-worker
+  namespace: hvc
+  labels:
+    app: hvc
+    role: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hvc
+      role: worker
+  template:
+    metadata:
+      labels:
+        app: hvc
+        role: worker
+    spec:
+      containers:
+        - name: hvc-worker
+          image: hvc-server:latest
+          env:
+            - name: HVC_MODE
+              value: "worker"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/hvc
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+      volumes:
+        - name: config
+          configMap:
+            name: hvc-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hvc-svc
+  namespace: hvc
+spec:
+  selector:
+    app: hvc
+    role: control
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+  type: ClusterIP

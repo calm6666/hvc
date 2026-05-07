@@ -6,7 +6,8 @@
       "Bash(go get *)",
       "Bash(go test *)",
       "Bash(python *)",
-      "Read(//c/Users/calm/go/pkg/mod/github.com/zlabwork/snowflake@v1.0.0/**)"
+      "Read(//c/Users/calm/go/pkg/mod/github.com/zlabwork/snowflake@v1.0.0/**)",
+      "Bash([ -f \"$del\" ])"
     ]
   }
 }

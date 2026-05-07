@@ -14,19 +14,21 @@ import (
 
 // ClusterHandler 处理集群内部上报接口。
 type ClusterHandler struct {
-	cache             *clusterstate.StateCache
-	leaseCache        *clusterstate.LeaseCache
-	jobRepository     *mysql.JobRepository
-	segmentRepository *mysql.SegmentRepository
+	cache                  *clusterstate.StateCache
+	leaseCache             *clusterstate.LeaseCache
+	jobRepository          *mysql.JobRepository
+	segmentRepository      *mysql.SegmentRepository
+	workerInstanceRepo     *mysql.WorkerInstanceRepository
 }
 
 // NewClusterHandler 创建集群处理器。
-func NewClusterHandler(cache *clusterstate.StateCache, leaseCache *clusterstate.LeaseCache, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository) *ClusterHandler {
+func NewClusterHandler(cache *clusterstate.StateCache, leaseCache *clusterstate.LeaseCache, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository, workerInstanceRepo *mysql.WorkerInstanceRepository) *ClusterHandler {
 	return &ClusterHandler{
-		cache:             cache,
-		leaseCache:        leaseCache,
-		jobRepository:     jobRepository,
-		segmentRepository: segmentRepository,
+		cache:              cache,
+		leaseCache:         leaseCache,
+		jobRepository:      jobRepository,
+		segmentRepository:  segmentRepository,
+		workerInstanceRepo: workerInstanceRepo,
 	}
 }
 
@@ -45,6 +47,9 @@ func (h *ClusterHandler) ReportHeartbeat(w http.ResponseWriter, r *http.Request)
 		MachineFingerprint: req.MachineFingerprint,
 		Timestamp:          req.Timestamp,
 	})
+	if h.workerInstanceRepo != nil {
+		_ = h.workerInstanceRepo.TouchHeartbeat(r.Context(), req.WorkerID)
+	}
 	logx.Info("http.cluster.heartbeat.accepted", logx.Fields{
 		"node_id":   req.NodeID,
 		"worker_id": req.WorkerID,

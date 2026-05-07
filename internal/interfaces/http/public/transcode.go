@@ -15,17 +15,19 @@ var errJobNotFound = errors.New("job not found")
 
 // TranscodeHandler 处理转码公共接口。
 type TranscodeHandler struct {
-	createJobUseCase     *transcodeusecase.CreateJobUseCase
-	queryProgressUseCase *transcodeusecase.QueryProgressUseCase
-	jobRepository        *mysql.JobRepository
+	createJobUseCase          *transcodeusecase.CreateJobUseCase
+	queryProgressUseCase      *transcodeusecase.QueryProgressUseCase
+	jobRepository             *mysql.JobRepository
+	jobRequestOverrideRepo    *mysql.JobRequestOverrideRepository
 }
 
 // NewTranscodeHandler 创建转码处理器。
-func NewTranscodeHandler(createJobUseCase *transcodeusecase.CreateJobUseCase, queryProgressUseCase *transcodeusecase.QueryProgressUseCase, jobRepository *mysql.JobRepository) *TranscodeHandler {
+func NewTranscodeHandler(createJobUseCase *transcodeusecase.CreateJobUseCase, queryProgressUseCase *transcodeusecase.QueryProgressUseCase, jobRepository *mysql.JobRepository, jobRequestOverrideRepo *mysql.JobRequestOverrideRepository) *TranscodeHandler {
 	return &TranscodeHandler{
-		createJobUseCase:     createJobUseCase,
-		queryProgressUseCase: queryProgressUseCase,
-		jobRepository:        jobRepository,
+		createJobUseCase:       createJobUseCase,
+		queryProgressUseCase:   queryProgressUseCase,
+		jobRepository:          jobRepository,
+		jobRequestOverrideRepo: jobRequestOverrideRepo,
 	}
 }
 
@@ -83,6 +85,16 @@ func (h *TranscodeHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		})
 		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save job failed"})
 		return
+	}
+	if result.RequestOverride != nil && h.jobRequestOverrideRepo != nil {
+		if err := h.jobRequestOverrideRepo.Save(r.Context(), *result.RequestOverride); err != nil {
+			logx.Error("http.transcode.create.save_override", err, logx.Fields{
+				"request_id": req.RequestID,
+				"job_id":     result.Job.JobID,
+			})
+			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save job override failed"})
+			return
+		}
 	}
 
 	logx.Info("http.transcode.create.success", logx.Fields{

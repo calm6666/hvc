@@ -1,0 +1,67 @@
+{
+  "exchange": "hvc.transcode",
+  "exchange_type": "topic",
+  "queues": [
+    {
+      "name": "hvc.transcode.create",
+      "routing_key": "transcode.job.create",
+      "description": "创建转码任务消息队列，外部系统通过发布到此队列触发转码"
+    },
+    {
+      "name": "hvc.transcode.completed",
+      "routing_key": "transcode.job.completed",
+      "description": "转码完成通知队列，回调模块消费后分发到配置的回调目标"
+    },
+    {
+      "name": "hvc.transcode.failed",
+      "routing_key": "transcode.job.failed",
+      "description": "转码失败通知队列"
+    },
+    {
+      "name": "hvc.live.stream.start",
+      "routing_key": "live.stream.start",
+      "description": "直播推流开始事件"
+    },
+    {
+      "name": "hvc.live.stream.stop",
+      "routing_key": "live.stream.stop",
+      "description": "直播推流停止事件"
+    }
+  ],
+  "message_schemas": {
+    "transcode.job.create": {
+      "request_id": "string, 外部请求唯一标识",
+      "biz_key": "string, 业务侧资源主键",
+      "source_url": "string, 源视频地址",
+      "profile_id": "uint64, 转码模板 ID",
+      "priority": "int, 优先级",
+      "enable_watermark": "bool, 是否启用水印",
+      "segment_options": {
+        "segment_duration_sec": "int, 分片时长",
+        "support_dash": "bool",
+        "support_hls": "bool"
+      },
+      "storage_options": {
+        "storage_id": "uint64",
+        "bucket_prefix": "string",
+        "segment_prefix": "string"
+      },
+      "schedule_options": {
+        "preferred_hwaccel": "string",
+        "allow_software_decode_fallback": "bool"
+      }
+    },
+    "transcode.job.completed": {
+      "job_id": "uint64",
+      "request_id": "string",
+      "status": "int",
+      "segment_count": "int"
+    },
+    "transcode.job.failed": {
+      "job_id": "uint64",
+      "request_id": "string",
+      "error_code": "string",
+      "error_message": "string"
+    }
+  }
+}

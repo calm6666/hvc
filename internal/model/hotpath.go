@@ -14,6 +14,9 @@ type HeartbeatRequest struct {
 // MetricsRequest 表示节点指标上报请求。
 type MetricsRequest struct {
 	NodeID                  uint64          `json:"node_id"`
+	WorkerID                string          `json:"worker_id,omitempty"`
+	StartupInstanceID       string          `json:"startup_instance_id,omitempty"`
+	MachineFingerprint      string          `json:"machine_fingerprint,omitempty"`
 	CPUUsagePercent         int             `json:"cpu_usage_percent"`
 	MemoryUsagePercent      int             `json:"memory_usage_percent"`
 	GPUMemoryUsagePercent   int             `json:"gpu_memory_usage_percent"`

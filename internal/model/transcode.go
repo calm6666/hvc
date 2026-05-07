@@ -93,17 +93,56 @@ type CreateJobResponseData struct {
 	StatusName string `json:"status_name"`
 }
 
+// TranscodeJobRequestOverride 表示单任务覆盖参数。
+//
+// 这层对象专门承载“请求级覆盖项”，目的是把“用户这次想怎么覆盖默认模板”
+// 和“调度之后最终实际选中了什么执行模式”拆开保存：
+// - override_* 表示请求意图；
+// - selected_* 表示调度/执行结果。
+//
+// 这样后续不管是回溯请求来源、做幂等检查、还是分析调度决策偏差，
+// 都不会再把两个语义混在同一个字段里。
+type TranscodeJobRequestOverride struct {
+	ID                               uint64
+	JobID                            uint64
+	OverrideProfileID                uint64
+	OverrideSegmentDurationSec       int
+	OverridePreferredHWAccel         string
+	OverrideEnableWatermark          bool
+	OverrideWatermarkImageURL        string
+	OverrideWatermarkAnchor          int
+	OverrideWatermarkXRatio          float64
+	OverrideWatermarkYRatio          float64
+	OverrideWatermarkWidthRatio      float64
+	OverrideWatermarkOpacity         float64
+	OverrideEnableThumbnailSprite    bool
+	OverrideThumbRows                int
+	OverrideThumbCols                int
+	OverrideThumbIntervalSec         int
+	OverrideThumbWidth               int
+	OverrideThumbHeight              int
+	OverrideThumbImageFormat         string
+	OverrideThumbStoragePrefix       string
+	OverrideEnableThumbnailBinaryIdx bool
+	OverrideThumbBinaryStoragePrefix string
+	OverrideThumbBinaryMaxSizeBytes  uint64
+	OverrideBucketPrefix             string
+	OverrideSegmentPrefix            string
+	CreatedAt                        time.Time
+}
+
 // ProgressSnapshot 表示任务进度快照。
 type ProgressSnapshot struct {
-	JobID                uint64  `json:"job_id"`
-	Status               int     `json:"status"`
-	Stage                string  `json:"stage"`
-	ProgressPermille     int     `json:"progress_permille"`
-	CurrentFPS           float64 `json:"current_fps,omitempty"`
-	CurrentBitrateKbps   float64 `json:"current_bitrate_kbps,omitempty"`
-	CurrentSpeed         float64 `json:"current_speed,omitempty"`
-	ElapsedMS            int64   `json:"elapsed_ms,omitempty"`
-	EstimatedRemainingMS int64   `json:"estimated_remaining_ms,omitempty"`
+	JobID                uint64    `json:"job_id"`
+	Status               int       `json:"status"`
+	Stage                string    `json:"stage"`
+	ProgressPermille     int       `json:"progress_permille"`
+	CurrentFPS           float64   `json:"current_fps,omitempty"`
+	CurrentBitrateKbps   float64   `json:"current_bitrate_kbps,omitempty"`
+	CurrentSpeed         float64   `json:"current_speed,omitempty"`
+	ElapsedMS            int64     `json:"elapsed_ms,omitempty"`
+	EstimatedRemainingMS int64     `json:"estimated_remaining_ms,omitempty"`
+	UpdatedAt            time.Time `json:"updated_at,omitempty"`
 }
 
 // TranscodeJob 表示转码任务。
@@ -125,6 +164,19 @@ type TranscodeJob struct {
 	WatermarkYRatio          float64
 	WatermarkWidthRatio      float64
 	WatermarkOpacity         float64
+	WatermarkSafeMarginRatio float64
+	EnableThumbnailSprite    bool
+	ThumbRows                int
+	ThumbCols                int
+	ThumbIntervalSec         int
+	ThumbWidth               int
+	ThumbHeight              int
+	ThumbImageFormat         string
+	ThumbStoragePrefix       string
+	EnableThumbnailBinaryIndex bool
+	ThumbBinaryStoragePrefix string
+	ThumbBinaryMaxSizeBytes  uint64
+	Renditions               []RenditionOption
 	OutputStorageID          uint64
 	OutputBasePrefix         string
 	AssignedNodeID           uint64

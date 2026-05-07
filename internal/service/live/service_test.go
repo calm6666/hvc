@@ -4,12 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"hvc/internal/config"
 	"hvc/pkg/idgen"
 )
 
 func TestChannelService_CreateAndPlayback(t *testing.T) {
 	idgen.Configure(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), 1, 1, 1)
-	service := NewChannelService()
+	service := NewChannelService(config.DynamicRuntimeConfig{})
 	channel := service.CreateChannel("room_1001", "test room", 1)
 	if channel.ChannelID == 0 {
 		t.Fatalf("channel id should not be zero")

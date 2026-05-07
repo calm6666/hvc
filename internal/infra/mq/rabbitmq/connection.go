@@ -1,6 +1,10 @@
+// Package rabbitmq 提供 RabbitMQ 连接管理。
 package rabbitmq
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/rabbitmq/amqp091-go"
 	"hvc/internal/config"
 )
@@ -8,14 +12,93 @@ import (
 // Connection 表示 RabbitMQ 连接包装。
 type Connection struct {
 	Engine *amqp091.Connection
+	dsn    string
 }
 
 // Open 打开 RabbitMQ 连接。
+//
+// DSN 构建规则：
+//   - 优先使用配置中的完整 DSN（cfg.MQ.RabbitMQ.DSN）
+//   - 如果未提供 DSN，则根据 Host、Port、User、Password、VHost 构建
+//   - 默认使用 amqp://guest:guest@127.0.0.1:5672/
 func Open(cfg config.RuntimeConfig) (*Connection, error) {
-	conn, err := amqp091.Dial("amqp://guest:guest@127.0.0.1:5672/")
+	dsn := buildDSN(cfg)
+	conn, err := amqp091.Dial(dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("连接 RabbitMQ 失败 (%s): %w", maskDSN(dsn), err)
 	}
-	_ = cfg
-	return &Connection{Engine: conn}, nil
+	return &Connection{Engine: conn, dsn: dsn}, nil
+}
+
+// Channel 创建一个新的 RabbitMQ 通道。
+func (c *Connection) Channel() (*amqp091.Channel, error) {
+	if c.Engine == nil {
+		return nil, fmt.Errorf("RabbitMQ 连接未建立")
+	}
+	return c.Engine.Channel()
+}
+
+// IsClosed 检查连接是否已关闭。
+func (c *Connection) IsClosed() bool {
+	return c.Engine == nil || c.Engine.IsClosed()
+}
+
+// Close 关闭 RabbitMQ 连接。
+func (c *Connection) Close() error {
+	if c.Engine == nil {
+		return nil
+	}
+	return c.Engine.Close()
+}
+
+// DSN 返回连接使用的 DSN（脱敏后）。
+func (c *Connection) DSN() string {
+	return maskDSN(c.dsn)
+}
+
+// buildDSN 根据配置构建 RabbitMQ 连接字符串。
+func buildDSN(cfg config.RuntimeConfig) string {
+	mqCfg := cfg.MQ
+	if mqCfg.RabbitMQDSN != "" {
+		return mqCfg.RabbitMQDSN
+	}
+
+	host := mqCfg.RabbitMQHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := mqCfg.RabbitMQPort
+	if port == 0 {
+		port = 5672
+	}
+	user := mqCfg.RabbitMQUser
+	if user == "" {
+		user = "guest"
+	}
+	password := mqCfg.RabbitMQPassword
+	if password == "" {
+		password = "guest"
+	}
+	vhost := mqCfg.RabbitMQVHost
+	if vhost == "" {
+		vhost = "/"
+	}
+
+	return fmt.Sprintf("amqp://%s:%s@%s:%d/%s", user, password, host, port, vhost)
+}
+
+// maskDSN 对 DSN 中的密码进行脱敏，防止日志泄露。
+//
+// 将 amqp://user:password@host:port/vhost 转换为 amqp://user:****@host:port/vhost
+func maskDSN(dsn string) string {
+	atIdx := strings.Index(dsn, "@")
+	if atIdx < 0 {
+		return dsn
+	}
+	prefix := dsn[:atIdx]
+	colonIdx := strings.LastIndex(prefix, ":")
+	if colonIdx < 0 {
+		return dsn
+	}
+	return prefix[:colonIdx+1] + "****" + dsn[atIdx:]
 }

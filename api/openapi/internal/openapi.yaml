@@ -1,0 +1,88 @@
+openapi: 3.0.3
+info:
+  title: HVC 集群内部 API
+  description: 集群节点间通信接口（gRPC 优先，HTTP 降级）
+  version: 1.0.0
+
+paths:
+  /internal/worker/heartbeat:
+    post:
+      summary: Worker 心跳上报
+      tags: [Worker]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                node_id:
+                  type: integer
+                  format: uint64
+                worker_id:
+                  type: string
+                startup_instance_id:
+                  type: string
+                machine_fingerprint:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+
+  /internal/worker/progress:
+    post:
+      summary: Worker 进度上报
+      tags: [Worker]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job_id:
+                  type: integer
+                  format: uint64
+                status:
+                  type: integer
+                stage:
+                  type: string
+                progress_permille:
+                  type: integer
+                fps:
+                  type: number
+                bitrate_kbps:
+                  type: number
+                speed:
+                  type: number
+      responses:
+        '200':
+          description: 成功
+
+  /internal/worker/segment-uploaded:
+    post:
+      summary: 分片上传完成通知
+      tags: [Worker]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job_id:
+                  type: integer
+                  format: uint64
+                segment_id:
+                  type: integer
+                  format: uint64
+                object_key:
+                  type: string
+                object_size_bytes:
+                  type: integer
+                  format: uint64
+                object_etag:
+                  type: string
+      responses:
+        '200':
+          description: 成功

@@ -5,6 +5,10 @@
 server:
   # HTTP 服务监听地址。
   listen_address: ":8080"
+  # 对外广播 IP，留空或设为 auto 则自动检测本机局域网 IP。
+  # 集群模式下其他节点通过此 IP 访问本节点。
+  # 仅在自动检测失败时才需要手动指定。
+  advertise_ip: ""
   # 服务名称，用于日志和监控标识。
   service_name: "hili-video-cloud"
   # 当前节点 ID，用于集群内唯一标识节点。
@@ -40,6 +44,114 @@ redis:
   read_timeout: "2s"
   # Redis 写超时。
   write_timeout: "2s"
+
+mq:
+  # RabbitMQ 连接串（完整 DSN 格式）。
+  rabbitmq_dsn: "amqp://guest:guest@127.0.0.1:5672/"
+  # RabbitMQ 主机地址（当 DSN 为空时使用以下字段拼接）。
+  rabbitmq_host: "127.0.0.1"
+  # RabbitMQ 端口。
+  rabbitmq_port: 5672
+  # RabbitMQ 用户名。
+  rabbitmq_user: "guest"
+  # RabbitMQ 密码。
+  rabbitmq_password: "guest"
+  # RabbitMQ VHost。
+  rabbitmq_vhost: "/"
+
+storage:
+  # 存储类型：s3=对象存储，local=本地存储。后台可动态切换。
+  storage_type: "s3"
+  # 对象存储 Endpoint。
+  endpoint: "127.0.0.1:9000"
+  # 存储桶名称。
+  bucket: "hvc-media"
+  # Access Key ID。
+  access_key_id: "minioadmin"
+  # Secret Access Key。
+  secret_access_key: "minioadmin"
+  # 是否使用 SSL。
+  use_ssl: false
+  # 对象键前缀。
+  base_prefix: "hvc"
+  # 播放域名。
+  play_domain: ""
+  # FLV 播放域名。
+  flv_domain: ""
+  # 本地存储根路径，storage_type=local 时使用。
+  local_base_path: "/data/hvc/media"
+  # 默认存储配置 ID，关联 t_storage_config 表。
+  default_storage_id: 0
+
+callback:
+  # 回调 HTTP 地址。
+  http_url: "http://127.0.0.1:9090/callback"
+  # 回调 HTTP 超时。
+  http_timeout: "5s"
+  # 回调 gRPC 超时。
+  grpc_timeout: "3s"
+  # 回调消息队列超时。
+  mq_timeout: "3s"
+  # 回调重试退避时间。
+  retry_backoff: "2s"
+
+scheduler:
+  # 调度循环间隔。
+  loop_interval: "3s"
+  # 任务租约 TTL。
+  job_lease_ttl: "5m"
+  # Worker 心跳超时。
+  worker_heartbeat_timeout: "30s"
+  # 是否要求硬件编码。
+  require_hardware_encode: false
+  # 是否允许软解降级。
+  allow_software_decode_fallback: true
+  # 是否要求硬件水印。
+  require_hardware_watermark: false
+  # 软解 CPU 使用率上限。
+  soft_decode_cpu_limit_percent: 80
+  # 节点 CPU 安全水位。
+  node_cpu_safety_limit_percent: 90
+  # 节点内存安全水位。
+  node_memory_safety_limit_percent: 90
+  # 节点 GPU 显存安全水位。
+  node_gpu_safety_limit_percent: 90
+  # 全局最大转码会话数。
+  max_global_transcode_sessions: 100
+  # 单节点最大转码会话数。
+  max_node_transcode_sessions: 10
+  # 单节点最大上传并发数。
+  max_node_upload_concurrency: 20
+  # 是否启用动态并发控制。
+  dynamic_concurrency_control: true
+
+worker:
+  # Worker 循环间隔。
+  loop_interval: "2s"
+  # 单任务上传并发数。
+  single_job_upload_concurrency: 4
+  # 源文件读取超时。
+  source_read_timeout: "30m"
+  # 上传重试基础延迟。
+  upload_retry_base_delay: "1s"
+  # 上传重试最大延迟。
+  upload_retry_max_delay: "30s"
+  # 上传最大重试次数。
+  upload_max_retry_count: 3
+  # 分片命名模板（init 和 media 统一，number=0 为 init）。
+  # 占位符：{job_id} {rendition} {rendition_id} {number} {timestamp}
+  # 后台管理界面可动态修改。
+  segment_template: "{job_id}/{rendition}/seg-{number}.m4s"
+
+grpc:
+  # gRPC 服务监听地址。
+  listen_address: ":9090"
+  # gRPC 最大接收消息大小（MB）。
+  max_recv_msg_size: 64
+  # gRPC 最大发送消息大小（MB）。
+  max_send_msg_size: 64
+  # gRPC 连接超时。
+  connection_timeout: "5s"
 
 config_center:
   # 是否在启动时启用配置中心读取。

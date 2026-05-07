@@ -1,0 +1,259 @@
+openapi: 3.0.3
+info:
+  title: HVC 公共转码 API
+  description: 视频点播转码服务公共接口
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+
+paths:
+  /api/v1/transcode/job:
+    post:
+      summary: 创建转码任务
+      operationId: createTranscodeJob
+      tags: [Transcode]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateJobResponse'
+
+  /api/v1/transcode/progress:
+    get:
+      summary: 查询转码进度
+      operationId: queryTranscodeProgress
+      tags: [Transcode]
+      parameters:
+        - name: request_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryProgressResponse'
+
+  /api/v1/cluster/nodes:
+    get:
+      summary: 查询集群节点列表
+      operationId: listClusterNodes
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NodeInfo'
+
+  /api/v1/live/channel/playback:
+    get:
+      summary: 查询直播播放信息
+      operationId: getLivePlayback
+      tags: [Live]
+      parameters:
+        - name: channel_key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivePlaybackResponse'
+
+components:
+  schemas:
+    CreateJobRequest:
+      type: object
+      required: [request_id, source_url]
+      properties:
+        request_id:
+          type: string
+          description: 外部请求唯一标识，用于幂等控制
+        biz_key:
+          type: string
+          description: 业务侧资源主键
+        source_url:
+          type: string
+          description: 源视频地址
+        profile_id:
+          type: integer
+          format: uint64
+          description: 转码模板 ID
+        priority:
+          type: integer
+          description: 优先级，数值越大越高
+        enable_watermark:
+          type: boolean
+          description: 是否启用水印
+        segment_options:
+          $ref: '#/components/schemas/SegmentOptions'
+        storage_options:
+          $ref: '#/components/schemas/StorageOptions'
+        schedule_options:
+          $ref: '#/components/schemas/ScheduleOptions'
+        renditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RenditionOption'
+
+    SegmentOptions:
+      type: object
+      properties:
+        segment_duration_sec:
+          type: integer
+          default: 4
+        support_dash:
+          type: boolean
+          default: true
+        support_hls:
+          type: boolean
+          default: true
+
+    StorageOptions:
+      type: object
+      properties:
+        storage_id:
+          type: integer
+          format: uint64
+        bucket_prefix:
+          type: string
+        segment_prefix:
+          type: string
+
+    ScheduleOptions:
+      type: object
+      properties:
+        preferred_hwaccel:
+          type: string
+          description: 偏好硬件加速类型 (nvidia/intel_qsv/amd_amf/vaapi)
+        allow_software_decode_fallback:
+          type: boolean
+          default: true
+
+    RenditionOption:
+      type: object
+      properties:
+        name:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        video_codec:
+          type: string
+        video_bitrate_kbps:
+          type: integer
+        video_maxrate_kbps:
+          type: integer
+        video_bufsize_kbps:
+          type: integer
+        preset:
+          type: string
+
+    CreateJobResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            job_id:
+              type: integer
+              format: uint64
+            request_id:
+              type: string
+            status:
+              type: integer
+            status_name:
+              type: string
+
+    QueryProgressResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            job_id:
+              type: integer
+              format: uint64
+            status:
+              type: integer
+            stage:
+              type: string
+            progress_permille:
+              type: integer
+            current_fps:
+              type: number
+            current_bitrate_kbps:
+              type: number
+            current_speed:
+              type: number
+
+    NodeInfo:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          format: uint64
+        host:
+          type: string
+        enabled:
+          type: boolean
+        quarantined:
+          type: boolean
+        active_sessions:
+          type: integer
+
+    LivePlaybackResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        data:
+          type: object
+          properties:
+            channel_key:
+              type: string
+            status:
+              type: string
+            master_hls_url:
+              type: string
+            http_flv_url:
+              type: string
+            rendition_names:
+              type: array
+              items:
+                type: string

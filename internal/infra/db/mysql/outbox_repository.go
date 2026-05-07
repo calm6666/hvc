@@ -87,3 +87,54 @@ func (r *OutboxRepository) MarkFailed(ctx context.Context, eventID uint64, messa
 		"updated_at":         time.Now(),
 	}).Error
 }
+
+// CleanDelivered 清理已投递成功的事件记录。
+//
+// 删除超过 retainDuration 的已投递记录，防止表无限增长。
+// 默认保留 7 天。
+func (r *OutboxRepository) CleanDelivered(ctx context.Context, retainDuration time.Duration) int {
+	if retainDuration <= 0 {
+		retainDuration = 7 * 24 * time.Hour
+	}
+	cutoff := time.Now().Add(-retainDuration)
+	result := r.db.WithContext(ctx).
+		Where("status = ? AND updated_at < ?", model.OutboxStatusDelivered, cutoff).
+		Delete(&OutboxRecord{})
+	return int(result.RowsAffected)
+}
+
+// CleanExpiredFailed 清理超过最大重试次数的失败记录。
+//
+// 这些记录已经无法再重试，可以归档或删除。
+func (r *OutboxRepository) CleanExpiredFailed(ctx context.Context) int {
+	result := r.db.WithContext(ctx).
+		Where("status = ? AND retry_count >= max_retry_count", model.OutboxStatusFailed).
+		Delete(&OutboxRecord{})
+	return int(result.RowsAffected)
+}
+
+// ListRetryable 返回可重试的失败事件。
+func (r *OutboxRepository) ListRetryable(ctx context.Context) []model.OutboxEvent {
+	var records []OutboxRecord
+	now := time.Now()
+	if err := r.db.WithContext(ctx).
+		Where("status = ? AND next_retry_at <= ? AND retry_count < max_retry_count", model.OutboxStatusFailed, now).
+		Find(&records).Error; err != nil {
+		return nil
+	}
+	items := make([]model.OutboxEvent, 0, len(records))
+	for _, record := range records {
+		items = append(items, toOutboxModel(record))
+	}
+	return items
+}
+
+// ResetToPending 将失败事件重置为待投递状态（手动重试）。
+func (r *OutboxRepository) ResetToPending(ctx context.Context, eventID uint64) error {
+	return r.db.WithContext(ctx).Model(&OutboxRecord{}).Where("event_id = ?", eventID).Updates(map[string]any{
+		"status":        model.OutboxStatusPending,
+		"retry_count":   0,
+		"next_retry_at": time.Now(),
+		"updated_at":    time.Now(),
+	}).Error
+}

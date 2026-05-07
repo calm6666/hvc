@@ -1,0 +1,68 @@
+syntax = "proto3";
+package cluster.v1;
+
+message NodeInfo {
+  uint64 node_id = 1;
+  string host = 2;
+  bool enabled = 3;
+  bool quarantined = 4;
+  int32 active_sessions = 5;
+  int32 cpu_usage_percent = 6;
+  int32 memory_usage_percent = 7;
+  int32 gpu_memory_usage_percent = 8;
+}
+
+message GPUCapability {
+  int32 gpu_index = 1;
+  uint64 gpu_device_id = 2;
+  string gpu_uuid = 3;
+  string gpu_name = 4;
+  uint64 total_memory_bytes = 5;
+  repeated string encode_codecs = 6;
+  repeated string decode_codecs = 7;
+  repeated string execution_hw_types = 8;
+}
+
+message WorkerHeartbeatRequest {
+  uint64 node_id = 1;
+  string worker_id = 2;
+  string startup_instance_id = 3;
+  string machine_fingerprint = 4;
+}
+
+message WorkerHeartbeatResponse {
+  bool accepted = 1;
+  uint64 lease_generation = 2;
+}
+
+message ReportProgressRequest {
+  uint64 job_id = 1;
+  int32 status = 2;
+  string stage = 3;
+  int32 progress_permille = 4;
+  double fps = 5;
+  double bitrate_kbps = 6;
+  double speed = 7;
+}
+
+message ReportProgressResponse {
+  bool accepted = 1;
+}
+
+message SegmentUploadedRequest {
+  uint64 job_id = 1;
+  uint64 segment_id = 2;
+  string object_key = 3;
+  uint64 object_size_bytes = 4;
+  string object_etag = 5;
+}
+
+message SegmentUploadedResponse {
+  bool accepted = 1;
+}
+
+service ClusterInternalService {
+  rpc WorkerHeartbeat(WorkerHeartbeatRequest) returns (WorkerHeartbeatResponse);
+  rpc ReportProgress(ReportProgressRequest) returns (ReportProgressResponse);
+  rpc SegmentUploaded(SegmentUploadedRequest) returns (SegmentUploadedResponse);
+}

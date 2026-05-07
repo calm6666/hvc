@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"hvc/pkg/netutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -14,8 +15,19 @@ type RuntimeConfig struct {
 	Server       ServerConfig       `yaml:"server"`
 	MySQL        MySQLConfig        `yaml:"mysql"`
 	Redis        RedisConfig        `yaml:"redis"`
+	MQ           MQConfig           `yaml:"mq"`
 	ConfigCenter ConfigCenterConfig `yaml:"config_center"`
 	ID           IDConfig           `yaml:"id"`
+}
+
+// MQConfig 表示消息队列连接配置。
+type MQConfig struct {
+	RabbitMQDSN       string `yaml:"rabbitmq_dsn"`
+	RabbitMQHost      string `yaml:"rabbitmq_host"`
+	RabbitMQPort      int    `yaml:"rabbitmq_port"`
+	RabbitMQUser      string `yaml:"rabbitmq_user"`
+	RabbitMQPassword  string `yaml:"rabbitmq_password"`
+	RabbitMQVHost     string `yaml:"rabbitmq_vhost"`
 }
 
 // DynamicRuntimeConfig 表示服务启动完成后，通过后台接口维护、持久化到 MySQL、缓存到 Redis 的动态业务配置。
@@ -30,6 +42,7 @@ type DynamicRuntimeConfig struct {
 // ServerConfig 表示服务监听与节点身份配置。
 type ServerConfig struct {
 	ListenAddress string `yaml:"listen_address"`
+	AdvertiseIP   string `yaml:"advertise_ip"`
 	ServiceName   string `yaml:"service_name"`
 	NodeID        uint64 `yaml:"node_id"`
 	WorkerID      string `yaml:"worker_id"`
@@ -91,10 +104,12 @@ type WorkerConfig struct {
 	UploadRetryBaseDelay       time.Duration `json:"upload_retry_base_delay"`
 	UploadRetryMaxDelay        time.Duration `json:"upload_retry_max_delay"`
 	UploadMaxRetryCount        int           `json:"upload_max_retry_count"`
+	SegmentTemplate            string        `json:"segment_template"`
 }
 
 // CallbackConfig 表示回调动态配置。
 type CallbackConfig struct {
+	HTTPURL      string        `json:"http_url"`
 	HTTPTimeout  time.Duration `json:"http_timeout"`
 	GRPCTimeout  time.Duration `json:"grpc_timeout"`
 	MQTimeout    time.Duration `json:"mq_timeout"`
@@ -125,6 +140,14 @@ type StorageConfig struct {
 	SecretAccessKey string `json:"secret_access_key"`
 	UseSSL          bool   `json:"use_ssl"`
 	BasePrefix      string `json:"base_prefix"`
+	PlayDomain      string `json:"play_domain"`
+	FLVDomain       string `json:"flv_domain"`
+	// StorageType 存储类型："s3" 对象存储，"local" 本地存储。
+	StorageType string `json:"storage_type"`
+	// LocalBasePath 本地存储根路径，StorageType="local" 时使用。
+	LocalBasePath string `json:"local_base_path"`
+	// DefaultStorageID 默认存储配置 ID，关联 t_storage_config 表。
+	DefaultStorageID uint64 `json:"default_storage_id"`
 }
 
 // LoadRuntimeConfig 加载启动配置。
@@ -164,4 +187,16 @@ func ValidateRuntimeConfig(cfg RuntimeConfig) error {
 		return fmt.Errorf("redis.addrs 不能为空")
 	}
 	return nil
+}
+
+// ResolveAdvertiseIP 解析对外广播 IP。
+//
+// 如果配置文件中指定了 advertise_ip，优先使用配置值；
+// 否则自动检测本机局域网 IP 地址。
+// 集群模式下其他节点通过此 IP 访问本节点。
+func (cfg RuntimeConfig) ResolveAdvertiseIP() string {
+	if cfg.Server.AdvertiseIP != "" && cfg.Server.AdvertiseIP != "127.0.0.1" && cfg.Server.AdvertiseIP != "localhost" {
+		return cfg.Server.AdvertiseIP
+	}
+	return netutil.DetectAdvertiseIP()
 }

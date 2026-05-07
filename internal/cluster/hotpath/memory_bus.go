@@ -24,10 +24,13 @@ func (b *MemoryBus) SaveProgress(ctx context.Context, progress model.TranscodePr
 	b.progress[progress.JobID] = progress
 }
 
-// GetProgress 获取实时进度。
-func (b *MemoryBus) GetProgress(ctx context.Context, jobID uint64) (model.TranscodeProgress, bool) {
+// ActiveProgressCount 返回当前内存总线中仍保留的实时进度条目数量。
+//
+// 这里返回的是当前进程热路径里仍在维护的任务进度数量，适合被 Worker 当作“当前活跃转码会话数”的近似值使用。
+// 当前实现不区分任务是否已经最终完成，因此调用方仍应结合自身执行节奏决定如何解释这个数量。
+func (b *MemoryBus) ActiveProgressCount(ctx context.Context) int {
+	_ = ctx
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	progress, ok := b.progress[jobID]
-	return progress, ok
+	return len(b.progress)
 }

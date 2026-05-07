@@ -2,19 +2,25 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
+	"hvc/internal/auth"
+	"hvc/internal/audit"
 	"hvc/internal/callback"
 	"hvc/internal/cluster"
 	hotpath "hvc/internal/cluster/hotpath"
-	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/config"
 	"hvc/internal/configcenter"
 	"hvc/internal/handler"
-	publichttp "hvc/internal/interfaces/http/public"
+	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/infra/db/mysql"
+	adminhttp "hvc/internal/interfaces/http/admin"
+	publichttp "hvc/internal/interfaces/http/public"
+	"hvc/internal/live"
+	livesvc "hvc/internal/service/live"
 	"hvc/internal/scheduler"
 	"hvc/internal/server"
 	"hvc/internal/service"
-	livesvc "hvc/internal/service/live"
+	authusecase "hvc/internal/usecase/auth"
 	transcodeusecase "hvc/internal/usecase/transcode"
 	"hvc/internal/worker"
 )
@@ -35,10 +41,6 @@ type Application struct {
 
 // NewApplication 创建服务实例。
 func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
-	dynamicConfigValue, err := config.LoadDynamicRuntimeConfig(baseConfig)
-	if err != nil {
-		return nil, err
-	}
 	db, err := mysql.Open(baseConfig.MySQL)
 	if err != nil {
 		return nil, err
@@ -50,33 +52,75 @@ func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
+	dynamicConfigValue, ok := func() (config.DynamicRuntimeConfig, bool) {
+		result, found := mysql.LoadDynamicRuntimeConfigFromDB(context.Background(), db)
+		if !found {
+			return config.DynamicRuntimeConfig{}, false
+		}
+		cfg, ok := result.Config.(config.DynamicRuntimeConfig)
+		return cfg, ok
+	}()
+	if !ok {
+		dynamicConfigValue, err = config.LoadDynamicRuntimeConfig(baseConfig)
+		if err != nil {
+			return nil, fmt.Errorf("load dynamic runtime config failed: %w", err)
+		}
+	}
 	effectiveConfig := configcenter.NewEffectiveConfig(dynamicConfigValue)
+	coordinator := cluster.NewCoordinator(dynamicConfigValue, baseConfig.Server.NodeID, baseConfig.Server.ListenAddress)
 	systemService := service.NewSystemService(baseConfig.Server.ServiceName, resolveModeName(dynamicConfigValue))
 	systemHandler := handler.NewSystemHandler(systemService)
-	channelService := livesvc.NewChannelService()
+	channelService := livesvc.NewChannelService(dynamicConfigValue)
+	auditRepository := audit.NewRepository(db)
 	jobRepository := mysql.NewJobRepository(db)
+	jobRequestOverrideRepository := mysql.NewJobRequestOverrideRepository(db)
 	segmentRepository := mysql.NewSegmentRepository(db)
 	outboxRepository := mysql.NewOutboxRepository(db)
+	workerInstanceRepository := mysql.NewWorkerInstanceRepository(db)
+	gpuDeviceRepository := mysql.NewGPUDeviceRepository(db)
+	gpuCapabilityRepository := mysql.NewWorkerCodecCapabilityRepository(db)
+	jobExecutionRepository := mysql.NewJobExecutionRepository(db)
+	adminRepository := mysql.NewAdminRepository(db)
+	adminRBACRepository := mysql.NewAdminRBACRepository(db)
+	runtimeConfigRepository := mysql.NewRuntimeConfigRepository(db)
+	callbackConfigRepository := mysql.NewCallbackConfigRepository(db)
+	configCenterBindingRepository := mysql.NewConfigCenterBindingRepository(db)
+	clusterNodeRepository := mysql.NewClusterNodeRepository(db)
+	_ = clusterNodeRepository.EnsureLocalNode(context.Background(), baseConfig.Server.NodeID, baseConfig.Server.ServiceName, baseConfig.ResolveAdvertiseIP(), baseConfig.Server.ListenAddress)
+	auth.ConfigureAdminAuth(adminRepository, adminRBACRepository)
+	adminhttp.ConfigureAdminAudit(auditRepository)
+	ensureAdminRBACSeed(context.Background(), adminRepository, adminRBACRepository)
 	progressStore := rediscache.NewProgressStore(redisClient)
 	clusterCache := cluster.NewStateCache(redisClient)
 	leaseCache := cluster.NewLeaseCache(redisClient)
 	hotpathBus := hotpath.NewMemoryBus()
 	createJobUseCase := transcodeusecase.NewCreateJobUseCase()
 	queryProgressUseCase := transcodeusecase.NewQueryProgressUseCase(jobRepository, progressStore)
-	transcodeHandler := publichttp.NewTranscodeHandler(createJobUseCase, queryProgressUseCase, jobRepository)
-	clusterHandler := publichttp.NewClusterHandler(clusterCache, leaseCache, jobRepository, segmentRepository)
+	loginUseCase := &authusecase.LoginUseCase{}
+	transcodeHandler := publichttp.NewTranscodeHandler(createJobUseCase, queryProgressUseCase, jobRepository, jobRequestOverrideRepository)
+	clusterHandler := publichttp.NewClusterHandler(clusterCache, leaseCache, jobRepository, segmentRepository, workerInstanceRepository)
 	liveHandler := publichttp.NewLiveHandler(channelService)
+	authHandler := adminhttp.NewAuthHandler(loginUseCase, adminRepository)
+	configHandler := adminhttp.NewConfigHandler(runtimeConfigRepository, effectiveConfig)
+	callbackHandler := adminhttp.NewCallbackHandler(callbackConfigRepository)
+	rbacHandler := adminhttp.NewRBACHandler(adminRepository, adminRBACRepository, auditRepository)
+	writeRBACHandler := adminhttp.NewWriteRBAC(adminRBACRepository, adminRepository)
+	configCenterHandler := adminhttp.NewConfigCenterHandler(configCenterBindingRepository, effectiveConfig)
+	adminClusterHandler := adminhttp.NewClusterHandler(clusterNodeRepository, clusterCache, coordinator.Registry())
+	adminTranscodeHandler := adminhttp.NewTranscodeHandler(jobRepository, progressStore)
+	liveManager := live.NewManager(live.NewMemoryChannelStore(), live.NewMemorySessionStore())
+	adminLiveHandler := adminhttp.NewLiveHandler(liveManager, channelService)
 	return &Application{
 		baseConfig:    baseConfig,
 		dynamicConfig: effectiveConfig,
-		httpServer:    server.NewHTTPServer(baseConfig.Server, systemHandler, transcodeHandler, clusterHandler, liveHandler),
-		coordinator:   cluster.NewCoordinator(dynamicConfigValue),
+		httpServer:    server.NewHTTPServer(baseConfig.Server, systemHandler, transcodeHandler, clusterHandler, liveHandler, authHandler, configHandler, callbackHandler, rbacHandler, writeRBACHandler, configCenterHandler, adminClusterHandler, adminTranscodeHandler, adminLiveHandler),
+		coordinator:   coordinator,
 		clusterCache:  clusterCache,
 		leaseCache:    leaseCache,
 		hotpathBus:    hotpathBus,
-		scheduler:     scheduler.NewManager(dynamicConfigValue, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, clusterCache, jobRepository),
-		worker:        worker.NewModule(dynamicConfigValue, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, jobRepository, segmentRepository, progressStore, outboxRepository, hotpathBus),
-		callback:      callback.NewDispatcher(dynamicConfigValue, outboxRepository),
+		scheduler:     scheduler.NewManager(dynamicConfigValue, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, clusterCache, jobRepository, jobRequestOverrideRepository, jobExecutionRepository),
+		worker:        worker.NewModule(dynamicConfigValue, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, jobRepository, segmentRepository, progressStore, outboxRepository, hotpathBus, clusterCache, workerInstanceRepository, gpuDeviceRepository, gpuCapabilityRepository, jobExecutionRepository),
+		callback:      callback.NewDispatcher(dynamicConfigValue, outboxRepository, callbackConfigRepository),
 	}, nil
 }
 

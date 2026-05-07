@@ -1,0 +1,138 @@
+package mysql
+
+import "time"
+
+// CallbackConfigRecord 表示完成通知回调配置表映射。
+type CallbackConfigRecord struct {
+	CallbackConfigID uint64    `gorm:"column:callback_config_id;primaryKey"`
+	CallbackName     string    `gorm:"column:callback_name"`
+	CallbackType     int       `gorm:"column:callback_type"`
+	TargetURL        string    `gorm:"column:target_url"`
+	RPCEndpoint      string    `gorm:"column:rpc_endpoint"`
+	RPCServiceName   string    `gorm:"column:rpc_service_name"`
+	MQExchange       string    `gorm:"column:mq_exchange"`
+	MQRoutingKey     string    `gorm:"column:mq_routing_key"`
+	TimeoutMS        int       `gorm:"column:timeout_ms"`
+	RetryTimes       int       `gorm:"column:retry_times"`
+	Enabled          bool      `gorm:"column:enabled"`
+	Priority         int       `gorm:"column:priority"`
+	RegistryID       uint64    `gorm:"column:registry_id"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
+}
+
+func (CallbackConfigRecord) TableName() string { return "t_callback_config" }
+
+// RegistryEtcdConfigRecord 表示 RPC etcd 注册配置表映射。
+type RegistryEtcdConfigRecord struct {
+	RegistryID       uint64    `gorm:"column:registry_id;primaryKey"`
+	RegistryName     string    `gorm:"column:registry_name"`
+	Endpoints        string    `gorm:"column:endpoints"`
+	ServiceNamespace string    `gorm:"column:service_namespace"`
+	LeaseTTLSec      int       `gorm:"column:lease_ttl_sec"`
+	DialTimeoutMS    int       `gorm:"column:dial_timeout_ms"`
+	Enabled          bool      `gorm:"column:enabled"`
+	Priority         int       `gorm:"column:priority"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
+}
+
+func (RegistryEtcdConfigRecord) TableName() string { return "t_registry_etcd_config" }
+
+// RuntimeConfigRecord 表示运行配置版本表映射。
+type RuntimeConfigRecord struct {
+	ConfigVersion                     uint64    `gorm:"column:config_version;primaryKey"`
+	DefaultProfileID                  uint64    `gorm:"column:default_profile_id"`
+	MaxGlobalTranscodeSessions        int       `gorm:"column:max_global_transcode_sessions"`
+	JobLeaseTTLSeconds                int       `gorm:"column:job_lease_ttl_sec"`
+	WorkerHeartbeatTimeoutSec         int       `gorm:"column:worker_heartbeat_timeout_sec"`
+	AllowRequestOverrideProfile       bool      `gorm:"column:allow_request_override_profile"`
+	AllowRequestOverrideSegmentDur    bool      `gorm:"column:allow_request_override_segment_duration"`
+	AllowRequestOverrideHWAccel       bool      `gorm:"column:allow_request_override_hwaccel"`
+	Published                         bool      `gorm:"column:published"`
+	SchedulerLoopIntervalMS           int       `gorm:"column:scheduler_loop_interval_ms"`
+	WorkerAssignedStatus              int       `gorm:"column:worker_assigned_status"`
+	WorkerProbeFailProgressPermille   int       `gorm:"column:worker_probe_fail_progress_permille"`
+	WorkerUploadFailProgressPermille  int       `gorm:"column:worker_upload_fail_progress_permille"`
+	WorkerSuccessProgressPermille     int       `gorm:"column:worker_success_progress_permille"`
+	WorkerLoopIntervalMS              int       `gorm:"column:worker_loop_interval_ms"`
+	RPCLoopIntervalMS                 int       `gorm:"column:rpc_loop_interval_ms"`
+	MQLoopIntervalMS                  int       `gorm:"column:mq_loop_interval_ms"`
+	RequireHardwareEncode             bool      `gorm:"column:require_hardware_encode"`
+	AllowSoftwareDecodeFallback       bool      `gorm:"column:allow_software_decode_fallback"`
+	SoftDecodeCPULimitPercent         int       `gorm:"column:soft_decode_cpu_limit_percent"`
+	NodeCPUSafetyLimitPercent         int       `gorm:"column:node_cpu_safety_limit_percent"`
+	NodeMemorySafetyLimitPercent      int       `gorm:"column:node_memory_safety_limit_percent"`
+	NodeGPUMemorySafetyLimitPercent   int       `gorm:"column:node_gpu_memory_safety_limit_percent"`
+	SingleJobUploadConcurrencyLimit   int       `gorm:"column:single_job_upload_concurrency_limit"`
+	DynamicConcurrencyControlEnabled  bool      `gorm:"column:dynamic_concurrency_control_enabled"`
+	RequireHardwareWatermark          bool      `gorm:"column:require_hardware_watermark"`
+	WorkerProbeFailMessage            string    `gorm:"column:worker_probe_fail_message"`
+	WorkerUploadFailMessage           string    `gorm:"column:worker_upload_fail_message"`
+	WorkerSuccessMessage              string    `gorm:"column:worker_success_message"`
+	CallbackHTTPURL                   string    `gorm:"column:callback_http_url"`
+	CallbackRPCEndpoint               string    `gorm:"column:callback_rpc_endpoint"`
+	CallbackMQTopic                   string    `gorm:"column:callback_mq_topic"`
+	RPCCallbackReceiverEnabled        bool      `gorm:"column:rpc_callback_receiver_enabled"`
+	RPCCallbackReceiverHost           string    `gorm:"column:rpc_callback_receiver_host"`
+	RPCCallbackReceiverPort           int       `gorm:"column:rpc_callback_receiver_port"`
+	RPCCallbackReceiverRegistryID     uint64    `gorm:"column:rpc_callback_receiver_registry_id"`
+	MQQueueName                       string    `gorm:"column:mq_queue_name"`
+	MQHost                            string    `gorm:"column:mq_host"`
+	MQPort                            int       `gorm:"column:mq_port"`
+	MQUsername                        string    `gorm:"column:mq_username"`
+	MQPassword                        string    `gorm:"column:mq_password"`
+	MQVHost                           string    `gorm:"column:mq_vhost"`
+	MQConsumerTag                     string    `gorm:"column:mq_consumer_tag"`
+	MQPrefetchCount                   int       `gorm:"column:mq_prefetch_count"`
+	SchedulerWorkerID                 string    `gorm:"column:scheduler_worker_id"`
+	WorkerOutputPath                  string    `gorm:"column:worker_output_path"`
+	WorkerObjectPrefix                string    `gorm:"column:worker_object_prefix"`
+	ChangeSummary                     string    `gorm:"column:change_summary"`
+	ConfigSource                      string    `gorm:"column:config_source"`
+	SourceRevision                    string    `gorm:"column:source_revision"`
+	PublishedBy                       string    `gorm:"column:published_by"`
+	PublishedAt                       time.Time `gorm:"column:published_at"`
+	EffectiveConfigHash               string    `gorm:"column:effective_config_hash"`
+	CreatedAt                         time.Time `gorm:"column:created_at"`
+	UpdatedAt                         time.Time `gorm:"column:updated_at"`
+}
+
+func (RuntimeConfigRecord) TableName() string { return "t_runtime_config" }
+
+// ConfigCenterBindingRecord 表示配置中心绑定表映射。
+type ConfigCenterBindingRecord struct {
+	BindingID       uint64    `gorm:"column:binding_id;primaryKey"`
+	BindingName     string    `gorm:"column:binding_name"`
+	ProviderType    string    `gorm:"column:provider_type"`
+	Endpoint        string    `gorm:"column:endpoint"`
+	ConfigNamespace string    `gorm:"column:config_namespace"`
+	Namespace       string    `gorm:"column:namespace"`
+	AuthMode        string    `gorm:"column:auth_mode"`
+	AccessKey       string    `gorm:"column:access_key"`
+	SecretKey       string    `gorm:"column:secret_key"`
+	Token           string    `gorm:"column:token"`
+	Enabled         bool      `gorm:"column:enabled"`
+	Priority        int       `gorm:"column:priority"`
+	LastSyncStatus  string    `gorm:"column:last_sync_status"`
+	LastSyncMessage string    `gorm:"column:last_sync_message"`
+	LastSyncAt      time.Time `gorm:"column:last_sync_at"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
+	UpdatedAt       time.Time `gorm:"column:updated_at"`
+}
+
+func (ConfigCenterBindingRecord) TableName() string { return "t_config_center_binding" }
+
+// EffectiveRuntimeConfigSnapshotRecord 表示生效配置快照表映射。
+type EffectiveRuntimeConfigSnapshotRecord struct {
+	SnapshotID        uint64    `gorm:"column:snapshot_id;primaryKey"`
+	ConfigVersion     uint64    `gorm:"column:config_version"`
+	ConfigSource      string    `gorm:"column:config_source"`
+	SourceRevision    string    `gorm:"column:source_revision"`
+	MergedPayloadJSON string    `gorm:"column:merged_payload_json"`
+	ConfigHash        string    `gorm:"column:config_hash"`
+	CreatedBy         string    `gorm:"column:created_by"`
+	CreatedAt         time.Time `gorm:"column:created_at"`
+}
+
+func (EffectiveRuntimeConfigSnapshotRecord) TableName() string { return "t_effective_runtime_config_snapshot" }
