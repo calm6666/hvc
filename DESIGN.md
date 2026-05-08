@@ -1583,8 +1583,8 @@ ffmpeg -hide_banner -y \
 - 选择顺序按 `priority DESC, updated_at DESC, id ASC`
 - 任务创建时即冻结 `output_storage_id` 与 `output_base_prefix`
 - 后续即使管理员调整优先级，已创建任务仍继续使用其冻结的对象存储配置
-- 若数据库中还没有已发布 runtime config 或尚未补齐对象存储配置，Worker 可使用 bootstrap 默认值完成首启初始化；生产环境应以后台动态配置为准
-- YAML 对象存储仅作为 bootstrap / fallback，不再是主数据源
+- 若数据库中还没有已发布 runtime config 或尚未补齐对象存储配置，Worker 可使用程序内置默认值完成首启初始化；生产环境应以后台动态配置为准
+- 启动 YAML 不再承载对象存储动态业务配置；对象存储配置必须通过后台 runtime config / 存储配置接口维护
 
 对象存储路径前缀规则统一如下：
 - 优先使用任务冻结的 `output_base_prefix`

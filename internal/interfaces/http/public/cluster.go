@@ -14,11 +14,11 @@ import (
 
 // ClusterHandler 处理集群内部上报接口。
 type ClusterHandler struct {
-	cache                  *clusterstate.StateCache
-	leaseCache             *clusterstate.LeaseCache
-	jobRepository          *mysql.JobRepository
-	segmentRepository      *mysql.SegmentRepository
-	workerInstanceRepo     *mysql.WorkerInstanceRepository
+	cache              *clusterstate.StateCache
+	leaseCache         *clusterstate.LeaseCache
+	jobRepository      *mysql.JobRepository
+	segmentRepository  *mysql.SegmentRepository
+	workerInstanceRepo *mysql.WorkerInstanceRepository
 }
 
 // NewClusterHandler 创建集群处理器。
@@ -48,7 +48,14 @@ func (h *ClusterHandler) ReportHeartbeat(w http.ResponseWriter, r *http.Request)
 		Timestamp:          req.Timestamp,
 	})
 	if h.workerInstanceRepo != nil {
-		_ = h.workerInstanceRepo.TouchHeartbeat(r.Context(), req.WorkerID)
+		if err := h.workerInstanceRepo.TouchHeartbeat(r.Context(), req.WorkerID); err != nil {
+			logx.Error("http.cluster.heartbeat.worker_touch_failed", err, logx.Fields{
+				"node_id":   req.NodeID,
+				"worker_id": req.WorkerID,
+			})
+			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "heartbeat persist failed"})
+			return
+		}
 	}
 	logx.Info("http.cluster.heartbeat.accepted", logx.Fields{
 		"node_id":   req.NodeID,
@@ -94,7 +101,15 @@ func (h *ClusterHandler) RenewLease(w http.ResponseWriter, r *http.Request) {
 		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
 		return
 	}
-	_ = h.jobRepository.RenewLease(r.Context(), req.JobID, req.WorkerID, req.LeaseGeneration)
+	if err := h.jobRepository.RenewLease(r.Context(), req.JobID, req.WorkerID, req.LeaseGeneration); err != nil {
+		logx.Error("http.cluster.lease.renew_failed", err, logx.Fields{
+			"job_id":           req.JobID,
+			"worker_id":        req.WorkerID,
+			"lease_generation": req.LeaseGeneration,
+		})
+		logx.WriteJSON(w, http.StatusConflict, model.Response{Code: 409, Message: "lease renew rejected"})
+		return
+	}
 	h.leaseCache.Save(r.Context(), clusterstate.LeaseState{
 		JobID:           req.JobID,
 		WorkerID:        req.WorkerID,
@@ -117,7 +132,13 @@ func (h *ClusterHandler) ReportUploadFailed(w http.ResponseWriter, r *http.Reque
 		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
 		return
 	}
-	_ = h.segmentRepository.MarkUploadFailed(r.Context(), req.SegmentID, req.ErrorMessage)
+	if err := h.segmentRepository.MarkUploadFailed(r.Context(), req.SegmentID, req.ErrorMessage); err != nil {
+		logx.Error("http.cluster.segment_failed.persist_failed", err, logx.Fields{
+			"segment_id": req.SegmentID,
+		})
+		logx.WriteJSON(w, http.StatusConflict, model.Response{Code: 409, Message: "segment upload failure persist failed"})
+		return
+	}
 	logx.Info("http.cluster.segment_failed.accepted", logx.Fields{
 		"segment_id":    req.SegmentID,
 		"retry_count":   req.RetryCount,
@@ -134,7 +155,13 @@ func (h *ClusterHandler) ReportUploadSucceeded(w http.ResponseWriter, r *http.Re
 		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
 		return
 	}
-	_ = h.segmentRepository.MarkUploaded(r.Context(), req.SegmentID, req.ObjectETag, req.ObjectSizeBytes)
+	if err := h.segmentRepository.MarkUploaded(r.Context(), req.SegmentID, req.ObjectETag, req.ObjectSizeBytes); err != nil {
+		logx.Error("http.cluster.segment_uploaded.persist_failed", err, logx.Fields{
+			"segment_id": req.SegmentID,
+		})
+		logx.WriteJSON(w, http.StatusConflict, model.Response{Code: 409, Message: "segment upload success persist failed"})
+		return
+	}
 	logx.Info("http.cluster.segment_uploaded.accepted", logx.Fields{
 		"segment_id":        req.SegmentID,
 		"object_etag":       req.ObjectETag,

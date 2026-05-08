@@ -256,7 +256,7 @@ func (d *Dispatcher) dispatchMQ(ctx context.Context, mqCfg config.MQRuntimeConfi
 
 func (d *Dispatcher) handleFailure(ctx context.Context, cfg config.DynamicRuntimeConfig, event model.OutboxEvent, err error) {
 	errMsg := err.Error()
-	nextRetryAt := time.Time{}
+	var nextRetryAt *time.Time
 	finalFailed := event.RetryCount+1 >= event.MaxRetryCount
 	if finalFailed {
 		_ = d.outboxRepository.MarkFinalFailed(ctx, event.EventID, errMsg)
@@ -268,8 +268,9 @@ func (d *Dispatcher) handleFailure(ctx context.Context, cfg config.DynamicRuntim
 		if backoff <= 0 {
 			backoff = 2 * time.Second
 		}
-		nextRetryAt = time.Now().Add(backoff)
-		_ = d.outboxRepository.MarkRetryable(ctx, event.EventID, errMsg, nextRetryAt)
+		value := time.Now().Add(backoff)
+		nextRetryAt = &value
+		_ = d.outboxRepository.MarkRetryable(ctx, event.EventID, errMsg, value)
 	}
 
 	if dispatchErr, ok := err.(*dispatchFailure); ok {
@@ -291,7 +292,7 @@ func (d *Dispatcher) handleFailure(ctx context.Context, cfg config.DynamicRuntim
 	})
 }
 
-func (d *Dispatcher) recordFailure(ctx context.Context, event model.OutboxEvent, failed *dispatchFailure, nextRetryAt time.Time) {
+func (d *Dispatcher) recordFailure(ctx context.Context, event model.OutboxEvent, failed *dispatchFailure, nextRetryAt *time.Time) {
 	if d.failureQueueRepo == nil || failed == nil {
 		return
 	}
@@ -335,13 +336,21 @@ func (d *Dispatcher) resolveTargetsWithOverride(ctx context.Context, cfg config.
 		}
 	}
 
-	if cfg.Callback.HTTPURL == "" {
-		return nil
+	// 兼容“未配置 callback config 表，但运行时默认配置已经下发”的兜底链路。
+	// 优先走 HTTP 单地址；若未配置 HTTP，则允许直接回退到默认 MQ routing key。
+	if cfg.Callback.HTTPURL != "" {
+		return []mysql.CallbackConfigRecord{{
+			CallbackType: callbackTypeHTTP,
+			TargetURL:    cfg.Callback.HTTPURL,
+		}}
 	}
-	return []mysql.CallbackConfigRecord{{
-		CallbackType: callbackTypeHTTP,
-		TargetURL:    cfg.Callback.HTTPURL,
-	}}
+	if cfg.MQ.CallbackTopic != "" {
+		return []mysql.CallbackConfigRecord{{
+			CallbackType: callbackTypeMQ,
+			MQRoutingKey: cfg.MQ.CallbackTopic,
+		}}
+	}
+	return nil
 }
 
 func parseTaskCallbackTarget(raw string) (mysql.CallbackConfigRecord, bool) {

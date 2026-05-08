@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"hvc/internal/infra/storage/s3"
+	"hvc/internal/infra/storage"
 	"hvc/internal/model"
 	"hvc/pkg/logx"
 	"sync"

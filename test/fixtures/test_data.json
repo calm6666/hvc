@@ -11,7 +11,7 @@
       "support_dash": true,
       "support_hls": true,
       "enable_watermark": false,
-      "segment_template": "{job_id}-{resolution}-{media_type}-{number}.m4s"
+      "segment_template": "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s"
     },
     {
       "job_id": 1893456789012345679,
@@ -24,7 +24,7 @@
       "support_dash": true,
       "support_hls": true,
       "enable_watermark": true,
-      "segment_template": "{job_id}-{quality}-{media_type}-{number}.m4s"
+      "segment_template": "{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s"
     }
   ],
   "segments": [
@@ -40,7 +40,8 @@
       "video_bitrate_kbps": 5000,
       "audio_bitrate_kbps": 128,
       "video_codec": "h264_nvenc",
-      "object_key": "hvc/1893456789012345678-1920_1080-video-0.m4s",
+      "rendition_key": "Ab3kP9xQ",
+      "object_key": "hvc/1893456789012345678-1920_1080-Ab3kP9xQ-video-0.m4s",
       "upload_status": 0
     },
     {
@@ -56,7 +57,8 @@
       "video_bitrate_kbps": 5000,
       "audio_bitrate_kbps": 128,
       "video_codec": "h264_nvenc",
-      "object_key": "hvc/1893456789012345678-1920_1080-video-1.m4s",
+      "rendition_key": "Ab3kP9xQ",
+      "object_key": "hvc/1893456789012345678-1920_1080-Ab3kP9xQ-video-1.m4s",
       "upload_status": 0
     },
     {
@@ -69,7 +71,8 @@
       "width": 1920,
       "height": 1080,
       "audio_bitrate_kbps": 128,
-      "object_key": "hvc/1893456789012345678-1920_1080-audio-0.m4s",
+      "rendition_key": "Ab3kP9xQ",
+      "object_key": "hvc/1893456789012345678-1920_1080-Ab3kP9xQ-audio-0.m4s",
       "upload_status": 0
     },
     {
@@ -84,7 +87,8 @@
       "video_bitrate_kbps": 2800,
       "audio_bitrate_kbps": 128,
       "video_codec": "h264_nvenc",
-      "object_key": "hvc/1893456789012345678-1280_720-video-0.m4s",
+      "rendition_key": "Cd7Lm2Qr",
+      "object_key": "hvc/1893456789012345678-1280_720-Cd7Lm2Qr-video-0.m4s",
       "upload_status": 0
     }
   ],
@@ -92,50 +96,50 @@
     {
       "id": 1,
       "name": "方案一：简洁模式",
-      "template": "{job_id}-{media_type}-{number}.m4s",
-      "example_init_video": "1893456789012345678-video-0.m4s",
-      "example_media_video": "1893456789012345678-video-1.m4s",
-      "example_init_audio": "1893456789012345678-audio-0.m4s"
+      "template": "{job_id}-{rendition_key}-{media_type}-{number}.m4s",
+      "example_init_video": "1893456789012345678-Ab3kP9xQ-video-0.m4s",
+      "example_media_video": "1893456789012345678-Ab3kP9xQ-video-1.m4s",
+      "example_init_audio": "1893456789012345678-Ab3kP9xQ-audio-0.m4s"
     },
     {
       "id": 2,
       "name": "方案二：分辨率模式",
-      "template": "{job_id}-{resolution}-{media_type}-{number}.m4s",
-      "example_init_video": "1893456789012345678-1920_1080-video-0.m4s",
-      "example_media_video": "1893456789012345678-1920_1080-video-1.m4s",
-      "example_init_audio": "1893456789012345678-1920_1080-audio-0.m4s"
+      "template": "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s",
+      "example_init_video": "1893456789012345678-1920_1080-Ab3kP9xQ-video-0.m4s",
+      "example_media_video": "1893456789012345678-1920_1080-Ab3kP9xQ-video-1.m4s",
+      "example_init_audio": "1893456789012345678-1920_1080-Ab3kP9xQ-audio-0.m4s"
     },
     {
       "id": 3,
       "name": "方案三：清晰度标签模式",
-      "template": "{job_id}-{quality}-{media_type}-{number}.m4s",
-      "example_init_video": "1893456789012345678-1080p-video-0.m4s",
-      "example_media_video": "1893456789012345678-1080p-video-1.m4s",
-      "example_init_audio": "1893456789012345678-1080p-audio-0.m4s"
+      "template": "{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s",
+      "example_init_video": "1893456789012345678-1080p-Ab3kP9xQ-video-0.m4s",
+      "example_media_video": "1893456789012345678-1080p-Ab3kP9xQ-video-1.m4s",
+      "example_init_audio": "1893456789012345678-1080p-Ab3kP9xQ-audio-0.m4s"
     },
     {
       "id": 4,
       "name": "方案四：简洁+时间戳模式",
-      "template": "{job_id}-{media_type}-{number}-{timestamp}.m4s",
-      "example_init_video": "1893456789012345678-video-0-0.m4s",
-      "example_media_video": "1893456789012345678-video-1-6000.m4s",
-      "example_init_audio": "1893456789012345678-audio-0-0.m4s"
+      "template": "{job_id}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s",
+      "example_init_video": "1893456789012345678-Ab3kP9xQ-video-0-0.m4s",
+      "example_media_video": "1893456789012345678-Ab3kP9xQ-video-1-6000.m4s",
+      "example_init_audio": "1893456789012345678-Ab3kP9xQ-audio-0-0.m4s"
     },
     {
       "id": 5,
       "name": "方案五：分辨率+时间戳模式",
-      "template": "{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s",
-      "example_init_video": "1893456789012345678-1920_1080-video-0-0.m4s",
-      "example_media_video": "1893456789012345678-1920_1080-video-1-6000.m4s",
-      "example_init_audio": "1893456789012345678-1920_1080-audio-0-0.m4s"
+      "template": "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s",
+      "example_init_video": "1893456789012345678-1920_1080-Ab3kP9xQ-video-0-0.m4s",
+      "example_media_video": "1893456789012345678-1920_1080-Ab3kP9xQ-video-1-6000.m4s",
+      "example_init_audio": "1893456789012345678-1920_1080-Ab3kP9xQ-audio-0-0.m4s"
     },
     {
       "id": 6,
       "name": "方案六：清晰度标签+时间戳模式",
-      "template": "{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s",
-      "example_init_video": "1893456789012345678-1080p-video-0-0.m4s",
-      "example_media_video": "1893456789012345678-1080p-video-1-6000.m4s",
-      "example_init_audio": "1893456789012345678-1080p-audio-0-0.m4s"
+      "template": "{job_id}-{quality}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s",
+      "example_init_video": "1893456789012345678-1080p-Ab3kP9xQ-video-0-0.m4s",
+      "example_media_video": "1893456789012345678-1080p-Ab3kP9xQ-video-1-6000.m4s",
+      "example_init_audio": "1893456789012345678-1080p-Ab3kP9xQ-audio-0-0.m4s"
     }
   ],
   "quality_labels": [

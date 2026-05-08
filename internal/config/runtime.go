@@ -14,12 +14,19 @@ import (
 //
 // 约定：
 //  1. server/mysql/redis/config_center/id 属于 bootstrap 配置；
-//  2. scheduler/worker/callback/storage/grpc/mq 只作为首启初始化默认值，
-//     首次落库后由后台动态配置接管，不再从本地文件热更新。
+//  2. scheduler/worker/callback/storage/grpc/mq 不允许再出现在启动配置中；
+//     这些业务运行参数只能通过后台 runtime config 维护；
+//  3. 数据库表结构必须先通过 sql/*.sql 显式初始化，服务启动时不会自动建表；
+//  4. 空库首启时使用程序内置默认值生成第一版 runtime config；
+//  5. 首次落库后由后台动态配置接管，不再从本地文件热更新。
 type RuntimeConfig struct {
 	Server       ServerConfig       `yaml:"server"`
 	MySQL        MySQLConfig        `yaml:"mysql"`
 	Redis        RedisConfig        `yaml:"redis"`
+	InternalGRPC InternalGRPCConfig `yaml:"internal_grpc"`
+	// 以下字段只保留为“启动配置误用检测”入口：
+	// 如果 YAML 中仍然写入这些动态业务段，ValidateRuntimeConfig 会直接报错，
+	// 防止再次出现“配置文件也能驱动运行时参数”的双源问题。
 	MQ           MQConfig           `yaml:"mq"`
 	Storage      StorageConfig      `yaml:"storage"`
 	Callback     CallbackConfig     `yaml:"callback"`
@@ -30,9 +37,10 @@ type RuntimeConfig struct {
 	ID           IDConfig           `yaml:"id"`
 }
 
-// MQConfig 表示消息队列连接配置。
+// MQConfig 表示运行期 MQ 配置结构。
+//
+// 在 RuntimeConfig 中只用于检测“错误地把动态业务配置写进启动 YAML”。
 type MQConfig struct {
-	RabbitMQDSN      string        `yaml:"rabbitmq_dsn"`
 	RabbitMQHost     string        `yaml:"rabbitmq_host"`
 	RabbitMQPort     int           `yaml:"rabbitmq_port"`
 	RabbitMQUser     string        `yaml:"rabbitmq_user"`
@@ -43,6 +51,19 @@ type MQConfig struct {
 	PrefetchCount    int           `yaml:"prefetch_count"`
 	LoopInterval     time.Duration `yaml:"loop_interval"`
 	CallbackTopic    string        `yaml:"callback_topic"`
+}
+
+// InternalGRPCConfig 表示集群内部 gRPC 通信的 bootstrap 配置。
+//
+// 这一组配置不属于运行期动态配置，节点启动后即建立监听。
+// 这样可以避免对外 public gRPC 的热启停误伤集群内部通信。
+type InternalGRPCConfig struct {
+	Enabled             bool          `yaml:"enabled"`
+	ListenAddress       string        `yaml:"listen_address"`
+	SharedToken         string        `yaml:"shared_token"`
+	MaxRecvMsgSizeMB    int           `yaml:"max_recv_msg_size"`
+	MaxSendMsgSizeMB    int           `yaml:"max_send_msg_size"`
+	GracefulStopTimeout time.Duration `yaml:"graceful_stop_timeout"`
 }
 
 // DynamicRuntimeConfig 表示服务启动完成后，通过后台接口维护、持久化到 MySQL、缓存到 Redis 的动态业务配置。
@@ -224,6 +245,32 @@ func ValidateRuntimeConfig(cfg RuntimeConfig) error {
 	}
 	if len(cfg.Redis.Addrs) == 0 {
 		return fmt.Errorf("redis.addrs 不能为空")
+	}
+	if cfg.InternalGRPC.Enabled {
+		if strings.TrimSpace(cfg.InternalGRPC.ListenAddress) == "" {
+			return fmt.Errorf("internal_grpc.listen_address 不能为空")
+		}
+		if strings.TrimSpace(cfg.InternalGRPC.SharedToken) == "" {
+			return fmt.Errorf("internal_grpc.shared_token 不能为空")
+		}
+	}
+	if cfg.Scheduler != (SchedulerConfig{}) {
+		return fmt.Errorf("scheduler 不允许出现在启动配置中，请改为通过后台 runtime config 维护")
+	}
+	if cfg.Worker != (WorkerConfig{}) {
+		return fmt.Errorf("worker 不允许出现在启动配置中，请改为通过后台 runtime config 维护")
+	}
+	if cfg.Callback != (CallbackConfig{}) {
+		return fmt.Errorf("callback 不允许出现在启动配置中，请改为通过后台 runtime config 维护")
+	}
+	if cfg.Storage != (StorageConfig{}) {
+		return fmt.Errorf("storage 不允许出现在启动配置中，请改为通过后台 runtime config 维护")
+	}
+	if cfg.GRPC != (GRPCConfig{}) {
+		return fmt.Errorf("grpc 不允许出现在启动配置中，请改为通过后台 runtime config 维护")
+	}
+	if cfg.MQ != (MQConfig{}) {
+		return fmt.Errorf("mq 不允许出现在启动配置中，请改为通过后台 runtime config 维护")
 	}
 	return nil
 }

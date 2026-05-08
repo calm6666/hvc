@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +18,8 @@ import (
 	"hvc/internal/infra/db/mysql"
 	ffprobe "hvc/internal/infra/ffmpeg/probe"
 	"hvc/internal/infra/gpu"
-	"hvc/internal/infra/storage/s3"
+	"hvc/internal/infra/hoststats"
+	"hvc/internal/infra/storage"
 	"hvc/internal/model"
 	"hvc/internal/worker/executor"
 	"hvc/internal/worker/planner"
@@ -46,6 +46,7 @@ type Module struct {
 	nodeID                  uint64
 	workerID                string
 	jobRepository           *mysql.JobRepository
+	renditionRepository     *mysql.TranscodeRenditionRepository
 	segmentRepository       *mysql.SegmentRepository
 	progressStore           *rediscache.ProgressStore
 	outboxRepository        *mysql.OutboxRepository
@@ -65,11 +66,13 @@ type Module struct {
 	workerInstanceID        uint64
 	currentProbeGeneration  uint64
 	runningJobs             map[uint64]struct{}
+	runningGPUSessions      map[int]int
 	runningJobsMu           sync.Mutex
+	hostStats               *hoststats.Collector
 }
 
 // NewModule 创建执行模块。
-func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus, stateCache *cluster.StateCache, workerInstanceRepo *mysql.WorkerInstanceRepository, gpuDeviceRepository *mysql.GPUDeviceRepository, gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Module {
+func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, renditionRepository *mysql.TranscodeRenditionRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus, stateCache *cluster.StateCache, workerInstanceRepo *mysql.WorkerInstanceRepository, gpuDeviceRepository *mysql.GPUDeviceRepository, gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Module {
 	uploader, _ := storage.Open(cfg.Storage)
 	startupInstanceID := workerID + "-startup"
 	machineFingerprint := "node-" + workerID
@@ -79,6 +82,7 @@ func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.Ef
 		nodeID:                  nodeID,
 		workerID:                workerID,
 		jobRepository:           jobRepository,
+		renditionRepository:     renditionRepository,
 		segmentRepository:       segmentRepository,
 		progressStore:           progressStore,
 		outboxRepository:        outboxRepository,
@@ -100,6 +104,8 @@ func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.Ef
 		machineFingerprint:     machineFingerprint,
 		currentProbeGeneration: 1,
 		runningJobs:            make(map[uint64]struct{}),
+		runningGPUSessions:     make(map[int]int),
+		hostStats:              hoststats.NewCollector(),
 	}
 }
 
@@ -180,12 +186,14 @@ func (m *Module) dispatchJobs(ctx context.Context, cfg config.DynamicRuntimeConf
 		select {
 		case sem <- struct{}{}:
 			m.runningJobs[job.JobID] = struct{}{}
+			m.incrementGPUSessionLocked(job.SelectedGPUIndex)
 			m.runningJobsMu.Unlock()
 			go func(j model.TranscodeJob) {
 				defer func() {
 					<-sem
 					m.runningJobsMu.Lock()
 					delete(m.runningJobs, j.JobID)
+					m.decrementGPUSessionLocked(j.SelectedGPUIndex)
 					m.runningJobsMu.Unlock()
 				}()
 				m.executeJob(ctx, j)
@@ -201,7 +209,7 @@ func (m *Module) dispatchJobs(ctx context.Context, cfg config.DynamicRuntimeConf
 // 使用信号量控制最大并发上传数。
 // 每批上传在独立 goroutine 中执行，不阻塞主循环。
 func (m *Module) dispatchUploads(ctx context.Context, cfg config.DynamicRuntimeConfig, sem chan struct{}) {
-	segments := m.segmentRepository.ListPendingUpload(ctx, cfg.Worker.SingleJobUploadConcurrency)
+	segments := m.segmentRepository.ListPendingUpload(ctx, cfg.Worker.SingleJobUploadConcurrency, cfg.Worker.UploadMaxRetryCount)
 	if len(segments) == 0 {
 		return
 	}
@@ -254,8 +262,15 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 
 	naming := planner.DefaultSegmentNamingConfig()
 	naming.JobID = job.JobID
-	if cfg.Worker.SegmentTemplate != "" {
-		naming.SegmentTemplate = cfg.Worker.SegmentTemplate
+	if template, err := m.jobRepository.EnsureSegmentTemplateSnapshot(ctx, job.JobID, cfg.Worker.SegmentTemplate); err != nil {
+		logx.Error("worker.job.lock_segment_template_failed", err, logx.Fields{
+			"job_id": job.JobID,
+		})
+		m.failJob(ctx, job, "SEGMENT_TEMPLATE_LOCK_FAILED", err.Error())
+		return
+	} else {
+		naming.SegmentTemplate = template
+		job.SegmentTemplate = template
 	}
 	if job.OutputBasePrefix != "" {
 		naming.ObjectKeyPrefix = job.OutputBasePrefix
@@ -263,6 +278,13 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 		naming.ObjectKeyPrefix = cfg.Storage.BasePrefix
 	}
 	pipeline := planner.BuildPlan(job, probeResult, executionHW, naming)
+	if err := m.attachStableRenditionKeys(ctx, job, pipeline.Renditions); err != nil {
+		logx.Error("worker.job.ensure_renditions_failed", err, logx.Fields{
+			"job_id": job.JobID,
+		})
+		m.failJob(ctx, job, "RENDITION_SNAPSHOT_FAILED", err.Error())
+		return
+	}
 	logx.Info("worker.job.pipeline", logx.Fields{
 		"job_id":          job.JobID,
 		"execution_hw":    executionHW,
@@ -335,8 +357,9 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 		}
 		_, saveErr := m.segmentRepository.Save(ctx, model.Segment{
 			JobID:            job.JobID,
-			RenditionID:      uint64(seg.RepresentationID),
+			RenditionID:      resolveRenditionID(pipeline.Renditions, seg.RenditionName),
 			RenditionName:    seg.RenditionName,
+			RenditionKey:     seg.RenditionKey,
 			SegmentType:      segmentType,
 			MediaType:        seg.MediaType,
 			IsInitSegment:    seg.IsInit,
@@ -347,6 +370,7 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 			VideoBitrateKbps: seg.VideoBitrateKbps,
 			AudioBitrateKbps: seg.AudioBitrateKbps,
 			VideoCodec:       seg.VideoCodec,
+			AudioCodec:       resolveAudioCodec(pipeline.Renditions, seg.RenditionName),
 			SupportDash:      job.SupportDash,
 			SupportHLS:       job.SupportHLS,
 			CodecName:        probeResult.VideoCodec,
@@ -517,7 +541,13 @@ func (m *Module) uploadSegments(ctx context.Context, segments []model.Segment) {
 	}
 	tasks := make([]model.UploadTask, 0, len(segments))
 	for _, segment := range segments {
-		_ = m.segmentRepository.MarkUploading(ctx, segment.SegmentID)
+		if err := m.segmentRepository.MarkUploading(ctx, segment.SegmentID); err != nil {
+			logx.Error("worker.upload.mark_uploading_failed", err, logx.Fields{
+				"segment_id": segment.SegmentID,
+				"job_id":     segment.JobID,
+			})
+			continue
+		}
 		logx.Info("worker.upload.start", logx.Fields{
 			"segment_id":  segment.SegmentID,
 			"job_id":      segment.JobID,
@@ -534,11 +564,20 @@ func (m *Module) uploadSegments(ctx context.Context, segments []model.Segment) {
 			CreatedAt:   time.Now(),
 		})
 	}
+	if len(tasks) == 0 {
+		return
+	}
 	pool := uploadworker.NewWorkerPool(cfg.Worker.SingleJobUploadConcurrency, uploader)
+	pool.SetRetryPolicy(m.retryPolicy.MaxRetry, m.retryPolicy.BaseDelay, m.retryPolicy.MaxDelay)
 	results := pool.Run(ctx, tasks)
 	for _, result := range results {
 		if result.Success {
-			_ = m.segmentRepository.MarkUploaded(ctx, result.SegmentID, result.ObjectETag, result.ObjectSizeBytes)
+			if err := m.segmentRepository.MarkUploaded(ctx, result.SegmentID, result.ObjectETag, result.ObjectSizeBytes); err != nil {
+				logx.Error("worker.upload.mark_uploaded_failed", err, logx.Fields{
+					"segment_id": result.SegmentID,
+				})
+				continue
+			}
 			logx.Info("worker.upload.success", logx.Fields{
 				"segment_id":        result.SegmentID,
 				"object_etag":       result.ObjectETag,
@@ -546,7 +585,12 @@ func (m *Module) uploadSegments(ctx context.Context, segments []model.Segment) {
 			})
 			continue
 		}
-		_ = m.segmentRepository.MarkUploadFailed(ctx, result.SegmentID, result.ErrorMessage)
+		if err := m.segmentRepository.MarkUploadFailed(ctx, result.SegmentID, result.ErrorMessage); err != nil {
+			logx.Error("worker.upload.mark_failed_failed", err, logx.Fields{
+				"segment_id": result.SegmentID,
+			})
+			continue
+		}
 		logx.Error("worker.upload.failed", nil, logx.Fields{
 			"segment_id":    result.SegmentID,
 			"error_message": result.ErrorMessage,
@@ -595,21 +639,62 @@ func (m *Module) reportHeartbeatOnce(ctx context.Context) {
 
 func (m *Module) reportMetricsOnce(ctx context.Context) {
 	cfg := m.currentConfig()
-	var mem runtime.MemStats
-	runtime.ReadMemStats(&mem)
+	snapshot := hoststats.Snapshot{}
+	if m.hostStats != nil {
+		snapshot = m.hostStats.Collect()
+	}
 	gpuCapabilities := gpu.ToGPUCapabilities(gpu.Probe())
+	gpuCapabilities = m.attachRuntimeGPUStats(gpuCapabilities, snapshot.GPUDevices)
 	gpuCapabilities = m.persistGPUCapabilities(ctx, gpuCapabilities)
 	metrics := model.NodeMetrics{
 		NodeID:                  m.nodeID,
-		CPUUsagePercent:         0,
-		MemoryUsagePercent:      approximateMemoryUsagePercent(mem),
-		GPUMemoryUsagePercent:   0,
-		UploadQueueDepth:        len(m.segmentRepository.ListPendingUpload(ctx, cfg.Scheduler.MaxNodeUploadConcurrency)),
+		CPUUsagePercent:         snapshot.CPUUsagePercent,
+		MemoryUsagePercent:      snapshot.MemoryUsagePercent,
+		GPUMemoryUsagePercent:   snapshot.GPUMemoryUsagePercent,
+		UploadQueueDepth:        len(m.segmentRepository.ListPendingUpload(ctx, cfg.Scheduler.MaxNodeUploadConcurrency, cfg.Worker.UploadMaxRetryCount)),
 		ActiveTranscodeSessions: m.hotpathBus.ActiveProgressCount(ctx),
 		GPUCapabilities:         gpuCapabilities,
 		Timestamp:               time.Now(),
 	}
 	reporter.ReportMetrics(ctx, m.stateCache, metrics)
+}
+
+func (m *Module) attachRuntimeGPUStats(capabilities []model.GPUCapability, runtime []hoststats.GPUDeviceSnapshot) []model.GPUCapability {
+	if len(capabilities) == 0 {
+		return capabilities
+	}
+
+	runtimeByUUID := make(map[string]hoststats.GPUDeviceSnapshot, len(runtime))
+	runtimeByIndex := make(map[int]hoststats.GPUDeviceSnapshot, len(runtime))
+	for _, item := range runtime {
+		if item.GPUUUID != "" {
+			runtimeByUUID[item.GPUUUID] = item
+		}
+		runtimeByIndex[item.GPUIndex] = item
+	}
+
+	sessionCounts := m.currentGPUSessionCounts()
+	for idx := range capabilities {
+		if item, ok := runtimeByUUID[capabilities[idx].GPUUUID]; ok {
+			applyRuntimeGPUStat(&capabilities[idx], item)
+		} else if item, ok := runtimeByIndex[capabilities[idx].GPUIndex]; ok {
+			applyRuntimeGPUStat(&capabilities[idx], item)
+		}
+		capabilities[idx].ActiveSessions = sessionCounts[capabilities[idx].GPUIndex]
+	}
+	return capabilities
+}
+
+func applyRuntimeGPUStat(capability *model.GPUCapability, stat hoststats.GPUDeviceSnapshot) {
+	if capability == nil {
+		return
+	}
+	if capability.MemoryTotalMB <= 0 && stat.MemoryTotalMB > 0 {
+		capability.MemoryTotalMB = stat.MemoryTotalMB
+	}
+	capability.GPUMemoryUsedMB = stat.MemoryUsedMB
+	capability.GPUMemoryUsagePercent = stat.MemoryUsagePercent
+	capability.GPUUtilizationPercent = stat.GPUUtilizationPercent
 }
 
 func (m *Module) persistGPUCapabilities(ctx context.Context, capabilities []model.GPUCapability) []model.GPUCapability {
@@ -632,7 +717,7 @@ func (m *Module) persistGPUCapabilities(ctx context.Context, capabilities []mode
 		items = append(items, capability)
 	}
 	if m.gpuCapabilityRepository != nil {
-		if err := m.gpuCapabilityRepository.ReplaceLatestSnapshot(ctx, m.nodeID, m.startupInstanceID, m.currentProbeGeneration, items); err != nil {
+		if err := m.gpuCapabilityRepository.ReplaceLatestSnapshot(ctx, m.nodeID, m.workerInstanceID, m.startupInstanceID, m.machineFingerprint, m.currentProbeGeneration, items); err != nil {
 			logx.Error("worker.gpu.capability_snapshot.save_failed", err, logx.Fields{
 				"node_id":             m.nodeID,
 				"startup_instance_id": m.startupInstanceID,
@@ -644,18 +729,79 @@ func (m *Module) persistGPUCapabilities(ctx context.Context, capabilities []mode
 	return items
 }
 
-func approximateMemoryUsagePercent(mem runtime.MemStats) int {
-	if mem.Sys == 0 {
-		return 0
+func (m *Module) attachStableRenditionKeys(ctx context.Context, job model.TranscodeJob, renditions []planner.RenditionSpec) error {
+	if len(renditions) == 0 || m.renditionRepository == nil {
+		return nil
 	}
-	used := int((mem.Alloc * 100) / mem.Sys)
-	if used < 0 {
-		return 0
+
+	items := make([]model.TranscodeRendition, 0, len(renditions))
+	seenNames := make(map[string]struct{}, len(renditions))
+	for _, rend := range renditions {
+		if _, exists := seenNames[rend.Name]; exists {
+			return fmt.Errorf("duplicate rendition name: %s", rend.Name)
+		}
+		seenNames[rend.Name] = struct{}{}
+		items = append(items, model.TranscodeRendition{
+			JobID:            job.JobID,
+			RenditionName:    rend.Name,
+			RenditionKey:     model.BuildStableRenditionKey(job.JobID, rend.Name, rend.Width, rend.Height, rend.VideoBitrateKbps, rend.AudioBitrateKbps, rend.VideoCodec, rend.AudioCodec),
+			Status:           model.JobStatusRunning,
+			OutWidth:         rend.Width,
+			OutHeight:        rend.Height,
+			VideoCodec:       rend.VideoCodec,
+			AudioCodec:       rend.AudioCodec,
+			VideoBitrateKbps: rend.VideoBitrateKbps,
+			AudioBitrateKbps: rend.AudioBitrateKbps,
+		})
 	}
-	if used > 100 {
-		return 100
+
+	stored, err := m.renditionRepository.EnsureForJob(ctx, items)
+	if err != nil {
+		return err
 	}
-	return used
+
+	storedByName := make(map[string]model.TranscodeRendition, len(stored))
+	for _, item := range stored {
+		storedByName[item.RenditionName] = item
+	}
+
+	for idx := range renditions {
+		if item, ok := storedByName[renditions[idx].Name]; ok {
+			renditions[idx].RenditionID = item.RenditionID
+			renditions[idx].RenditionKey = item.RenditionKey
+		}
+		if renditions[idx].RenditionKey == "" {
+			renditions[idx].RenditionKey = model.BuildStableRenditionKey(
+				job.JobID,
+				renditions[idx].Name,
+				renditions[idx].Width,
+				renditions[idx].Height,
+				renditions[idx].VideoBitrateKbps,
+				renditions[idx].AudioBitrateKbps,
+				renditions[idx].VideoCodec,
+				renditions[idx].AudioCodec,
+			)
+		}
+	}
+	return nil
+}
+
+func resolveRenditionID(renditions []planner.RenditionSpec, renditionName string) uint64 {
+	for _, rend := range renditions {
+		if rend.Name == renditionName {
+			return rend.RenditionID
+		}
+	}
+	return 0
+}
+
+func resolveAudioCodec(renditions []planner.RenditionSpec, renditionName string) string {
+	for _, rend := range renditions {
+		if rend.Name == renditionName {
+			return rend.AudioCodec
+		}
+	}
+	return ""
 }
 
 // buildCompletedPayload 构建转码完成回调载荷。
@@ -677,6 +823,7 @@ func (m *Module) buildCompletedPayload(ctx context.Context, job model.TranscodeJ
 		if !ok {
 			rend = &model.CompletedRendition{
 				RenditionName:         seg.RenditionName,
+				RenditionKey:          seg.RenditionKey,
 				QualityLabel:          seg.QualityLabel,
 				Width:                 seg.Width,
 				Height:                seg.Height,
@@ -705,6 +852,10 @@ func (m *Module) buildCompletedPayload(ctx context.Context, job model.TranscodeJ
 	if cfg.Storage.StorageType == "local" {
 		storageType = "local"
 	}
+	segmentTemplate := job.SegmentTemplate
+	if segmentTemplate == "" {
+		segmentTemplate = cfg.Worker.SegmentTemplate
+	}
 
 	return model.TranscodeCompletedPayload{
 		JobID:           job.JobID,
@@ -717,7 +868,7 @@ func (m *Module) buildCompletedPayload(ctx context.Context, job model.TranscodeJ
 		SegmentDuration: job.SegmentDurationSec,
 		SupportDash:     job.SupportDash,
 		SupportHLS:      job.SupportHLS,
-		SegmentTemplate: cfg.Worker.SegmentTemplate,
+		SegmentTemplate: segmentTemplate,
 		StorageType:     storageType,
 		StorageBucket:   cfg.Storage.Bucket,
 		PlayDomain:      cfg.Storage.PlayDomain,
@@ -776,6 +927,34 @@ func (m *Module) currentUploader() *storage.Client {
 	m.uploaderMu.RLock()
 	defer m.uploaderMu.RUnlock()
 	return m.uploader
+}
+
+func (m *Module) currentGPUSessionCounts() map[int]int {
+	m.runningJobsMu.Lock()
+	defer m.runningJobsMu.Unlock()
+	result := make(map[int]int, len(m.runningGPUSessions))
+	for gpuIndex, count := range m.runningGPUSessions {
+		result[gpuIndex] = count
+	}
+	return result
+}
+
+func (m *Module) incrementGPUSessionLocked(gpuIndex int) {
+	if gpuIndex < 0 {
+		return
+	}
+	m.runningGPUSessions[gpuIndex]++
+}
+
+func (m *Module) decrementGPUSessionLocked(gpuIndex int) {
+	if gpuIndex < 0 {
+		return
+	}
+	if count := m.runningGPUSessions[gpuIndex] - 1; count > 0 {
+		m.runningGPUSessions[gpuIndex] = count
+		return
+	}
+	delete(m.runningGPUSessions, gpuIndex)
 }
 
 func loopInterval(interval time.Duration, fallback time.Duration) time.Duration {

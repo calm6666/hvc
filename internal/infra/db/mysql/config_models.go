@@ -75,10 +75,14 @@ type RuntimeConfigRecord struct {
 	CallbackHTTPURL                  string    `gorm:"column:callback_http_url"`
 	CallbackRPCEndpoint              string    `gorm:"column:callback_rpc_endpoint"`
 	CallbackMQTopic                  string    `gorm:"column:callback_mq_topic"`
+	PublicGRPCEnabled                bool      `gorm:"column:public_grpc_enabled"`
+	PublicGRPCHost                   string    `gorm:"column:public_grpc_host"`
+	PublicGRPCPort                   int       `gorm:"column:public_grpc_port"`
 	RPCCallbackReceiverEnabled       bool      `gorm:"column:rpc_callback_receiver_enabled"`
 	RPCCallbackReceiverHost          string    `gorm:"column:rpc_callback_receiver_host"`
 	RPCCallbackReceiverPort          int       `gorm:"column:rpc_callback_receiver_port"`
 	RPCCallbackReceiverRegistryID    uint64    `gorm:"column:rpc_callback_receiver_registry_id"`
+	EnableMQConsumer                 bool      `gorm:"column:enable_mq_consumer;not null;default:0"`
 	MQQueueName                      string    `gorm:"column:mq_queue_name"`
 	MQHost                           string    `gorm:"column:mq_host"`
 	MQPort                           int       `gorm:"column:mq_port"`
@@ -87,6 +91,16 @@ type RuntimeConfigRecord struct {
 	MQVHost                          string    `gorm:"column:mq_vhost"`
 	MQConsumerTag                    string    `gorm:"column:mq_consumer_tag"`
 	MQPrefetchCount                  int       `gorm:"column:mq_prefetch_count"`
+	StorageType                      string    `gorm:"column:storage_type"`
+	StorageEndpoint                  string    `gorm:"column:storage_endpoint"`
+	StorageBucket                    string    `gorm:"column:storage_bucket"`
+	StorageAccessKeyID               string    `gorm:"column:storage_access_key_id"`
+	StorageSecretAccessKey           string    `gorm:"column:storage_secret_access_key"`
+	StorageUseSSL                    bool      `gorm:"column:storage_use_ssl"`
+	StoragePlayDomain                string    `gorm:"column:storage_play_domain"`
+	StorageFLVDomain                 string    `gorm:"column:storage_flv_domain"`
+	StorageLocalBasePath             string    `gorm:"column:storage_local_base_path"`
+	DefaultStorageID                 uint64    `gorm:"column:default_storage_id"`
 	SchedulerWorkerID                string    `gorm:"column:scheduler_worker_id"`
 	WorkerOutputPath                 string    `gorm:"column:worker_output_path"`
 	WorkerObjectPrefix               string    `gorm:"column:worker_object_prefix"`
@@ -102,13 +116,12 @@ type RuntimeConfigRecord struct {
 
 func (RuntimeConfigRecord) TableName() string { return "t_runtime_config" }
 
-// ConfigCenterBindingRecord 表示配置中心绑定表映射。
+// ConfigCenterBindingRecord 表示外部 bootstrap 配置源绑定表映射。
 type ConfigCenterBindingRecord struct {
 	BindingID       uint64    `gorm:"column:binding_id;primaryKey"`
 	BindingName     string    `gorm:"column:binding_name"`
 	ProviderType    string    `gorm:"column:provider_type"`
 	Endpoint        string    `gorm:"column:endpoint"`
-	ConfigNamespace string    `gorm:"column:config_namespace"`
 	Namespace       string    `gorm:"column:namespace"`
 	AuthMode        string    `gorm:"column:auth_mode"`
 	AccessKey       string    `gorm:"column:access_key"`

@@ -12,6 +12,8 @@
 *.out
 *.prof
 .gocache/
+.gotmp/
+*.go.[0-9]*
 
 # ---- 构建输出目录 ----
 build/

@@ -204,14 +204,7 @@ func GeneratePushAuthURL(cfg AuthConfig, baseURL string, channelKey string) stri
 	if !cfg.EnablePushAuth {
 		return fmt.Sprintf("%s/%s", baseURL, channelKey)
 	}
-	expireAt := time.Now().Add(time.Duration(cfg.PushExpireSec) * time.Second).Unix()
-	expireStr := strconv.FormatInt(expireAt, 10)
-
-	mac := hmac.New(sha256.New, []byte(cfg.PushKey))
-	mac.Write([]byte(channelKey + expireStr))
-	sign := hex.EncodeToString(mac.Sum(nil))
-
-	return fmt.Sprintf("%s/%s?expire=%s&sign=%s", baseURL, channelKey, expireStr, sign)
+	return fmt.Sprintf("%s/%s?%s", baseURL, channelKey, GeneratePushAuthValues(cfg, channelKey).Encode())
 }
 
 // GeneratePlayAuthURL 生成带鉴权参数的播放 URL。
@@ -219,6 +212,26 @@ func GeneratePlayAuthURL(cfg AuthConfig, baseURL string, channelKey string, form
 	if !cfg.EnablePlayAuth {
 		return fmt.Sprintf("%s/%s.%s", baseURL, channelKey, format)
 	}
+	return fmt.Sprintf("%s/%s.%s?%s", baseURL, channelKey, format, GeneratePlayAuthValues(cfg, channelKey).Encode())
+}
+
+// GeneratePushAuthValues 生成推流鉴权查询参数。
+func GeneratePushAuthValues(cfg AuthConfig, channelKey string) url.Values {
+	expireAt := time.Now().Add(time.Duration(cfg.PushExpireSec) * time.Second).Unix()
+	expireStr := strconv.FormatInt(expireAt, 10)
+
+	mac := hmac.New(sha256.New, []byte(cfg.PushKey))
+	mac.Write([]byte(channelKey + expireStr))
+	sign := hex.EncodeToString(mac.Sum(nil))
+
+	values := url.Values{}
+	values.Set("expire", expireStr)
+	values.Set("sign", sign)
+	return values
+}
+
+// GeneratePlayAuthValues 生成播放鉴权查询参数。
+func GeneratePlayAuthValues(cfg AuthConfig, channelKey string) url.Values {
 	expireAt := time.Now().Add(time.Duration(cfg.PlayExpireSec) * time.Second).Unix()
 	expireStr := strconv.FormatInt(expireAt, 10)
 
@@ -226,7 +239,10 @@ func GeneratePlayAuthURL(cfg AuthConfig, baseURL string, channelKey string, form
 	mac.Write([]byte(channelKey + expireStr))
 	sign := hex.EncodeToString(mac.Sum(nil))
 
-	return fmt.Sprintf("%s/%s.%s?expire=%s&sign=%s", baseURL, channelKey, format, expireStr, sign)
+	values := url.Values{}
+	values.Set("expire", expireStr)
+	values.Set("sign", sign)
+	return values
 }
 
 // OnPushAuth 推流鉴权回调处理。

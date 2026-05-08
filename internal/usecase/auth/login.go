@@ -28,7 +28,12 @@ func (u *LoginUseCase) Execute(r *http.Request) (string, bool) {
 	if !ok || user.Status != 1 {
 		return "", false
 	}
-	token := "admin-session-" + username + "-" + time.Now().Format("20060102150405")
+	// 后台会话令牌必须使用不可预测的高强度随机值，
+	// 不能再依赖“用户名 + 时间戳”这类可推测格式。
+	token := internalauth.GenerateSecureToken(32)
+	if token == "" {
+		return "", false
+	}
 	session, err := repo.CreateSession(r.Context(), user.AdminUserID, token, r.RemoteAddr, r.UserAgent(), time.Now().Add(24*time.Hour))
 	if err != nil {
 		return "", false

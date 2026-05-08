@@ -1,9 +1,0 @@
-# import config
-packagefile context=D:\hilihili\server\hvc\.gocache\b4\b4183b72b01ee34c104f2643ea9dc36e464f79f396a677679e635b2811db203c-d
-packagefile encoding/json=D:\hilihili\server\hvc\.gocache\ef\ef224f26b95fa1070d909134b1a46a45abd5f642d57d809f245e3451417a1637-d
-packagefile fmt=D:\hilihili\server\hvc\.gocache\9d\9dbda6e832b423d90ca1c95ac9172eccafed6efaeed208ed6a80a0c79adc0121-d
-packagefile go.etcd.io/etcd/client/v3=D:\hilihili\server\hvc\.gocache\02\02fe61fec0d060268eb42908b333398dedffc9e785e63af56c0ce17d168baa18-d
-packagefile hvc/internal/config=D:\hilihili\server\hvc\.gocache\a7\a748b5f039149b34c3dfe64b059f437a37b33f6045fbb113908ab3bbf84a87ec-d
-packagefile hvc/pkg/logx=D:\hilihili\server\hvc\.gocache\bb\bb08e73f64ee8b88298f0f157def7f73e6cd37fcd2ee7e71736109292b5b1085-d
-packagefile sync=D:\hilihili\server\hvc\.gocache\09\09c2923ed3c8240439feccf8199974e0f1b6541a484686ca0538f9a17719d7a7-d
-packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d

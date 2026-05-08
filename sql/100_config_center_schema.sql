@@ -1,9 +1,11 @@
 -- ============================================================
--- 100. 配置中心绑定与有效配置快照（第一阶段增量迁移）
+-- 100. bootstrap 配置源绑定与有效运行配置快照（历史增量迁移）
 -- 说明：
+-- - 该脚本面向“旧库增量升级”，不是全新建库脚本。
+-- - 全新建库请直接执行 sql/000_full_project_schema.sql。
 -- - 本脚本不覆盖旧表结构，只以增量方式补齐新能力。
--- - 第一阶段采用“通用接口优先”策略，先落地配置中心抽象与绑定信息，
---   具体外部配置中心产品接入留到后续实现。
+-- - 第一阶段采用“bootstrap 配置源抽象优先”策略，先落地外部基础配置源绑定信息，
+--   具体 provider 接入留到后续实现。
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS `t_config_center_binding` (
@@ -26,12 +28,12 @@ CREATE TABLE IF NOT EXISTS `t_config_center_binding` (
   PRIMARY KEY (`binding_id`),
   UNIQUE KEY `uk_binding_name` (`binding_name`),
   KEY `idx_enabled_priority` (`enabled`, `priority`, `updated_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='配置中心绑定表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='bootstrap 配置源绑定表';
 
 CREATE TABLE IF NOT EXISTS `t_effective_runtime_config_snapshot` (
   `snapshot_id` BIGINT UNSIGNED NOT NULL COMMENT '有效配置快照主键ID',
   `config_version` BIGINT UNSIGNED NOT NULL COMMENT '关联的运行配置版本号',
-  `config_source` VARCHAR(64) NOT NULL COMMENT '有效配置来源，例如 admin_db、config_center、bootstrap_fallback',
+  `config_source` VARCHAR(64) NOT NULL COMMENT '有效配置来源，例如 admin_db、bootstrap_default、bootstrap_fallback',
   `source_revision` VARCHAR(128) DEFAULT NULL COMMENT '来源修订号',
   `merged_payload_json` JSON NOT NULL COMMENT '最终合并后的有效配置完整载荷',
   `config_hash` VARCHAR(128) NOT NULL COMMENT '有效配置摘要哈希',
@@ -40,11 +42,26 @@ CREATE TABLE IF NOT EXISTS `t_effective_runtime_config_snapshot` (
   PRIMARY KEY (`snapshot_id`),
   KEY `idx_config_version` (`config_version`),
   KEY `idx_config_hash` (`config_hash`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='有效运行配置快照表，用于持久化最终配置结果；运行期热路径应优先从 Redis 或配置中心缓存读取';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='有效运行配置快照表，用于持久化最终配置结果；运行期热路径应优先从 Redis 缓存读取';
 
-ALTER TABLE `t_runtime_config`
-  ADD COLUMN `config_source` VARCHAR(64) DEFAULT NULL COMMENT '配置来源标识' AFTER `change_summary`,
-  ADD COLUMN `source_revision` VARCHAR(128) DEFAULT NULL COMMENT '来源修订号' AFTER `config_source`,
-  ADD COLUMN `published_by` VARCHAR(128) DEFAULT NULL COMMENT '发布人' AFTER `source_revision`,
-  ADD COLUMN `published_at` DATETIME DEFAULT NULL COMMENT '发布时间' AFTER `published_by`,
-  ADD COLUMN `effective_config_hash` VARCHAR(128) DEFAULT NULL COMMENT '有效配置摘要哈希' AFTER `published_at`;
+SET @runtime_config_exists = (
+  SELECT COUNT(*)
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+    AND table_name = 't_runtime_config'
+);
+
+SET @ddl_runtime_config = IF(
+  @runtime_config_exists = 0,
+  'SELECT ''skip sql/100_config_center_schema.sql ALTER TABLE t_runtime_config because base table is missing; import sql/000_full_project_schema.sql first'' AS message',
+  'ALTER TABLE `t_runtime_config`
+     ADD COLUMN IF NOT EXISTS `config_source` VARCHAR(64) DEFAULT NULL COMMENT ''配置来源标识'' AFTER `change_summary`,
+     ADD COLUMN IF NOT EXISTS `source_revision` VARCHAR(128) DEFAULT NULL COMMENT ''来源修订号'' AFTER `config_source`,
+     ADD COLUMN IF NOT EXISTS `published_by` VARCHAR(128) DEFAULT NULL COMMENT ''发布人'' AFTER `source_revision`,
+     ADD COLUMN IF NOT EXISTS `published_at` DATETIME DEFAULT NULL COMMENT ''发布时间'' AFTER `published_by`,
+     ADD COLUMN IF NOT EXISTS `effective_config_hash` VARCHAR(128) DEFAULT NULL COMMENT ''有效配置摘要哈希'' AFTER `published_at`'
+);
+
+PREPARE stmt_runtime_config FROM @ddl_runtime_config;
+EXECUTE stmt_runtime_config;
+DEALLOCATE PREPARE stmt_runtime_config;

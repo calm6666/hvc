@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"strconv"
 	"sync"
 
 	"hvc/internal/config"
@@ -83,6 +84,12 @@ func (c *MQConsumer) consumeLoop(ctx context.Context, cfg config.DynamicRuntimeC
 		c.markStopped(cfg)
 		return
 	}
+	logx.Info("mq.consumer.started", logx.Fields{
+		"host":  cfg.MQ.Host,
+		"port":  cfg.MQ.Port,
+		"queue": cfg.MQ.QueueName,
+		"vhost": cfg.MQ.VHost,
+	})
 
 	for {
 		select {
@@ -130,5 +137,14 @@ func (c *MQConsumer) markStopped(cfg config.DynamicRuntimeConfig) {
 }
 
 func mqConfigKey(cfg config.MQRuntimeConfig) string {
-	return cfg.Host + "|" + cfg.QueueName + "|" + cfg.ConsumerTag
+	// 这里显式把所有会影响连接与消费行为的关键参数都纳入签名。
+	// 只要其中任意一项变化，就必须重建 MQ 连接与 consumer，避免热更新“看起来成功，实际上仍吃旧连接”。
+	return cfg.Host + "|" +
+		strconv.Itoa(cfg.Port) + "|" +
+		cfg.Username + "|" +
+		cfg.Password + "|" +
+		cfg.VHost + "|" +
+		cfg.QueueName + "|" +
+		cfg.ConsumerTag + "|" +
+		strconv.Itoa(cfg.PrefetchCount)
 }

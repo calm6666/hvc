@@ -1,8 +1,0 @@
-# import config
-packagefile context=D:\hilihili\server\hvc\.gocache\b4\b4183b72b01ee34c104f2643ea9dc36e464f79f396a677679e635b2811db203c-d
-packagefile hvc/internal/infra/storage/s3=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b426\_pkg_.a
-packagefile hvc/internal/model=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b245\_pkg_.a
-packagefile hvc/pkg/logx=D:\hilihili\server\hvc\.gocache\bb\bb08e73f64ee8b88298f0f157def7f73e6cd37fcd2ee7e71736109292b5b1085-d
-packagefile math=D:\hilihili\server\hvc\.gocache\f9\f9c25e434188f7e6f66622987d09aefa920889f848c60880a6e6e632be0a31d1-d
-packagefile sync=D:\hilihili\server\hvc\.gocache\09\09c2923ed3c8240439feccf8199974e0f1b6541a484686ca0538f9a17719d7a7-d
-packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d

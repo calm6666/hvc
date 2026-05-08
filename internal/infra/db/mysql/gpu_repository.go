@@ -2,12 +2,13 @@ package mysql
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
-	"hvc/internal/model"
-	"hvc/pkg/idgen"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"hvc/internal/model"
+	"hvc/pkg/idgen"
 )
 
 // GPUDeviceRepository 表示节点 GPU 设备仓储。
@@ -25,6 +26,27 @@ func NewGPUDeviceRepository(db *DB) *GPUDeviceRepository {
 	return &GPUDeviceRepository{db: db}
 }
 
+// ListAll 返回全部 GPU 设备记录，用于后台概览聚合。
+func (r *GPUDeviceRepository) ListAll(ctx context.Context) []NodeGPUDeviceRecord {
+	var records []NodeGPUDeviceRecord
+	if err := r.db.WithContext(ctx).Order("node_id asc, gpu_index asc").Find(&records).Error; err != nil {
+		return nil
+	}
+	return records
+}
+
+// ListByNodeID 返回指定节点下的全部 GPU 设备记录。
+func (r *GPUDeviceRepository) ListByNodeID(ctx context.Context, nodeID uint64) []NodeGPUDeviceRecord {
+	var records []NodeGPUDeviceRecord
+	if err := r.db.WithContext(ctx).
+		Where("node_id = ?", nodeID).
+		Order("gpu_index asc").
+		Find(&records).Error; err != nil {
+		return nil
+	}
+	return records
+}
+
 // SaveOrUpdateByCapability 根据能力信息创建或更新稳定 GPU 设备记录。
 //
 // 这里优先使用 gpu_uuid 作为稳定匹配键；如果当前探测还拿不到真实 UUID，
@@ -34,24 +56,40 @@ func (r *GPUDeviceRepository) SaveOrUpdateByCapability(ctx context.Context, node
 	query := r.db.WithContext(ctx).Model(&NodeGPUDeviceRecord{})
 	var existing NodeGPUDeviceRecord
 	if capability.GPUUUID != "" {
-		if err := query.Where("node_id = ? AND gpu_uuid = ?", nodeID, capability.GPUUUID).Take(&existing).Error; err == nil {
+		result := query.Where("node_id = ? AND gpu_uuid = ?", nodeID, capability.GPUUUID).Limit(1).Find(&existing)
+		if result.Error != nil {
+			return 0, result.Error
+		}
+		if result.RowsAffected > 0 {
 			return existing.GPUDeviceID, r.db.WithContext(ctx).Model(&NodeGPUDeviceRecord{}).
 				Where("gpu_device_id = ?", existing.GPUDeviceID).
 				Updates(map[string]any{
 					"gpu_index":              capability.GPUIndex,
 					"gpu_uuid":               capability.GPUUUID,
+					"vendor":                 capability.Vendor,
+					"model":                  capability.Model,
+					"driver_version":         capability.DriverVersion,
+					"memory_total_mb":        capability.MemoryTotalMB,
 					"max_transcode_sessions": capability.MaxSessions,
 					"last_seen_at":           now,
 					"updated_at":             now,
 				}).Error
 		}
 	}
-	if err := query.Where("node_id = ? AND gpu_index = ?", nodeID, capability.GPUIndex).Take(&existing).Error; err == nil {
+	result := query.Where("node_id = ? AND gpu_index = ?", nodeID, capability.GPUIndex).Limit(1).Find(&existing)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
 		return existing.GPUDeviceID, r.db.WithContext(ctx).Model(&NodeGPUDeviceRecord{}).
 			Where("gpu_device_id = ?", existing.GPUDeviceID).
 			Updates(map[string]any{
 				"gpu_uuid":               capability.GPUUUID,
 				"gpu_index":              capability.GPUIndex,
+				"vendor":                 capability.Vendor,
+				"model":                  capability.Model,
+				"driver_version":         capability.DriverVersion,
+				"memory_total_mb":        capability.MemoryTotalMB,
 				"max_transcode_sessions": capability.MaxSessions,
 				"last_seen_at":           now,
 				"updated_at":             now,
@@ -62,7 +100,10 @@ func (r *GPUDeviceRepository) SaveOrUpdateByCapability(ctx context.Context, node
 		NodeID:               nodeID,
 		GPUIndex:             capability.GPUIndex,
 		GPUUUID:              capability.GPUUUID,
-		MemoryTotalMB:        0,
+		Vendor:               capability.Vendor,
+		Model:                capability.Model,
+		DriverVersion:        capability.DriverVersion,
+		MemoryTotalMB:        capability.MemoryTotalMB,
 		MaxTranscodeSessions: capability.MaxSessions,
 		Healthy:              true,
 		Schedulable:          true,
@@ -79,7 +120,8 @@ func (r *GPUDeviceRepository) SaveOrUpdateByCapability(ctx context.Context, node
 // FindByNodeAndIndex 根据节点和当前 GPU 索引查询设备记录。
 func (r *GPUDeviceRepository) FindByNodeAndIndex(ctx context.Context, nodeID uint64, gpuIndex int) (NodeGPUDeviceRecord, bool) {
 	var record NodeGPUDeviceRecord
-	if err := r.db.WithContext(ctx).Where("node_id = ? AND gpu_index = ?", nodeID, gpuIndex).Take(&record).Error; err != nil {
+	result := r.db.WithContext(ctx).Where("node_id = ? AND gpu_index = ?", nodeID, gpuIndex).Limit(1).Find(&record)
+	if result.Error != nil || result.RowsAffected == 0 {
 		return NodeGPUDeviceRecord{}, false
 	}
 	return record, true
@@ -102,7 +144,7 @@ func NewWorkerCodecCapabilityRepository(db *DB) *WorkerCodecCapabilityRepository
 }
 
 // ReplaceLatestSnapshot 用当前能力集合替换该节点的一批最新能力快照。
-func (r *WorkerCodecCapabilityRepository) ReplaceLatestSnapshot(ctx context.Context, nodeID uint64, startupInstanceID string, probeGeneration uint64, capabilities []model.GPUCapability) error {
+func (r *WorkerCodecCapabilityRepository) ReplaceLatestSnapshot(ctx context.Context, nodeID uint64, workerInstanceID uint64, startupInstanceID string, machineFingerprint string, probeGeneration uint64, capabilities []model.GPUCapability) error {
 	now := time.Now()
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&WorkerCodecCapabilityRecord{}).
@@ -111,51 +153,54 @@ func (r *WorkerCodecCapabilityRepository) ReplaceLatestSnapshot(ctx context.Cont
 			return err
 		}
 		for _, capability := range capabilities {
+			payloadJSON := marshalCapabilityPayload(capability)
+			record := WorkerCodecCapabilityRecord{
+				NodeID:                nodeID,
+				WorkerInstanceID:      workerInstanceID,
+				GPUDeviceID:           capability.GPUDeviceID,
+				GPUIndex:              capability.GPUIndex,
+				GPUUUID:               capability.GPUUUID,
+				StartupInstanceID:     startupInstanceID,
+				ProbeGeneration:       probeGeneration,
+				MachineFingerprint:    machineFingerprint,
+				HWType:                mapHWType(capability.ExecutionHWTypes),
+				MaxSessions:           capability.MaxSessions,
+				Enabled:               true,
+				IsLatest:              true,
+				CapabilityPayloadJSON: payloadJSON,
+				CollectedAt:           now,
+				CreatedAt:             now,
+			}
 			for _, codec := range capability.EncodeCodecs {
-				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&WorkerCodecCapabilityRecord{
-					ID:                idgen.Next(),
-					NodeID:            nodeID,
-					GPUDeviceID:       capability.GPUDeviceID,
-					GPUIndex:          capability.GPUIndex,
-					GPUUUID:           capability.GPUUUID,
-					StartupInstanceID: startupInstanceID,
-					ProbeGeneration:   probeGeneration,
-					CodecName:         codec,
-					CapType:           2,
-					HWType:            mapHWType(capability.ExecutionHWTypes),
-					MaxSessions:       capability.MaxSessions,
-					Enabled:           true,
-					IsLatest:          true,
-					CollectedAt:       now,
-					CreatedAt:         now,
-				}).Error; err != nil {
+				item := record
+				item.ID = idgen.Next()
+				item.CodecName = codec
+				item.CapType = 2
+				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item).Error; err != nil {
 					return err
 				}
 			}
 			for _, codec := range capability.DecodeCodecs {
-				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&WorkerCodecCapabilityRecord{
-					ID:                idgen.Next(),
-					NodeID:            nodeID,
-					GPUDeviceID:       capability.GPUDeviceID,
-					GPUIndex:          capability.GPUIndex,
-					GPUUUID:           capability.GPUUUID,
-					StartupInstanceID: startupInstanceID,
-					ProbeGeneration:   probeGeneration,
-					CodecName:         codec,
-					CapType:           1,
-					HWType:            mapHWType(capability.ExecutionHWTypes),
-					MaxSessions:       capability.MaxSessions,
-					Enabled:           true,
-					IsLatest:          true,
-					CollectedAt:       now,
-					CreatedAt:         now,
-				}).Error; err != nil {
+				item := record
+				item.ID = idgen.Next()
+				item.CodecName = codec
+				item.CapType = 1
+				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item).Error; err != nil {
 					return err
 				}
 			}
 		}
 		return nil
 	})
+}
+
+func marshalCapabilityPayload(capability model.GPUCapability) *string {
+	payload, err := json.Marshal(capability)
+	if err != nil {
+		return nil
+	}
+	result := string(payload)
+	return &result
 }
 
 func mapHWType(hwTypes []string) int {

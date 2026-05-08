@@ -3,33 +3,55 @@ package admin
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
-	"hvc/internal/configcenter"
 	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
 	"hvc/pkg/idgen"
 	"hvc/pkg/logx"
 )
 
-// ConfigCenterHandler 处理后台配置中心绑定接口。
+const configCenterBindingScopeBootstrap = "bootstrap"
+
+// ConfigCenterHandler 处理后台 bootstrap 配置源绑定接口。
 type ConfigCenterHandler struct {
 	repository *mysql.ConfigCenterBindingRepository
-	effective  *configcenter.EffectiveConfig
 }
 
-// NewConfigCenterHandler 创建配置中心绑定处理器。
-func NewConfigCenterHandler(repository *mysql.ConfigCenterBindingRepository, effective *configcenter.EffectiveConfig) *ConfigCenterHandler {
-	return &ConfigCenterHandler{repository: repository, effective: effective}
+// ConfigCenterBindingView 表示对外返回的 bootstrap 配置源绑定视图。
+//
+// 这里显式补上 scope / affects_runtime 字段，
+// 防止后台或调用方把“配置中心绑定”和“runtime config 发布”继续混为一谈。
+type ConfigCenterBindingView struct {
+	mysql.ConfigCenterBindingRecord
+	ConfigScope    string   `json:"config_scope"`
+	AffectsRuntime bool     `json:"affects_runtime"`
+	BindingUsage   []string `json:"binding_usage"`
 }
 
-// List 返回全部配置中心绑定。
+// NewConfigCenterHandler 创建 bootstrap 配置源绑定处理器。
+func NewConfigCenterHandler(repository *mysql.ConfigCenterBindingRepository) *ConfigCenterHandler {
+	return &ConfigCenterHandler{repository: repository}
+}
+
+// List 返回全部 bootstrap 配置源绑定。
 func (h *ConfigCenterHandler) List(w http.ResponseWriter, r *http.Request) {
 	items := h.repository.ListAll(r.Context())
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"items": items}})
+	views := make([]ConfigCenterBindingView, 0, len(items))
+	for _, item := range items {
+		views = append(views, buildConfigCenterBindingView(sanitizeConfigCenterBindingRecord(item)))
+	}
+	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
+		"config_scope":         configCenterBindingScopeBootstrap,
+		"affects_runtime":      false,
+		"runtime_update_path":  "/v1/admin/config/runtime/update",
+		"runtime_publish_path": "/v1/admin/config/publish",
+		"items":                views,
+	}})
 }
 
-// Upsert 保存配置中心绑定。
+// Upsert 保存 bootstrap 配置源绑定。
 func (h *ConfigCenterHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		BindingID    uint64 `json:"binding_id"`
@@ -46,6 +68,14 @@ func (h *ConfigCenterHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+		return
+	}
+	if strings.TrimSpace(req.BindingName) == "" {
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "binding_name is required"})
+		return
+	}
+	if strings.TrimSpace(req.ProviderType) == "" {
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "provider_type is required"})
 		return
 	}
 	now := time.Now()
@@ -72,10 +102,14 @@ func (h *ConfigCenterHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save config center binding failed"})
 		return
 	}
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"binding_id": id}})
+	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
+		"binding_id":      id,
+		"config_scope":    configCenterBindingScopeBootstrap,
+		"affects_runtime": false,
+	}})
 }
 
-// SetEnabled 切换配置中心绑定启用状态。
+// SetEnabled 切换 bootstrap 配置源绑定启用状态。
 func (h *ConfigCenterHandler) SetEnabled(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		BindingID uint64 `json:"binding_id"`
@@ -89,5 +123,24 @@ func (h *ConfigCenterHandler) SetEnabled(w http.ResponseWriter, r *http.Request)
 		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "update config center binding failed"})
 		return
 	}
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"binding_id": req.BindingID, "enabled": req.Enabled}})
+	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
+		"binding_id":      req.BindingID,
+		"enabled":         req.Enabled,
+		"config_scope":    configCenterBindingScopeBootstrap,
+		"affects_runtime": false,
+	}})
+}
+
+func buildConfigCenterBindingView(record mysql.ConfigCenterBindingRecord) ConfigCenterBindingView {
+	return ConfigCenterBindingView{
+		ConfigCenterBindingRecord: record,
+		ConfigScope:               configCenterBindingScopeBootstrap,
+		AffectsRuntime:            false,
+		BindingUsage: []string{
+			"mysql",
+			"redis",
+			"cluster_registry",
+			"node_identity",
+		},
+	}
 }

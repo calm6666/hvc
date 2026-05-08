@@ -51,6 +51,9 @@ func (f *Filter) Apply(req model.CreateJobRequest, candidates []model.DispatchCa
 		if !f.matchHWAccel(req, candidate) {
 			continue
 		}
+		if !f.matchGPUCapacity(req, candidate) {
+			continue
+		}
 		if !f.matchCodec(req, candidate) {
 			continue
 		}
@@ -75,6 +78,36 @@ func (f *Filter) matchHWAccel(req model.CreateJobRequest, candidate model.Dispat
 		}
 	}
 	return false
+}
+
+// matchGPUCapacity 校验候选节点内是否至少还有一张可承载新任务的 GPU。
+//
+// 约束：
+// 1. 如果请求显式指定 PreferredHWAccel，则必须至少有一张支持该执行模式且未满会话的卡；
+// 2. 如果系统配置要求硬编，则也必须至少有一张未满会话的卡；
+// 3. 如果系统允许软编兜底，则“节点没有卡 / 卡已满”不作为硬过滤条件，留给后续 software 路径处理。
+func (f *Filter) matchGPUCapacity(req model.CreateJobRequest, candidate model.DispatchCandidate) bool {
+	preferredHW := ""
+	if req.ScheduleOptions != nil {
+		preferredHW = req.ScheduleOptions.PreferredHWAccel
+	}
+
+	requireGPU := preferredHW != "" || f.cfg.Scheduler.RequireHardwareEncode
+	if len(candidate.Metrics.GPUCapabilities) == 0 {
+		return !requireGPU
+	}
+
+	for _, capability := range candidate.Metrics.GPUCapabilities {
+		if preferredHW != "" && !supportsExecutionHW(capability, preferredHW) {
+			continue
+		}
+		if capability.MaxSessions > 0 && capability.ActiveSessions >= capability.MaxSessions {
+			continue
+		}
+		return true
+	}
+
+	return !requireGPU
 }
 
 // matchCodec 校验请求指定的编码格式是否被候选节点的 GPU 支持。
@@ -108,4 +141,13 @@ func resolveRequiredCodec(req model.CreateJobRequest) string {
 		return req.Renditions[0].VideoCodec
 	}
 	return ""
+}
+
+func supportsExecutionHW(capability model.GPUCapability, preferredHWAccel string) bool {
+	for _, hwType := range capability.ExecutionHWTypes {
+		if hwType == preferredHWAccel {
+			return true
+		}
+	}
+	return false
 }

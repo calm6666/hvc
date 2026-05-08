@@ -40,20 +40,20 @@ func (LiveProfileRenditionRecord) TableName() string { return "t_live_profile_re
 
 // LiveSessionRecord 表示直播会话表映射。
 type LiveSessionRecord struct {
-	SessionID        uint64    `gorm:"column:session_id;primaryKey"`
-	ChannelID        uint64    `gorm:"column:channel_id"`
-	SessionKey       string    `gorm:"column:session_key"`
-	Status           int       `gorm:"column:status"`
-	IngestURL        string    `gorm:"column:ingest_url"`
-	PlaybackHLSURL   string    `gorm:"column:playback_hls_url"`
-	PushProtocol     string    `gorm:"column:push_protocol"`
-	AssignedNodeID   uint64    `gorm:"column:assigned_node_id"`
-	AssignedWorkerID string    `gorm:"column:assigned_worker_id"`
-	ResumeCount      int       `gorm:"column:resume_count"`
-	StartedAt        time.Time `gorm:"column:started_at"`
-	EndedAt          time.Time `gorm:"column:ended_at"`
-	CreatedAt        time.Time `gorm:"column:created_at"`
-	UpdatedAt        time.Time `gorm:"column:updated_at"`
+	SessionID        uint64     `gorm:"column:session_id;primaryKey"`
+	ChannelID        uint64     `gorm:"column:channel_id"`
+	SessionKey       string     `gorm:"column:session_key"`
+	Status           int        `gorm:"column:status"`
+	IngestURL        string     `gorm:"column:ingest_url"`
+	PlaybackHLSURL   string     `gorm:"column:playback_hls_url"`
+	PushProtocol     string     `gorm:"column:push_protocol"`
+	AssignedNodeID   uint64     `gorm:"column:assigned_node_id"`
+	AssignedWorkerID string     `gorm:"column:assigned_worker_id"`
+	ResumeCount      int        `gorm:"column:resume_count"`
+	StartedAt        time.Time  `gorm:"column:started_at"`
+	EndedAt          *time.Time `gorm:"column:ended_at"`
+	CreatedAt        time.Time  `gorm:"column:created_at"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at"`
 }
 
 func (LiveSessionRecord) TableName() string { return "t_live_session" }
@@ -61,7 +61,7 @@ func (LiveSessionRecord) TableName() string { return "t_live_session" }
 // LiveSessionEventRecord 表示直播会话事件表映射。
 type LiveSessionEventRecord struct {
 	EventID          uint64    `gorm:"column:event_id;primaryKey"`
-	SessionID        uint64    `gorm:"column:session_id"`
+	SessionID        *uint64   `gorm:"column:session_id"`
 	ChannelID        uint64    `gorm:"column:channel_id"`
 	EventType        string    `gorm:"column:event_type"`
 	EventPayloadJSON string    `gorm:"column:event_payload_json"`
@@ -87,16 +87,16 @@ func (LivePlaybackTokenRecord) TableName() string { return "t_live_playback_toke
 
 // LivePublishSessionRecord 表示直播推流会话表映射。
 type LivePublishSessionRecord struct {
-	PublishSessionID uint64    `gorm:"column:publish_session_id;primaryKey"`
-	ChannelID        uint64    `gorm:"column:channel_id"`
-	SessionID        uint64    `gorm:"column:session_id"`
-	StreamKey        string    `gorm:"column:stream_key"`
-	PublishIP        string    `gorm:"column:publish_ip"`
-	PublishStatus    int       `gorm:"column:publish_status"`
-	ConnectedAt      time.Time `gorm:"column:connected_at"`
-	DisconnectedAt   time.Time `gorm:"column:disconnected_at"`
-	CreatedAt        time.Time `gorm:"column:created_at"`
-	UpdatedAt        time.Time `gorm:"column:updated_at"`
+	PublishSessionID uint64     `gorm:"column:publish_session_id;primaryKey"`
+	ChannelID        uint64     `gorm:"column:channel_id"`
+	SessionID        *uint64    `gorm:"column:session_id"`
+	StreamKey        string     `gorm:"column:stream_key"`
+	PublishIP        string     `gorm:"column:publish_ip"`
+	PublishStatus    int        `gorm:"column:publish_status"`
+	ConnectedAt      *time.Time `gorm:"column:connected_at"`
+	DisconnectedAt   *time.Time `gorm:"column:disconnected_at"`
+	CreatedAt        time.Time  `gorm:"column:created_at"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at"`
 }
 
 func (LivePublishSessionRecord) TableName() string { return "t_live_publish_session" }

@@ -2,40 +2,102 @@ package config
 
 import "time"
 
-// LoadBootstrapDynamicRuntimeConfig 构造首启时使用的运行时配置默认值。
+// DefaultDynamicRuntimeConfig 返回系统内置的运行时配置默认值。
 //
-// 约束如下：
-// 1. 运行期业务配置的唯一生效来源是后台发布到数据库的 runtime config；
-// 2. 本地 YAML 里的动态段只用于首启初始化默认值，不参与后续热更新；
-// 3. 外部配置中心不再直接下发业务运行时配置，只负责启动所需的基础设施配置。
-func LoadBootstrapDynamicRuntimeConfig(base RuntimeConfig) DynamicRuntimeConfig {
+// 这些值用于：
+// 1. 空库首启时生成第一版 runtime config；
+// 2. 历史配置文件中已经删除的动态配置段的默认兜底；
+// 3. 后台尚未发布新版本时，为各模块提供稳定的初始行为。
+func DefaultDynamicRuntimeConfig() DynamicRuntimeConfig {
 	cfg := DynamicRuntimeConfig{
 		Mode: ModeConfig{
 			EnableHTTPServer: true,
-			EnableGRPCServer: base.GRPC.ListenAddress != "",
-			EnableMQConsumer: (base.MQ.RabbitMQDSN != "" || base.MQ.RabbitMQHost != "") && base.MQ.QueueName != "",
+			// public gRPC 属于运行期动态暴露能力。
+			// 首启默认保持关闭，避免空库首次启动时自动把对外 RPC 端口暴露出去。
+			EnableGRPCServer: false,
+			EnableMQConsumer: false,
 			EnableScheduler:  true,
 			EnableWorker:     true,
 			EnableCallback:   true,
 		},
-		Scheduler: base.Scheduler,
-		Worker:    base.Worker,
-		Callback:  base.Callback,
-		Storage:   base.Storage,
-		GRPC:      base.GRPC,
+		Scheduler: SchedulerConfig{
+			LoopInterval:                 3 * time.Second,
+			JobLeaseTTL:                  5 * time.Minute,
+			WorkerHeartbeatTimeout:       30 * time.Second,
+			RequireHardwareEncode:        false,
+			AllowSoftwareDecodeFallback:  true,
+			RequireHardwareWatermark:     false,
+			SoftDecodeCPULimitPercent:    80,
+			NodeCPUSafetyLimitPercent:    90,
+			NodeMemorySafetyLimitPercent: 90,
+			NodeGPUSafetyLimitPercent:    90,
+			MaxGlobalTranscodeSessions:   100,
+			MaxNodeTranscodeSessions:     10,
+			MaxNodeUploadConcurrency:     20,
+			DynamicConcurrencyControl:    true,
+		},
+		Worker: WorkerConfig{
+			LoopInterval:               2 * time.Second,
+			SingleJobUploadConcurrency: 4,
+			SourceReadTimeout:          30 * time.Minute,
+			UploadRetryBaseDelay:       time.Second,
+			UploadRetryMaxDelay:        30 * time.Second,
+			UploadMaxRetryCount:        3,
+			SegmentTemplate:            "{job_id}-{rendition_key}-{media_type}-{number}.m4s",
+		},
+		Callback: CallbackConfig{
+			HTTPURL:      "",
+			HTTPTimeout:  5 * time.Second,
+			GRPCTimeout:  3 * time.Second,
+			MQTimeout:    3 * time.Second,
+			RetryBackoff: 2 * time.Second,
+		},
+		Storage: StorageConfig{
+			StorageType:      "local",
+			BasePrefix:       "hvc",
+			LocalBasePath:    "/data/hvc/media",
+			DefaultStorageID: 0,
+		},
+		GRPC: GRPCConfig{
+			ListenAddress:     ":9090",
+			MaxRecvMsgSizeMB:  64,
+			MaxSendMsgSizeMB:  64,
+			ConnectionTimeout: 5 * time.Second,
+		},
 		MQ: MQRuntimeConfig{
-			QueueName:     base.MQ.QueueName,
-			Host:          base.MQ.RabbitMQHost,
-			Port:          base.MQ.RabbitMQPort,
-			Username:      base.MQ.RabbitMQUser,
-			Password:      base.MQ.RabbitMQPassword,
-			VHost:         base.MQ.RabbitMQVHost,
-			ConsumerTag:   base.MQ.ConsumerTag,
-			PrefetchCount: base.MQ.PrefetchCount,
-			LoopInterval:  base.MQ.LoopInterval,
-			CallbackTopic: base.MQ.CallbackTopic,
+			Host:          "127.0.0.1",
+			Port:          5672,
+			Username:      "guest",
+			Password:      "guest",
+			VHost:         "/",
+			ConsumerTag:   "vod-mq-consumer",
+			PrefetchCount: 10,
+			LoopInterval:  15 * time.Second,
+			CallbackTopic: "",
 		},
 	}
+	applyDynamicDefaults(&cfg)
+	return cfg
+}
+
+// LoadBootstrapDynamicRuntimeConfig 构造首启时使用的运行时配置默认值。
+//
+// 约束如下：
+// 1. 运行期业务配置的唯一生效来源是后台发布到数据库的 runtime config；
+// 2. 本地 YAML 不再承载 scheduler/worker/callback/storage/public grpc/mq 这些业务动态段；
+// 3. 外部配置中心不再直接下发业务运行时配置，只负责启动所需的基础设施配置。
+func LoadBootstrapDynamicRuntimeConfig(base RuntimeConfig) DynamicRuntimeConfig {
+	_ = base
+	cfg := DefaultDynamicRuntimeConfig()
+	applyDynamicDefaults(&cfg)
+	return cfg
+}
+
+// NormalizeDynamicRuntimeConfig 对动态运行配置做统一默认值回填。
+//
+// 数据库存量历史配置、后台草稿配置、配置中心合并结果都应通过这个入口做一次归一化，
+// 避免各模块分别补默认值，导致行为漂移。
+func NormalizeDynamicRuntimeConfig(cfg DynamicRuntimeConfig) DynamicRuntimeConfig {
 	applyDynamicDefaults(&cfg)
 	return cfg
 }
@@ -92,7 +154,7 @@ func applyDynamicDefaults(cfg *DynamicRuntimeConfig) {
 		cfg.Worker.UploadMaxRetryCount = 3
 	}
 	if cfg.Worker.SegmentTemplate == "" {
-		cfg.Worker.SegmentTemplate = "{job_id}-{media_type}-{number}.m4s"
+		cfg.Worker.SegmentTemplate = "{job_id}-{rendition_key}-{media_type}-{number}.m4s"
 	}
 
 	if cfg.Callback.HTTPTimeout <= 0 {
@@ -106,6 +168,16 @@ func applyDynamicDefaults(cfg *DynamicRuntimeConfig) {
 	}
 	if cfg.Callback.RetryBackoff <= 0 {
 		cfg.Callback.RetryBackoff = 2 * time.Second
+	}
+
+	if cfg.Storage.StorageType == "" {
+		cfg.Storage.StorageType = "local"
+	}
+	if cfg.Storage.BasePrefix == "" {
+		cfg.Storage.BasePrefix = "hvc"
+	}
+	if cfg.Storage.LocalBasePath == "" {
+		cfg.Storage.LocalBasePath = "/data/hvc/media"
 	}
 
 	if cfg.GRPC.MaxRecvMsgSizeMB <= 0 {

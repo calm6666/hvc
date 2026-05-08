@@ -2,6 +2,7 @@ package planner
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"hvc/internal/infra/ffmpeg/probe"
 	"hvc/internal/model"
@@ -31,6 +32,7 @@ type Pipeline struct {
 //
 // 所有模板支持以下占位符：
 //   - {job_id}       任务 ID（雪花 ID）
+//   - {rendition_key} 清晰度稳定短 key，同一任务同一清晰度重试时保持不变
 //   - {media_type}   媒体类型（video / audio）
 //   - {number}       分片序号（0=init, 1/2/3...=media）
 //   - {resolution}   视频分辨率（宽_高，如 1920_1080）
@@ -38,12 +40,13 @@ type Pipeline struct {
 //   - {timestamp}    分片起始时间戳（毫秒）
 //
 // 六种预置模板方案：
-//   方案一：{job_id}-{media_type}-{number}.m4s
-//   方案二：{job_id}-{resolution}-{media_type}-{number}.m4s
-//   方案三：{job_id}-{quality}-{media_type}-{number}.m4s
-//   方案四：{job_id}-{media_type}-{number}-{timestamp}.m4s
-//   方案五：{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s
-//   方案六：{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s
+//
+//	方案一：{job_id}-{rendition_key}-{media_type}-{number}.m4s
+//	方案二：{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s
+//	方案三：{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s
+//	方案四：{job_id}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
+//	方案五：{job_id}-{resolution}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
+//	方案六：{job_id}-{quality}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
 type SegmentNamingConfig struct {
 	// SegmentTemplate 分片命名模板（init 和 media 统一）。
 	// init 分片：number=0，media 分片：number=1,2,3...
@@ -58,7 +61,7 @@ type SegmentNamingConfig struct {
 // DefaultSegmentNamingConfig 返回默认分片命名配置（方案一）。
 func DefaultSegmentNamingConfig() SegmentNamingConfig {
 	return SegmentNamingConfig{
-		SegmentTemplate: "{job_id}-{media_type}-{number}.m4s",
+		SegmentTemplate: "{job_id}-{rendition_key}-{media_type}-{number}.m4s",
 		ObjectKeyPrefix: "",
 	}
 }
@@ -66,6 +69,8 @@ func DefaultSegmentNamingConfig() SegmentNamingConfig {
 // RenditionSpec 表示一个清晰度输出规格。
 type RenditionSpec struct {
 	Name             string
+	RenditionID      uint64
+	RenditionKey     string
 	QualityLabel     string
 	Width            int
 	Height           int
@@ -91,7 +96,7 @@ func (r RenditionSpec) Resolution() string {
 func BuildPlan(job model.TranscodeJob, probeResult probe.Result, executionHW string, naming SegmentNamingConfig) Pipeline {
 	pipeline := Pipeline{
 		SourceURL:          job.SourceURL,
-		OutputDir:          "",
+		OutputDir:          filepath.Join(osTempDir(), "hvc", fmt.Sprintf("job-%d-attempt-%d", job.JobID, normalizeAttemptNo(job.AttemptNo))),
 		SegmentDurationSec: job.SegmentDurationSec,
 		EnableWatermark:    job.EnableWatermark,
 		HardwareDecode:     false,
@@ -129,4 +134,11 @@ func BuildPlan(job model.TranscodeJob, probeResult probe.Result, executionHW str
 	pipeline.Renditions = buildRenditions(job, probeResult, executionHW)
 
 	return pipeline
+}
+
+func normalizeAttemptNo(attemptNo int) int {
+	if attemptNo > 0 {
+		return attemptNo
+	}
+	return 1
 }

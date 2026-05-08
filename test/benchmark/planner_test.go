@@ -35,6 +35,7 @@ func BenchmarkBuildRenditions(b *testing.B) {
 func BenchmarkRenderSegmentName(b *testing.B) {
 	rend := planner.RenditionSpec{
 		Name:             "1080p",
+		RenditionKey:     "Ab3kP9xQ",
 		QualityLabel:     "1080p",
 		Width:            1920,
 		Height:           1080,
@@ -46,12 +47,12 @@ func BenchmarkRenderSegmentName(b *testing.B) {
 		name     string
 		template string
 	}{
-		{"方案一", "{job_id}-{media_type}-{number}.m4s"},
-		{"方案二", "{job_id}-{resolution}-{media_type}-{number}.m4s"},
-		{"方案三", "{job_id}-{quality}-{media_type}-{number}.m4s"},
-		{"方案四", "{job_id}-{media_type}-{number}-{timestamp}.m4s"},
-		{"方案五", "{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s"},
-		{"方案六", "{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s"},
+		{"方案一", "{job_id}-{rendition_key}-{media_type}-{number}.m4s"},
+		{"方案二", "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s"},
+		{"方案三", "{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s"},
+		{"方案四", "{job_id}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s"},
+		{"方案五", "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s"},
+		{"方案六", "{job_id}-{quality}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s"},
 	}
 
 	for _, tmpl := range templates {

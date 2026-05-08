@@ -190,6 +190,15 @@ func TestCreateJobUseCase_ExecuteRejectsUnsupportedFields(t *testing.T) {
 			},
 			err: ErrUnsupportedVideoOptions,
 		},
+		{
+			name: "video options aspect keep",
+			req: model.CreateJobRequest{
+				RequestID:    "req-video-options-keep",
+				SourceURL:    "https://example.com/video.mp4",
+				VideoOptions: &model.VideoOptions{OutputAspectKeep: true},
+			},
+			err: ErrUnsupportedVideoOptions,
+		},
 	}
 
 	for _, tt := range tests {

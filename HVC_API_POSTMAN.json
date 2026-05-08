@@ -196,6 +196,70 @@
               ]
             }
           }
+        },
+        {
+          "name": "Push Auth",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/live/channel/push-auth?channel_key=live-001&expire=1893456000&sign=replace_me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "live",
+                "channel",
+                "push-auth"
+              ],
+              "query": [
+                {
+                  "key": "channel_key",
+                  "value": "live-001"
+                },
+                {
+                  "key": "expire",
+                  "value": "1893456000"
+                },
+                {
+                  "key": "sign",
+                  "value": "replace_me"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Play Auth",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/live/channel/play-auth?channel_key=live-001&expire=1893456000&sign=replace_me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "live",
+                "channel",
+                "play-auth"
+              ],
+              "query": [
+                {
+                  "key": "channel_key",
+                  "value": "live-001"
+                },
+                {
+                  "key": "expire",
+                  "value": "1893456000"
+                },
+                {
+                  "key": "sign",
+                  "value": "replace_me"
+                }
+              ]
+            }
+          }
         }
       ]
     },
@@ -363,7 +427,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"enable_http_server\": true,\n  \"enable_callback\": true,\n  \"default_profile_id\": 0,\n  \"max_global_transcode_sessions\": 100,\n  \"job_lease_ttl_sec\": 300,\n  \"worker_heartbeat_timeout_sec\": 30,\n  \"allow_request_override_profile\": true,\n  \"allow_request_override_segment_duration\": true,\n  \"allow_request_override_hwaccel\": true,\n  \"scheduler_loop_interval_ms\": 1000,\n  \"worker_loop_interval_ms\": 1000,\n  \"single_job_upload_concurrency\": 4,\n  \"require_hardware_encode\": false,\n  \"allow_software_decode_fallback\": true,\n  \"require_hardware_watermark\": false,\n  \"node_cpu_safety_limit_percent\": 85,\n  \"node_memory_safety_limit_percent\": 85,\n  \"node_gpu_safety_limit_percent\": 90,\n  \"callback_http_url\": \"https://callback.example.com/transcode\",\n  \"callback_mq_topic\": \"transcode.job.callback\",\n  \"enable_grpc_server\": true,\n  \"grpc_listen_address\": \":9090\",\n  \"enable_mq_consumer\": true,\n  \"mq_queue_name\": \"hvc.transcode.create\",\n  \"mq_host\": \"127.0.0.1\",\n  \"mq_port\": 5672,\n  \"mq_username\": \"guest\",\n  \"mq_password\": \"guest\",\n  \"mq_vhost\": \"/\",\n  \"mq_consumer_tag\": \"hvc-runtime\",\n  \"mq_prefetch_count\": 16,\n  \"mq_loop_interval_ms\": 15000,\n  \"worker_object_prefix\": \"hvc/runtime\",\n  \"change_summary\": \"enable grpc and mq hot reload\"\n}"
+              "raw": "{\n  \"enable_http_server\": true,\n  \"enable_callback\": true,\n  \"default_profile_id\": 0,\n  \"max_global_transcode_sessions\": 100,\n  \"job_lease_ttl_sec\": 300,\n  \"worker_heartbeat_timeout_sec\": 30,\n  \"allow_request_override_profile\": true,\n  \"allow_request_override_segment_duration\": true,\n  \"allow_request_override_hwaccel\": true,\n  \"scheduler_loop_interval_ms\": 1000,\n  \"worker_loop_interval_ms\": 1000,\n  \"single_job_upload_concurrency\": 4,\n  \"require_hardware_encode\": false,\n  \"allow_software_decode_fallback\": true,\n  \"require_hardware_watermark\": false,\n  \"node_cpu_safety_limit_percent\": 85,\n  \"node_memory_safety_limit_percent\": 85,\n  \"node_gpu_safety_limit_percent\": 90,\n  \"callback_http_url\": \"https://callback.example.com/transcode\",\n  \"callback_mq_topic\": \"transcode.job.callback\",\n  \"enable_grpc_server\": true,\n  \"grpc_listen_address\": \":9090\",\n  \"enable_mq_consumer\": true,\n  \"mq_queue_name\": \"hvc.transcode.create\",\n  \"mq_host\": \"127.0.0.1\",\n  \"mq_port\": 5672,\n  \"mq_username\": \"guest\",\n  \"mq_password\": \"guest\",\n  \"mq_vhost\": \"/\",\n  \"mq_consumer_tag\": \"hvc-runtime\",\n  \"mq_prefetch_count\": 16,\n  \"storage_type\": \"s3\",\n  \"storage_endpoint\": \"127.0.0.1:9000\",\n  \"storage_bucket\": \"hvc-media\",\n  \"storage_access_key_id\": \"minioadmin\",\n  \"storage_secret_access_key\": \"minioadmin\",\n  \"storage_use_ssl\": false,\n  \"storage_play_domain\": \"https://play.example.com/live\",\n  \"storage_flv_domain\": \"https://flv.example.com/live\",\n  \"storage_local_base_path\": \"/data/hvc/media\",\n  \"default_storage_id\": 0,\n  \"worker_object_prefix\": \"hvc/runtime\",\n  \"change_summary\": \"enable public grpc and mq hot reload\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/config/runtime/update",
@@ -587,7 +651,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"template\": \"{job_id}-{resolution}-{media_type}-{number}.m4s\"\n}"
+              "raw": "{\n  \"template\": \"{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/config/naming-template/activate",
@@ -1068,6 +1132,54 @@
           }
         },
         {
+          "name": "Cluster Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/overview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "overview"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cluster Realtime",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/realtime",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "realtime"
+              ]
+            }
+          }
+        },
+        {
           "name": "List Members",
           "request": {
             "method": "GET",
@@ -1375,6 +1487,49 @@
       "name": "Admin / Live",
       "item": [
         {
+          "name": "List Channels",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/live/channel/list?page=1&page_size=20&status=&channel_key=",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "live",
+                "channel",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": ""
+                },
+                {
+                  "key": "channel_key",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Create Channel",
           "request": {
             "method": "POST",
@@ -1458,7 +1613,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"channel_id\": 1,\n  \"channel_name\": \"updated-live\",\n  \"enable_watermark\": true\n}"
+              "raw": "{\n  \"channel_id\": 1,\n  \"channel_name\": \"updated-live\",\n  \"profile_id\": 2,\n  \"enable_source_rendition\": true,\n  \"enable_watermark\": true,\n  \"play_domain\": \"https://play.example.com/live\",\n  \"push_domain\": \"rtmp://push.example.com/live\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/live/channel/update",
@@ -1471,6 +1626,53 @@
                 "live",
                 "channel",
                 "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Live Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/live/session/list?page=1&page_size=20&channel_id=&channel_key=&status=",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "live",
+                "session",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "channel_id",
+                  "value": ""
+                },
+                {
+                  "key": "channel_key",
+                  "value": ""
+                },
+                {
+                  "key": "status",
+                  "value": ""
+                }
               ]
             }
           }
@@ -1537,6 +1739,39 @@
                 "live",
                 "channel",
                 "stop"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/live/channel/delete",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "live",
+                "channel",
+                "delete"
               ]
             }
           }

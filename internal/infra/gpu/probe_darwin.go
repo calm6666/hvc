@@ -19,6 +19,8 @@ func probePlatform() []ProbeResult {
 		results = append(results, ProbeResult{
 			GPUUUID:          "apple-gpu-0",
 			GPUIndex:         0,
+			Vendor:           "apple",
+			Model:            "apple-gpu",
 			ExecutionHWTypes: []string{model.ExecutionHWAppleVideoToolbox},
 			SupportsFilter:   true,
 		})

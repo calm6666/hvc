@@ -20,16 +20,20 @@ import (
 // 目的是在不引入重依赖的前提下，把调度所需的最小主链路补齐。
 func probePlatform() []ProbeResult {
 	results := make([]ProbeResult, 0, 2)
-	nvidiaOutput := strings.TrimSpace(string(commandOutput("nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader")))
+	nvidiaOutput := strings.TrimSpace(string(commandOutput("nvidia-smi", "--query-gpu=index,uuid,name,driver_version,memory.total", "--format=csv,noheader,nounits")))
 	if nvidiaOutput != "" {
 		for _, line := range strings.Split(nvidiaOutput, "\n") {
 			parts := strings.Split(line, ",")
-			if len(parts) < 2 {
+			if len(parts) < 5 {
 				continue
 			}
 			results = append(results, ProbeResult{
 				GPUUUID:          strings.TrimSpace(parts[1]),
 				GPUIndex:         parseIndex(parts[0]),
+				Vendor:           "nvidia",
+				Model:            strings.TrimSpace(parts[2]),
+				DriverVersion:    strings.TrimSpace(parts[3]),
+				MemoryTotalMB:    parseIndex(parts[4]),
 				ExecutionHWTypes: []string{model.ExecutionHWNVIDIA},
 				SupportsFilter:   true,
 			})

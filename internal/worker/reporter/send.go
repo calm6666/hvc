@@ -2,10 +2,17 @@ package reporter
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	clusterstate "hvc/internal/cluster"
 	"hvc/internal/model"
 	"hvc/pkg/logx"
+)
+
+var (
+	metricsLogMu     sync.Mutex
+	lastMetricsLogAt time.Time
 )
 
 // ProgressSink 定义进度持久化接口。
@@ -32,6 +39,9 @@ func ReportMetrics(ctx context.Context, cache *clusterstate.StateCache, metrics 
 	if cache != nil {
 		cache.SaveNodeMetrics(ctx, metrics)
 	}
+	if !shouldLogMetrics(metrics) {
+		return
+	}
 	logx.Info("worker.report.metrics", logx.Fields{
 		"node_id":                   metrics.NodeID,
 		"cpu_usage_percent":         metrics.CPUUsagePercent,
@@ -41,4 +51,17 @@ func ReportMetrics(ctx context.Context, cache *clusterstate.StateCache, metrics 
 		"active_transcode_sessions": metrics.ActiveTranscodeSessions,
 		"gpu_capability_count":      len(metrics.GPUCapabilities),
 	})
+}
+
+func shouldLogMetrics(metrics model.NodeMetrics) bool {
+	if metrics.ActiveTranscodeSessions > 0 || metrics.UploadQueueDepth > 0 {
+		return true
+	}
+	metricsLogMu.Lock()
+	defer metricsLogMu.Unlock()
+	if time.Since(lastMetricsLogAt) < time.Minute {
+		return false
+	}
+	lastMetricsLogAt = time.Now()
+	return true
 }

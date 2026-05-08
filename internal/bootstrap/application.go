@@ -36,6 +36,7 @@ type Application struct {
 	baseConfig    config.RuntimeConfig
 	dynamicConfig *configcenter.EffectiveConfig
 	httpServer    *server.HTTPServer
+	internalGRPC  *server.InternalGRPCServer
 	coordinator   *cluster.Coordinator
 	clusterCache  *cluster.StateCache
 	leaseCache    *cluster.LeaseCache
@@ -45,6 +46,7 @@ type Application struct {
 	callback      *callback.Dispatcher
 	grpcServer    *server.GRPCServer
 	mqConsumer    *server.MQConsumer
+	configSyncer  *runtimeConfigSyncer
 }
 
 // NewApplication 创建服务实例。
@@ -53,36 +55,37 @@ func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.AutoMigrate(context.Background()); err != nil {
-		return nil, err
-	}
 	redisClient, err := rediscache.Open(baseConfig.Redis)
 	if err != nil {
 		return nil, err
 	}
 	runtimeConfigRepository := mysql.NewRuntimeConfigRepository(db)
+	runtimeConfigCache := rediscache.NewRuntimeConfigCache(redisClient)
 	bootstrapDynamicConfig := config.LoadBootstrapDynamicRuntimeConfig(baseConfig)
 	if err := runtimeConfigRepository.EnsureBootstrapPublished(context.Background(), mysql.NewBootstrapRuntimeConfigRecord(bootstrapDynamicConfig, "bootstrap_local")); err != nil {
 		return nil, fmt.Errorf("ensure bootstrap runtime config failed: %w", err)
 	}
-	dynamicConfigValue, ok := func() (config.DynamicRuntimeConfig, bool) {
-		result, found := mysql.LoadDynamicRuntimeConfigFromDB(context.Background(), db)
-		if !found {
-			return config.DynamicRuntimeConfig{}, false
-		}
-		cfg, ok := result.Config.(config.DynamicRuntimeConfig)
-		return cfg, ok
-	}()
-	if !ok {
-		dynamicConfigValue = bootstrapDynamicConfig
+	if changed, err := runtimeConfigRepository.NormalizeBootstrapPublicGRPCDefault(context.Background()); err != nil {
+		return nil, fmt.Errorf("normalize bootstrap public grpc default failed: %w", err)
+	} else if changed {
+		_ = runtimeConfigCache.InvalidatePublished(context.Background())
 	}
-	effectiveConfig := configcenter.NewEffectiveConfig(dynamicConfigValue)
-	coordinator := cluster.NewCoordinator(dynamicConfigValue, baseConfig.Server.NodeID, baseConfig.Server.ListenAddress)
-	systemService := service.NewSystemService(baseConfig.Server.ServiceName, resolveModeName(dynamicConfigValue))
+	dynamicConfigSnapshot, ok := loadPublishedDynamicRuntimeConfig(context.Background(), runtimeConfigCache, db)
+	if !ok {
+		dynamicConfigSnapshot = rediscache.RuntimeConfigSnapshot{
+			ConfigVersion: 0,
+			Config:        bootstrapDynamicConfig,
+		}
+	}
+	effectiveConfig := configcenter.NewEffectiveConfig(dynamicConfigSnapshot.Config)
+	effectiveConfig.ReplaceWithVersion(dynamicConfigSnapshot.Config, dynamicConfigSnapshot.ConfigVersion)
+	coordinator := cluster.NewCoordinator(dynamicConfigSnapshot.Config, baseConfig.Server.NodeID, baseConfig.Server.ListenAddress)
+	systemService := service.NewSystemService(baseConfig.Server.ServiceName, resolveModeName(dynamicConfigSnapshot.Config))
 	systemHandler := handler.NewSystemHandler(systemService)
 	auditRepository := audit.NewRepository(db)
 	jobRepository := mysql.NewJobRepository(db)
 	jobRequestOverrideRepository := mysql.NewJobRequestOverrideRepository(db)
+	renditionRepository := mysql.NewTranscodeRenditionRepository(db)
 	segmentRepository := mysql.NewSegmentRepository(db)
 	outboxRepository := mysql.NewOutboxRepository(db)
 	deliveryFailureQueueRepository := mysql.NewDeliveryFailureQueueRepository(db)
@@ -93,6 +96,10 @@ func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
 	liveChannelRepository := mysql.NewLiveChannelRepository(db)
 	liveSessionRepository := mysql.NewLiveSessionRepository(db)
 	liveProfileRenditionRepository := mysql.NewLiveProfileRenditionRepository(db)
+	livePlaybackTokenRepository := mysql.NewLivePlaybackTokenRepository(db)
+	livePublishAuthLogRepository := mysql.NewLivePublishAuthLogRepository(db)
+	livePublishSessionRepository := mysql.NewLivePublishSessionRepository(db)
+	liveSessionEventRepository := mysql.NewLiveSessionEventRepository(db)
 	adminRepository := mysql.NewAdminRepository(db)
 	adminRBACRepository := mysql.NewAdminRBACRepository(db)
 	callbackConfigRepository := mysql.NewCallbackConfigRepository(db)
@@ -110,44 +117,51 @@ func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
 	queryProgressUseCase := transcodeusecase.NewQueryProgressUseCase(jobRepository, progressStore)
 	loginUseCase := &authusecase.LoginUseCase{}
 	transcodeService := transcodesvc.NewService(createJobUseCase, queryProgressUseCase, jobRepository, jobRequestOverrideRepository)
-	channelService := livesvc.NewChannelService(dynamicConfigValue, liveChannelRepository, liveSessionRepository, liveProfileRenditionRepository)
+	channelService := livesvc.NewChannelService(dynamicConfigSnapshot.Config, liveChannelRepository, liveSessionRepository, liveProfileRenditionRepository)
 	channelService.SetConfigSnapshot(effectiveConfig.Snapshot)
+	channelService.SetPlaybackTokenWriter(livePlaybackTokenRepository)
+	channelService.SetPublishAuthLogger(livePublishAuthLogRepository)
+	channelService.SetPublishSessionStore(livePublishSessionRepository)
 	transcodeHandler := publichttp.NewTranscodeHandler(transcodeService)
 	manifestBuilder := manifest.NewBuilder(segmentRepository, jobRepository, effectiveConfig)
 	manifestHandler := publichttp.NewManifestHandler(manifestBuilder)
 	clusterHandler := publichttp.NewClusterHandler(clusterCache, leaseCache, jobRepository, segmentRepository, workerInstanceRepository)
-	liveHandler := publichttp.NewLiveHandler(channelService)
+	liveManager := live.NewManager(live.NewRepositoryChannelStore(liveChannelRepository), live.NewRepositorySessionStore(liveSessionRepository))
+	liveHandler := publichttp.NewLiveHandler(liveManager, channelService)
 	authHandler := adminhttp.NewAuthHandler(loginUseCase, adminRepository)
-	configHandler := adminhttp.NewConfigHandler(runtimeConfigRepository, effectiveConfig)
+	configHandler := adminhttp.NewConfigHandler(runtimeConfigRepository, runtimeConfigCache, effectiveConfig)
 	callbackHandler := adminhttp.NewCallbackHandler(callbackConfigRepository)
 	rbacHandler := adminhttp.NewRBACHandler(adminRepository, adminRBACRepository, auditRepository)
 	writeRBACHandler := adminhttp.NewWriteRBAC(adminRBACRepository, adminRepository)
-	configCenterHandler := adminhttp.NewConfigCenterHandler(configCenterBindingRepository, effectiveConfig)
-	adminClusterHandler := adminhttp.NewClusterHandler(clusterNodeRepository, clusterCache, coordinator.Registry())
+	configCenterHandler := adminhttp.NewConfigCenterHandler(configCenterBindingRepository)
+	adminClusterHandler := adminhttp.NewClusterHandler(clusterNodeRepository, gpuDeviceRepository, clusterCache, coordinator.Registry(), effectiveConfig, runtimeConfigRepository, runtimeConfigCache, jobRepository, db, baseConfig.InternalGRPC)
 	adminTranscodeHandler := adminhttp.NewTranscodeHandler(jobRepository, progressStore)
 	namingTemplateRepository := mysql.NewNamingTemplateRepository(db)
 	namingTemplateHandler := adminhttp.NewNamingTemplateHandler(namingTemplateRepository, runtimeConfigRepository, effectiveConfig)
-	liveManager := live.NewManager(live.NewRepositoryChannelStore(liveChannelRepository), live.NewRepositorySessionStore(liveSessionRepository))
+	liveManager.SetSessionEventWriter(liveSessionEventRepository)
+	liveManager.SetPublishSessionWriter(livePublishSessionRepository)
 	adminLiveHandler := adminhttp.NewLiveHandler(liveManager, channelService)
-	monitorHandler := wsmonitor.NewSnapshotHandler(clusterCache, hotpathBus, progressStore, jobRepository, clusterNodeRepository, resolveModeName(dynamicConfigValue))
+	monitorHandler := wsmonitor.NewSnapshotHandler(clusterCache, hotpathBus, progressStore, jobRepository, clusterNodeRepository, resolveModeName(dynamicConfigSnapshot.Config))
 	grpcPublicServer := grpcpublic.NewTranscodePublicServer(transcodeService)
 	mqCreateJobConsumer := mqconsumer.NewCreateJobConsumer(transcodeService)
-	schedulerManager := scheduler.NewManager(dynamicConfigValue, effectiveConfig, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, clusterCache, jobRepository, jobRequestOverrideRepository, jobExecutionRepository)
+	schedulerManager := scheduler.NewManager(dynamicConfigSnapshot.Config, effectiveConfig, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, clusterCache, jobRepository, jobRequestOverrideRepository, jobExecutionRepository)
 	schedulerManager.SetLeaseCache(leaseCache)
 	schedulerManager.SetClusterNodeRepository(clusterNodeRepository)
 	return &Application{
 		baseConfig:    baseConfig,
 		dynamicConfig: effectiveConfig,
-		httpServer:    server.NewHTTPServer(baseConfig.Server, systemHandler, transcodeHandler, clusterHandler, liveHandler, manifestHandler, authHandler, configHandler, callbackHandler, rbacHandler, writeRBACHandler, configCenterHandler, adminClusterHandler, adminTranscodeHandler, adminLiveHandler, namingTemplateHandler, monitorHandler),
+		httpServer:    server.NewHTTPServer(baseConfig.Server, baseConfig.InternalGRPC.SharedToken, systemHandler, transcodeHandler, clusterHandler, liveHandler, manifestHandler, authHandler, configHandler, callbackHandler, rbacHandler, writeRBACHandler, configCenterHandler, adminClusterHandler, adminTranscodeHandler, adminLiveHandler, namingTemplateHandler, monitorHandler),
+		internalGRPC:  server.NewInternalGRPCServer(baseConfig.InternalGRPC, clusterCache, progressStore, segmentRepository, jobRepository),
 		coordinator:   coordinator,
 		clusterCache:  clusterCache,
 		leaseCache:    leaseCache,
 		hotpathBus:    hotpathBus,
 		scheduler:     schedulerManager,
-		worker:        worker.NewModule(dynamicConfigValue, effectiveConfig, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, jobRepository, segmentRepository, progressStore, outboxRepository, hotpathBus, clusterCache, workerInstanceRepository, gpuDeviceRepository, gpuCapabilityRepository, jobExecutionRepository),
+		worker:        worker.NewModule(dynamicConfigSnapshot.Config, effectiveConfig, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, jobRepository, renditionRepository, segmentRepository, progressStore, outboxRepository, hotpathBus, clusterCache, workerInstanceRepository, gpuDeviceRepository, gpuCapabilityRepository, jobExecutionRepository),
 		callback:      callback.NewDispatcher(effectiveConfig, outboxRepository, callbackConfigRepository, jobRequestOverrideRepository, deliveryFailureQueueRepository),
-		grpcServer:    server.NewGRPCServer(dynamicConfigValue, effectiveConfig, grpcPublicServer, clusterCache, progressStore, segmentRepository, jobRepository),
-		mqConsumer:    server.NewMQConsumer(dynamicConfigValue, effectiveConfig, mqCreateJobConsumer),
+		grpcServer:    server.NewGRPCServer(dynamicConfigSnapshot.Config, effectiveConfig, grpcPublicServer),
+		mqConsumer:    server.NewMQConsumer(dynamicConfigSnapshot.Config, effectiveConfig, mqCreateJobConsumer),
+		configSyncer:  newRuntimeConfigSyncer(runtimeConfigCache, db, effectiveConfig),
 	}, nil
 }
 
@@ -169,13 +183,15 @@ func resolveModeName(cfg config.DynamicRuntimeConfig) string {
 
 // Run 启动服务实例。
 func (a *Application) Run(ctx context.Context) error {
-	errCh := make(chan error, 4)
+	errCh := make(chan error, 5)
 	httpTask := &managedTask{name: "http"}
 
+	go func() { errCh <- a.internalGRPC.Start(ctx) }()
 	go func() { errCh <- a.scheduler.Start(ctx) }()
 	go func() { errCh <- a.worker.Start(ctx) }()
 	go func() { errCh <- a.callback.Start(ctx) }()
 	go func() { errCh <- a.coordinator.Start(ctx) }()
+	go func() { errCh <- a.configSyncer.Start(ctx) }()
 	reconcileTicker := time.NewTicker(time.Second)
 	defer reconcileTicker.Stop()
 	current := a.dynamicConfig.Snapshot()
@@ -198,4 +214,36 @@ func (a *Application) Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// loadPublishedDynamicRuntimeConfig 按“Redis 优先、数据库回源、再回填 Redis”的顺序加载已发布运行时配置。
+//
+// 这样做的目的有两个：
+// 1. 启动和热重载尽量避免直接把数据库打成热点；
+// 2. 即便 Redis 因 TTL 或故障丢失，也能自动回源并恢复缓存。
+func loadPublishedDynamicRuntimeConfig(ctx context.Context, runtimeConfigCache *rediscache.RuntimeConfigCache, db *mysql.DB) (rediscache.RuntimeConfigSnapshot, bool) {
+	if runtimeConfigCache != nil {
+		if snapshot, ok, err := runtimeConfigCache.LoadPublished(ctx); err == nil && ok {
+			return snapshot, true
+		}
+	}
+
+	result, found := mysql.LoadDynamicRuntimeConfigFromDB(ctx, db)
+	if !found {
+		return rediscache.RuntimeConfigSnapshot{}, false
+	}
+	cfg, ok := result.Config.(config.DynamicRuntimeConfig)
+	if !ok {
+		return rediscache.RuntimeConfigSnapshot{}, false
+	}
+
+	snapshot := rediscache.RuntimeConfigSnapshot{
+		ConfigVersion: result.Record.ConfigVersion,
+		Config:        cfg,
+	}
+
+	if runtimeConfigCache != nil {
+		_ = runtimeConfigCache.SavePublished(ctx, snapshot)
+	}
+	return snapshot, true
 }

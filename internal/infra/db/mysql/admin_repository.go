@@ -28,7 +28,8 @@ func NewAdminRepository(db *DB) *AdminRepository {
 // FindUserByUsername 根据用户名查询管理员用户。
 func (r *AdminRepository) FindUserByUsername(ctx context.Context, username string) (AdminUserRecord, bool) {
 	var record AdminUserRecord
-	if err := r.db.WithContext(ctx).Where("username = ?", username).Take(&record).Error; err != nil {
+	result := r.db.WithContext(ctx).Where("username = ?", username).Limit(1).Find(&record)
+	if result.Error != nil || result.RowsAffected == 0 {
 		return AdminUserRecord{}, false
 	}
 	return record, true
@@ -58,9 +59,11 @@ func (r *AdminRepository) CreateSession(ctx context.Context, adminUserID uint64,
 // FindActiveSession 根据 session token 查询有效会话。
 func (r *AdminRepository) FindActiveSession(ctx context.Context, token string) (AdminSessionRecord, bool) {
 	var record AdminSessionRecord
-	if err := r.db.WithContext(ctx).
+	result := r.db.WithContext(ctx).
 		Where("session_token = ? AND session_status = ?", token, 1).
-		Take(&record).Error; err != nil {
+		Limit(1).
+		Find(&record)
+	if result.Error != nil || result.RowsAffected == 0 {
 		return AdminSessionRecord{}, false
 	}
 	if !record.ExpireAt.IsZero() && record.ExpireAt.Before(time.Now()) {

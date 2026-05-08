@@ -12,10 +12,10 @@ import (
 // TestE2E_TranscodePipeline 端到端测试：完整转码管线。
 //
 // 验证从任务创建到分片命名的完整流程：
-//   1. 构建编码阶梯
-//   2. 生成 FFmpeg 命令
-//   3. 渲染分片命名
-//   4. 验证命名模板一致性
+//  1. 构建编码阶梯
+//  2. 生成 FFmpeg 命令
+//  3. 渲染分片命名
+//  4. 验证命名模板一致性
 func TestE2E_TranscodePipeline(t *testing.T) {
 	job := model.TranscodeJob{
 		JobID:              1893456789012345678,
@@ -40,12 +40,12 @@ func TestE2E_TranscodePipeline(t *testing.T) {
 		name     string
 		template string
 	}{
-		{"方案一", "{job_id}-{media_type}-{number}.m4s"},
-		{"方案二", "{job_id}-{resolution}-{media_type}-{number}.m4s"},
-		{"方案三", "{job_id}-{quality}-{media_type}-{number}.m4s"},
-		{"方案四", "{job_id}-{media_type}-{number}-{timestamp}.m4s"},
-		{"方案五", "{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s"},
-		{"方案六", "{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s"},
+		{"方案一", "{job_id}-{rendition_key}-{media_type}-{number}.m4s"},
+		{"方案二", "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s"},
+		{"方案三", "{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s"},
+		{"方案四", "{job_id}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s"},
+		{"方案五", "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s"},
+		{"方案六", "{job_id}-{quality}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s"},
 	}
 
 	for _, tmpl := range templates {
@@ -102,6 +102,7 @@ func TestE2E_SegmentNamingConsistency(t *testing.T) {
 
 	rend := planner.RenditionSpec{
 		Name:             "1080p",
+		RenditionKey:     "Ab3kP9xQ",
 		QualityLabel:     "1080p",
 		Width:            1920,
 		Height:           1080,
@@ -109,11 +110,11 @@ func TestE2E_SegmentNamingConsistency(t *testing.T) {
 		AudioBitrateKbps: 128,
 	}
 
-	template := "{job_id}-{resolution}-{media_type}-{number}.m4s"
+	template := "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s"
 
-	expectedInitName := "1893456789012345678-1920_1080-video-0.m4s"
-	expectedMediaName := "1893456789012345678-1920_1080-video-1.m4s"
-	expectedAudioInitName := "1893456789012345678-1920_1080-audio-0.m4s"
+	expectedInitName := "1893456789012345678-1920_1080-Ab3kP9xQ-video-0.m4s"
+	expectedMediaName := "1893456789012345678-1920_1080-Ab3kP9xQ-video-1.m4s"
+	expectedAudioInitName := "1893456789012345678-1920_1080-Ab3kP9xQ-audio-0.m4s"
 
 	actualInitName := planner.RenderSegmentName(template, job.JobID, rend, "video", 0, 0)
 	actualMediaName := planner.RenderSegmentName(template, job.JobID, rend, "video", 1, 6000)
@@ -133,8 +134,8 @@ func TestE2E_SegmentNamingConsistency(t *testing.T) {
 // TestE2E_QualityLabelMapping 端到端测试：清晰度标签映射。
 func TestE2E_QualityLabelMapping(t *testing.T) {
 	cases := []struct {
-		height  int
-		want    string
+		height int
+		want   string
 	}{
 		{2160, "4k"},
 		{1440, "2k"},

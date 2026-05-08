@@ -87,6 +87,26 @@ func TestResolveTargetsFallsBackToRuntimeHTTPURL(t *testing.T) {
 	}
 }
 
+func TestResolveTargetsFallsBackToRuntimeMQTopic(t *testing.T) {
+	dispatcher := &Dispatcher{}
+	cfg := config.DynamicRuntimeConfig{
+		MQ: config.MQRuntimeConfig{
+			CallbackTopic: "transcode.job.completed",
+		},
+	}
+
+	targets := dispatcher.resolveTargetsWithOverride(context.Background(), cfg, model.OutboxEvent{JobID: 3}, nil)
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(targets))
+	}
+	if targets[0].CallbackType != callbackTypeMQ {
+		t.Fatalf("expected callback type %d, got %d", callbackTypeMQ, targets[0].CallbackType)
+	}
+	if targets[0].MQRoutingKey != "transcode.job.completed" {
+		t.Fatalf("unexpected fallback mq routing key: %s", targets[0].MQRoutingKey)
+	}
+}
+
 func TestDefaultTimeoutMS(t *testing.T) {
 	cfg := config.CallbackConfig{
 		HTTPTimeout:  4 * time.Millisecond,

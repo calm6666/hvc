@@ -1,6 +1,0 @@
-# import config
-packagefile context=D:\hilihili\server\hvc\.gocache\b4\b4183b72b01ee34c104f2643ea9dc36e464f79f396a677679e635b2811db203c-d
-packagefile encoding/json=D:\hilihili\server\hvc\.gocache\ef\ef224f26b95fa1070d909134b1a46a45abd5f642d57d809f245e3451417a1637-d
-packagefile github.com/rabbitmq/amqp091-go=D:\hilihili\server\hvc\.gocache\f9\f92fbad09c24114c0a41cd84c517990fb31ad44578169db9a42bf52a7a06ca26-d
-packagefile hvc/internal/model=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b245\_pkg_.a
-packagefile hvc/internal/service/transcode=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b390\_pkg_.a

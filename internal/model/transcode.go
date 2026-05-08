@@ -157,6 +157,7 @@ type TranscodeJob struct {
 	SourceURL                  string
 	ProfileID                  uint64
 	SegmentDurationSec         int
+	SegmentTemplate            string
 	SupportDash                bool
 	SupportHLS                 bool
 	EnableWatermark            bool

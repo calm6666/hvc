@@ -26,10 +26,23 @@ func ConfigureAdminAuth(adminRepo *mysql.AdminRepository, rbacRepo *mysql.AdminR
 	adminRBACRepo = rbacRepo
 }
 
-func extractAdminSessionToken(r *http.Request) string {
+// ExtractAdminSessionToken 从 Authorization 或 Cookie 中提取后台会话令牌。
+//
+// 约定：
+// 1. 优先读取 Authorization: Bearer <token>；
+// 2. 其次读取 admin_session Cookie；
+// 3. Header 支持大小写不敏感的 bearer 前缀。
+func ExtractAdminSessionToken(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
 	token := strings.TrimSpace(r.Header.Get("Authorization"))
 	if token != "" {
-		return strings.TrimPrefix(token, "Bearer ")
+		lower := strings.ToLower(token)
+		if strings.HasPrefix(lower, "bearer ") {
+			return strings.TrimSpace(token[7:])
+		}
+		return token
 	}
 	cookie, err := r.Cookie("admin_session")
 	if err != nil {
@@ -40,7 +53,7 @@ func extractAdminSessionToken(r *http.Request) string {
 
 // RequireAdminSession 校验后台会话。
 func RequireAdminSession(r *http.Request) bool {
-	token := extractAdminSessionToken(r)
+	token := ExtractAdminSessionToken(r)
 	if token == "" {
 		return false
 	}
@@ -57,7 +70,7 @@ func RequireAdminSession(r *http.Request) bool {
 // CurrentAdminUserID 返回当前会话对应的管理员用户ID。
 func CurrentAdminUserID(ctx context.Context, r *http.Request) uint64 {
 	_ = ctx
-	token := extractAdminSessionToken(r)
+	token := ExtractAdminSessionToken(r)
 	if token == "" {
 		return 0
 	}

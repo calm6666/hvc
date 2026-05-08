@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"hvc/internal/cluster"
@@ -132,9 +133,30 @@ func (m *Manager) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeCon
 		}
 		preferredHWAccel := m.resolvePreferredHWAccel(ctx, job)
 		decision := dispatchpkg.BuildDecision(best, preferredHWAccel, job.LeaseGeneration, job.AttemptNo)
-		_ = m.jobRepository.Assign(ctx, job.JobID, decision, best.NodeID, m.workerID, job.ExecutorWorkerInstanceID)
+		if err := m.jobRepository.Assign(ctx, job.JobID, decision, best.NodeID, m.workerID, job.ExecutorWorkerInstanceID); err != nil {
+			if errors.Is(err, mysql.ErrJobAssignConflict) {
+				logx.Info("scheduler.dispatch.skipped", logx.Fields{
+					"job_id":     job.JobID,
+					"request_id": job.RequestID,
+					"reason":     "job_assign_conflict",
+				})
+				continue
+			}
+			logx.Error("scheduler.dispatch.assign_failed", err, logx.Fields{
+				"job_id":     job.JobID,
+				"request_id": job.RequestID,
+				"node_id":    best.NodeID,
+			})
+			continue
+		}
 		if m.jobExecutionRepository != nil {
-			_ = m.jobExecutionRepository.SaveAssigned(ctx, job.JobID, decision, m.workerID, job.ExecutorWorkerInstanceID)
+			if err := m.jobExecutionRepository.SaveAssigned(ctx, job.JobID, decision, m.workerID, job.ExecutorWorkerInstanceID); err != nil {
+				logx.Error("scheduler.dispatch.execution_save_failed", err, logx.Fields{
+					"job_id":     job.JobID,
+					"request_id": job.RequestID,
+					"node_id":    best.NodeID,
+				})
+			}
 		}
 		if m.shieldTracker != nil {
 			m.shieldTracker.RecordSuccess(best.NodeID)
@@ -160,9 +182,17 @@ func (m *Manager) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeCon
 //   - 故障屏蔽跟踪器：过滤被隔离的节点
 func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandidate {
 	candidates := make([]model.DispatchCandidate, 0)
+	activeGPUUsageByNode := make(map[uint64]map[int]int)
 
 	if m.clusterNodeRepository != nil {
 		nodes := m.clusterNodeRepository.List(ctx)
+		if m.jobExecutionRepository != nil && len(nodes) > 0 {
+			nodeIDs := make([]uint64, 0, len(nodes))
+			for _, node := range nodes {
+				nodeIDs = append(nodeIDs, node.NodeID)
+			}
+			activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, nodeIDs, time.Now().Add(-m.currentConfig().Scheduler.WorkerHeartbeatTimeout))
+		}
 		for _, node := range nodes {
 			if !node.Enabled {
 				continue
@@ -174,6 +204,7 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 			if !ok {
 				metrics = model.NodeMetrics{NodeID: node.NodeID}
 			}
+			metrics = mergeGPUActiveSessions(metrics, activeGPUUsageByNode[node.NodeID])
 			candidates = append(candidates, model.DispatchCandidate{
 				NodeID:                    node.NodeID,
 				Enabled:                   node.Enabled,
@@ -189,6 +220,10 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 		if !ok {
 			metrics = model.NodeMetrics{NodeID: m.nodeID}
 		}
+		if m.jobExecutionRepository != nil {
+			activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, []uint64{m.nodeID}, time.Now().Add(-m.currentConfig().Scheduler.WorkerHeartbeatTimeout))
+		}
+		metrics = mergeGPUActiveSessions(metrics, activeGPUUsageByNode[m.nodeID])
 		candidates = append(candidates, model.DispatchCandidate{
 			NodeID:                    m.nodeID,
 			Enabled:                   true,
@@ -199,6 +234,16 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 	}
 
 	return candidates
+}
+
+func mergeGPUActiveSessions(metrics model.NodeMetrics, activeByGPU map[int]int) model.NodeMetrics {
+	if len(metrics.GPUCapabilities) == 0 || len(activeByGPU) == 0 {
+		return metrics
+	}
+	for idx := range metrics.GPUCapabilities {
+		metrics.GPUCapabilities[idx].ActiveSessions = activeByGPU[metrics.GPUCapabilities[idx].GPUIndex]
+	}
+	return metrics
 }
 
 // buildJobRequest 从任务模型构造调度请求。

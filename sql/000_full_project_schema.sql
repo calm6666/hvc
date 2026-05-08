@@ -1,17 +1,12 @@
 -- ============================================================
--- 完整初始化脚本：vod_live_transcoding
+-- 完整初始化脚本
 -- 说明：
 -- 1. 本脚本按“当前代码实际依赖”的最终结构整理，适用于全新初始化数据库。
 -- 2. 已内联管理员鉴权、转码、水印、缩略图、运行配置、Worker 能力、Outbox、Live 等全部当前主链路表。
 -- 3. 已避免历史迁移脚本之间的重复列/旧结构问题。
 -- 4. 若是存量库升级，请不要直接在生产库执行本脚本覆盖旧表，应改为按差异迁移。
+-- 5. 本脚本不再强制 CREATE DATABASE / USE，请在目标数据库上下文中执行，例如 hvc。
 -- ============================================================
-
-CREATE DATABASE IF NOT EXISTS `vod_live_transcoding`
-  DEFAULT CHARACTER SET utf8mb4
-  DEFAULT COLLATE utf8mb4_unicode_ci;
-
-USE `vod_live_transcoding`;
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -72,6 +67,55 @@ CREATE TABLE IF NOT EXISTS `t_admin_audit_log` (
   KEY `idx_action_name_created_at` (`action_name`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='管理员审计日志表，用于记录后台登录、配置变更和任务管理等关键操作';
 
+CREATE TABLE IF NOT EXISTS `t_admin_role` (
+  `role_id` BIGINT UNSIGNED NOT NULL COMMENT '角色主键ID',
+  `role_key` VARCHAR(64) NOT NULL COMMENT '角色唯一键，例如 super_admin、operator、viewer',
+  `role_name` VARCHAR(128) NOT NULL COMMENT '角色名称',
+  `role_desc` VARCHAR(512) DEFAULT NULL COMMENT '角色说明',
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '角色状态，1=启用，2=禁用',
+  `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
+  `updated_at` DATETIME NOT NULL COMMENT '记录更新时间',
+  PRIMARY KEY (`role_id`),
+  UNIQUE KEY `uk_role_key` (`role_key`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='管理员角色表';
+
+CREATE TABLE IF NOT EXISTS `t_admin_permission` (
+  `perm_id` BIGINT UNSIGNED NOT NULL COMMENT '权限点主键ID',
+  `perm_key` VARCHAR(128) NOT NULL COMMENT '权限唯一键，例如 config.version.read',
+  `perm_name` VARCHAR(128) NOT NULL COMMENT '权限名称',
+  `perm_desc` VARCHAR(512) DEFAULT NULL COMMENT '权限说明',
+  `module` VARCHAR(64) DEFAULT NULL COMMENT '所属模块',
+  `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
+  PRIMARY KEY (`perm_id`),
+  UNIQUE KEY `uk_perm_key` (`perm_key`),
+  KEY `idx_module` (`module`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='管理员权限点表';
+
+CREATE TABLE IF NOT EXISTS `t_admin_user_role` (
+  `id` BIGINT UNSIGNED NOT NULL COMMENT '用户角色绑定主键ID',
+  `user_id` BIGINT UNSIGNED NOT NULL COMMENT '管理员用户ID',
+  `role_id` BIGINT UNSIGNED NOT NULL COMMENT '角色ID',
+  `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_role` (`user_id`, `role_id`),
+  KEY `idx_role_id` (`role_id`),
+  CONSTRAINT `fk_admin_user_role_user_id` FOREIGN KEY (`user_id`) REFERENCES `t_admin_user` (`admin_user_id`),
+  CONSTRAINT `fk_admin_user_role_role_id` FOREIGN KEY (`role_id`) REFERENCES `t_admin_role` (`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='管理员用户与角色绑定表';
+
+CREATE TABLE IF NOT EXISTS `t_admin_role_permission` (
+  `id` BIGINT UNSIGNED NOT NULL COMMENT '角色权限绑定主键ID',
+  `role_id` BIGINT UNSIGNED NOT NULL COMMENT '角色ID',
+  `perm_id` BIGINT UNSIGNED NOT NULL COMMENT '权限点ID',
+  `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_role_perm` (`role_id`, `perm_id`),
+  KEY `idx_perm_id` (`perm_id`),
+  CONSTRAINT `fk_admin_role_permission_role_id` FOREIGN KEY (`role_id`) REFERENCES `t_admin_role` (`role_id`),
+  CONSTRAINT `fk_admin_role_permission_perm_id` FOREIGN KEY (`perm_id`) REFERENCES `t_admin_permission` (`perm_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色与权限点绑定表';
+
 -- ============================================================
 -- 2. 点播转码任务主链路
 -- ============================================================
@@ -88,6 +132,7 @@ CREATE TABLE IF NOT EXISTS `t_transcode_job` (
   `profile_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '转码模板 Profile 主键ID',
   `job_config_version` BIGINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '任务锁定的配置版本号，保证任务执行期间的配置快照可追溯',
   `segment_duration_sec` INT NOT NULL DEFAULT 4 COMMENT '目标分片时长，单位为秒',
+  `segment_template` VARCHAR(255) DEFAULT NULL COMMENT '该任务首次执行时锁定的分片命名模板快照，用于保证重试和动态清单生成一致',
   `support_dash` TINYINT NOT NULL DEFAULT 1 COMMENT '是否支持 DASH 协议，0 表示不支持，1 表示支持',
   `support_hls` TINYINT NOT NULL DEFAULT 1 COMMENT '是否支持 HLS 协议，0 表示不支持，1 表示支持',
   `enable_watermark` TINYINT NOT NULL DEFAULT 0 COMMENT '是否启用水印，0=否，1=是',
@@ -224,6 +269,7 @@ CREATE TABLE IF NOT EXISTS `t_transcode_rendition` (
   `rendition_id` BIGINT UNSIGNED NOT NULL COMMENT '清晰度子任务主键ID',
   `job_id` BIGINT UNSIGNED NOT NULL COMMENT '所属转码任务ID，对应主任务表',
   `rendition_name` VARCHAR(64) NOT NULL COMMENT '清晰度名称，例如 1080p、720p、540p，用于业务展示与播放侧标识',
+  `rendition_key` VARCHAR(32) NOT NULL COMMENT '任务内清晰度稳定短 key，用于分片命名和重试复用',
   `status` TINYINT NOT NULL COMMENT '清晰度子任务状态，1=待执行，2=执行中，3=上传中，4=已完成，5=失败',
   `out_width` INT NOT NULL COMMENT '该清晰度输出视频宽度，单位为像素',
   `out_height` INT NOT NULL COMMENT '该清晰度输出视频高度，单位为像素',
@@ -240,6 +286,7 @@ CREATE TABLE IF NOT EXISTS `t_transcode_rendition` (
   `updated_at` DATETIME NOT NULL COMMENT '记录更新时间',
   PRIMARY KEY (`rendition_id`),
   KEY `idx_job_id` (`job_id`),
+  UNIQUE KEY `uk_job_rendition_name` (`job_id`, `rendition_name`),
   CONSTRAINT `fk_rendition_job_id` FOREIGN KEY (`job_id`) REFERENCES `t_transcode_job` (`job_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='任务清晰度子任务表，用于记录每个输出档位的执行状态与转码参数';
 
@@ -247,10 +294,18 @@ CREATE TABLE IF NOT EXISTS `t_transcode_segment` (
   `segment_id` BIGINT UNSIGNED NOT NULL COMMENT '分片记录主键ID',
   `job_id` BIGINT UNSIGNED NOT NULL COMMENT '所属转码任务ID',
   `rendition_id` BIGINT UNSIGNED NOT NULL COMMENT '所属清晰度子任务ID',
+  `rendition_name` VARCHAR(64) NOT NULL COMMENT '分片所属清晰度名称，做动态清单和排障时可避免额外 join',
+  `rendition_key` VARCHAR(32) NOT NULL COMMENT '分片所属清晰度稳定短 key，便于按模板重建 DASH media URL',
   `media_type` TINYINT NOT NULL COMMENT '媒体轨道类型，1=视频，2=音频',
   `is_init_segment` TINYINT NOT NULL DEFAULT 0 COMMENT '是否为初始化分片，0=否，1=是',
   `sequence_no` INT NOT NULL COMMENT '分片顺序号；初始化分片可固定为0，媒体分片按时间顺序递增',
   `duration_ms` INT NOT NULL COMMENT '分片时长，单位为毫秒',
+  `width` INT NOT NULL DEFAULT 0 COMMENT '该分片所属视频输出宽度，单位像素',
+  `height` INT NOT NULL DEFAULT 0 COMMENT '该分片所属视频输出高度，单位像素',
+  `video_bitrate_kbps` INT NOT NULL DEFAULT 0 COMMENT '该分片所属视频码率，单位 kbps',
+  `audio_bitrate_kbps` INT NOT NULL DEFAULT 0 COMMENT '该分片所属音频码率，单位 kbps',
+  `video_codec` VARCHAR(32) DEFAULT NULL COMMENT '该分片所属视频编码名称，例如 h264、hevc',
+  `audio_codec` VARCHAR(32) DEFAULT NULL COMMENT '该分片所属音频编码名称，例如 aac',
   `support_dash` TINYINT NOT NULL DEFAULT 1 COMMENT '该分片是否可用于 DASH 播放',
   `support_hls` TINYINT NOT NULL DEFAULT 1 COMMENT '该分片是否可用于 HLS 播放',
   `codec_name` VARCHAR(32) DEFAULT NULL COMMENT '该分片对应的编码名称，例如 h264、aac',
@@ -374,16 +429,20 @@ CREATE TABLE IF NOT EXISTS `t_registry_etcd_config` (
 CREATE TABLE IF NOT EXISTS `t_event_outbox` (
   `event_id` BIGINT UNSIGNED NOT NULL COMMENT '事件记录主键ID',
   `job_id` BIGINT UNSIGNED NOT NULL COMMENT '关联的转码任务ID',
+  `request_id` VARCHAR(128) DEFAULT NULL COMMENT '关联请求ID，便于按外部请求链路排查',
   `event_type` VARCHAR(64) NOT NULL COMMENT '事件类型，例如 job.created、job.completed、job.failed',
   `payload_json` JSON NOT NULL COMMENT '事件负载 JSON 内容，用于后续异步投递给外部系统',
   `delivery_status` TINYINT NOT NULL DEFAULT 1 COMMENT '投递状态，1=待投递，2=投递中，3=投递成功，4=投递失败',
   `retry_count` INT NOT NULL DEFAULT 0 COMMENT '已重试次数',
+  `max_retry_count` INT NOT NULL DEFAULT 3 COMMENT '最大重试次数，超过后转入最终失败',
   `next_retry_at` DATETIME DEFAULT NULL COMMENT '下次允许重试的时间点',
+  `last_error_message` VARCHAR(1024) DEFAULT NULL COMMENT '最近一次投递失败错误详情，便于补偿和审计',
   `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
   `updated_at` DATETIME NOT NULL COMMENT '记录更新时间',
   PRIMARY KEY (`event_id`),
   KEY `idx_job_id` (`job_id`),
-  KEY `idx_delivery_status` (`delivery_status`, `next_retry_at`),
+  KEY `idx_request_id` (`request_id`),
+  KEY `idx_delivery_status` (`delivery_status`, `next_retry_at`, `retry_count`, `max_retry_count`),
   CONSTRAINT `fk_outbox_job_id` FOREIGN KEY (`job_id`) REFERENCES `t_transcode_job` (`job_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='事件外发表，用于把任务状态变化可靠投递到外部系统';
 
@@ -450,6 +509,7 @@ CREATE TABLE IF NOT EXISTS `t_runtime_config` (
   `rpc_callback_receiver_host` VARCHAR(255) NOT NULL DEFAULT '0.0.0.0' COMMENT 'RPC 回调接收端监听主机',
   `rpc_callback_receiver_port` INT NOT NULL DEFAULT 9090 COMMENT 'RPC 回调接收端监听端口',
   `rpc_callback_receiver_registry_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'RPC 回调接收端绑定的 etcd 注册配置ID，0表示未绑定',
+  `enable_mq_consumer` TINYINT NOT NULL DEFAULT 0 COMMENT '是否启用 MQ 创建任务消费者，0=否，1=是',
   `mq_queue_name` VARCHAR(255) DEFAULT NULL COMMENT 'MQ 消费队列名称',
   `mq_host` VARCHAR(255) DEFAULT NULL COMMENT 'RabbitMQ 主机地址',
   `mq_port` INT NOT NULL DEFAULT 5672 COMMENT 'RabbitMQ 端口',
@@ -458,12 +518,30 @@ CREATE TABLE IF NOT EXISTS `t_runtime_config` (
   `mq_vhost` VARCHAR(64) NOT NULL DEFAULT '/' COMMENT 'RabbitMQ vhost',
   `mq_consumer_tag` VARCHAR(128) NOT NULL DEFAULT 'vod-mq-consumer' COMMENT 'RabbitMQ consumer tag',
   `mq_prefetch_count` INT NOT NULL DEFAULT 10 COMMENT 'RabbitMQ prefetch 数量',
+  `storage_type` VARCHAR(32) NOT NULL DEFAULT 'local' COMMENT '运行期生效的存储类型，local 或 s3',
+  `storage_endpoint` VARCHAR(255) DEFAULT NULL COMMENT '运行期生效的对象存储 endpoint',
+  `storage_bucket` VARCHAR(128) DEFAULT NULL COMMENT '运行期生效的对象存储 bucket',
+  `storage_access_key_id` VARCHAR(255) DEFAULT NULL COMMENT '运行期生效的对象存储 access key',
+  `storage_secret_access_key` VARCHAR(255) DEFAULT NULL COMMENT '运行期生效的对象存储 secret key',
+  `storage_use_ssl` TINYINT NOT NULL DEFAULT 0 COMMENT '运行期对象存储是否启用 SSL，0=否，1=是',
+  `storage_play_domain` VARCHAR(255) DEFAULT NULL COMMENT '运行期直播播放域名',
+  `storage_flv_domain` VARCHAR(255) DEFAULT NULL COMMENT '运行期 HTTP-FLV 播放域名',
+  `storage_local_base_path` VARCHAR(1024) DEFAULT NULL COMMENT '运行期本地存储根目录',
+  `default_storage_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '运行期默认存储配置ID，0表示直接使用内嵌存储参数',
   `scheduler_worker_id` VARCHAR(64) NOT NULL COMMENT '调度器分配给 Worker 的实例标识',
   `worker_output_path` VARCHAR(1024) DEFAULT NULL COMMENT 'Worker 本地临时输出目录或产物路径',
   `worker_object_prefix` VARCHAR(255) NOT NULL COMMENT '对象存储输出根前缀，仅用于分片与缩略图等对象路径组织',
   `change_summary` VARCHAR(1024) DEFAULT NULL COMMENT '本次配置变更摘要',
+  `config_source` VARCHAR(64) DEFAULT NULL COMMENT '配置来源标识',
+  `source_revision` VARCHAR(128) DEFAULT NULL COMMENT '来源修订号',
+  `published_by` VARCHAR(128) DEFAULT NULL COMMENT '发布人',
+  `published_at` DATETIME DEFAULT NULL COMMENT '发布时间',
+  `effective_config_hash` VARCHAR(128) DEFAULT NULL COMMENT '有效配置摘要哈希',
   `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
   `updated_at` DATETIME NOT NULL COMMENT '记录更新时间',
+  `public_grpc_enabled` TINYINT NOT NULL DEFAULT 0 COMMENT '是否启用对外 public gRPC 服务，0=否，1=是',
+  `public_grpc_host` VARCHAR(255) NOT NULL DEFAULT '0.0.0.0' COMMENT '对外 public gRPC 监听主机',
+  `public_grpc_port` INT NOT NULL DEFAULT 9090 COMMENT '对外 public gRPC 监听端口',
   PRIMARY KEY (`config_version`),
   KEY `idx_published_updated_at` (`published`, `updated_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行配置版本表，用于保存草稿配置与已发布配置';
@@ -655,6 +733,10 @@ CREATE TABLE IF NOT EXISTS `t_live_session` (
   `status` TINYINT NOT NULL DEFAULT 1 COMMENT '会话状态，1=待启动，2=直播中，3=已结束，4=异常中断',
   `ingest_url` VARCHAR(1024) DEFAULT NULL COMMENT '本次会话实际推流接入地址，便于联调和排查推流问题',
   `playback_hls_url` VARCHAR(1024) DEFAULT NULL COMMENT '本次会话对应的 HLS 播放地址，用于播放网关或后台展示',
+  `push_protocol` VARCHAR(32) DEFAULT NULL COMMENT '推流协议，例如 rtmp、srt',
+  `assigned_node_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '当前承载该直播会话的节点ID',
+  `assigned_worker_id` VARCHAR(128) NOT NULL DEFAULT '' COMMENT '当前承载该直播会话的 Worker 标识',
+  `resume_count` INT NOT NULL DEFAULT 0 COMMENT '中断恢复次数',
   `started_at` DATETIME DEFAULT NULL COMMENT '会话启动时间',
   `ended_at` DATETIME DEFAULT NULL COMMENT '会话结束时间',
   `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
@@ -726,32 +808,50 @@ CREATE TABLE IF NOT EXISTS `t_live_publish_auth_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='直播推流鉴权日志表，用于记录直播推流接入鉴权过程';
 
 -- ============================================================
--- 7. 配置中心绑定表
+-- 7. bootstrap 配置源绑定表
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS `t_config_center_binding` (
   `binding_id` BIGINT UNSIGNED NOT NULL COMMENT '绑定ID',
   `binding_name` VARCHAR(128) NOT NULL COMMENT '绑定名称',
-  `provider_type` VARCHAR(32) NOT NULL COMMENT '配置中心类型，如 nacos/apollo/etcd/consul',
-  `endpoint` VARCHAR(512) NOT NULL COMMENT '配置中心连接地址',
-  `config_namespace` VARCHAR(128) DEFAULT NULL COMMENT '命名空间/分组',
+  `provider_type` VARCHAR(64) NOT NULL COMMENT 'bootstrap 配置源类型，如 nacos/apollo/etcd/consul',
+  `endpoint` VARCHAR(1024) DEFAULT NULL COMMENT 'bootstrap 配置源连接地址',
+  `namespace` VARCHAR(255) DEFAULT NULL COMMENT '配置命名空间或租户空间',
   `auth_mode` VARCHAR(32) NOT NULL DEFAULT 'none' COMMENT '鉴权模式，如 none/token/rbac',
   `access_key` VARCHAR(256) DEFAULT NULL COMMENT '访问密钥',
   `secret_key` VARCHAR(256) DEFAULT NULL COMMENT '密钥',
   `token` VARCHAR(512) DEFAULT NULL COMMENT '鉴权令牌',
   `enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用',
-  `priority` INT NOT NULL DEFAULT 0 COMMENT '优先级，数值越小越优先',
-  `last_sync_status` VARCHAR(32) DEFAULT NULL COMMENT '最近同步状态',
+  `priority` INT NOT NULL DEFAULT 0 COMMENT '优先级，数值越大越优先',
+  `last_sync_status` VARCHAR(64) DEFAULT NULL COMMENT '最近同步状态',
   `last_sync_message` VARCHAR(1024) DEFAULT NULL COMMENT '最近同步消息',
   `last_sync_at` DATETIME DEFAULT NULL COMMENT '最近同步时间',
   `created_at` DATETIME NOT NULL COMMENT '创建时间',
   `updated_at` DATETIME NOT NULL COMMENT '更新时间',
   PRIMARY KEY (`binding_id`),
-  UNIQUE KEY `uk_binding_name` (`binding_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='配置中心绑定表';
+  UNIQUE KEY `uk_binding_name` (`binding_name`),
+  KEY `idx_enabled_priority` (`enabled`, `priority`, `updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='bootstrap 配置源绑定表';
+
+CREATE TABLE IF NOT EXISTS `t_effective_runtime_config_snapshot` (
+  `snapshot_id` BIGINT UNSIGNED NOT NULL COMMENT '有效配置快照主键ID',
+  `config_version` BIGINT UNSIGNED NOT NULL COMMENT '关联的运行配置版本号',
+  `config_source` VARCHAR(64) NOT NULL COMMENT '有效配置来源，例如 admin_db、bootstrap_default、bootstrap_fallback',
+  `source_revision` VARCHAR(128) DEFAULT NULL COMMENT '来源修订号',
+  `merged_payload_json` JSON NOT NULL COMMENT '最终合并后的有效配置完整载荷',
+  `config_hash` VARCHAR(128) NOT NULL COMMENT '有效配置摘要哈希',
+  `created_by` VARCHAR(128) DEFAULT NULL COMMENT '创建人或触发来源',
+  `created_at` DATETIME NOT NULL COMMENT '创建时间',
+  PRIMARY KEY (`snapshot_id`),
+  KEY `idx_config_version` (`config_version`),
+  KEY `idx_config_hash` (`config_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='有效运行配置快照表，用于持久化最终配置结果；运行期热路径应优先从 Redis 缓存读取';
 
 -- ============================================================
--- 8. 初始化最小可运行种子数据
+-- 8. 可选初始化种子数据
+-- 说明：
+-- - admin 用户 / 默认 profile 属于可选初始化数据，便于首次登录和快速联调。
+-- - t_runtime_config 不再通过 SQL 种子写入；应用首次启动时会自动生成首版已发布 runtime config。
 -- ============================================================
 
 START TRANSACTION;
@@ -845,158 +945,6 @@ INSERT INTO `t_transcode_profile_rendition` (
 ON DUPLICATE KEY UPDATE
   `enabled` = VALUES(`enabled`),
   `audio_bitrate_kbps` = VALUES(`audio_bitrate_kbps`),
-  `updated_at` = VALUES(`updated_at`);
-
-UPDATE `t_runtime_config`
-SET `published` = 0,
-    `updated_at` = @now
-WHERE `published` = 1;
-
-INSERT INTO `t_runtime_config` (
-  `config_version`,
-  `enable_http_server`,
-  `enable_callback`,
-  `default_profile_id`,
-  `max_global_transcode_sessions`,
-  `job_lease_ttl_sec`,
-  `worker_heartbeat_timeout_sec`,
-  `allow_request_override_profile`,
-  `allow_request_override_segment_duration`,
-  `allow_request_override_hwaccel`,
-  `published`,
-  `scheduler_loop_interval_ms`,
-  `worker_assigned_status`,
-  `worker_probe_fail_progress_permille`,
-  `worker_upload_fail_progress_permille`,
-  `worker_success_progress_permille`,
-  `worker_loop_interval_ms`,
-  `rpc_loop_interval_ms`,
-  `mq_loop_interval_ms`,
-  `require_hardware_encode`,
-  `allow_software_decode_fallback`,
-  `soft_decode_cpu_limit_percent`,
-  `node_cpu_safety_limit_percent`,
-  `node_memory_safety_limit_percent`,
-  `node_gpu_memory_safety_limit_percent`,
-  `single_job_upload_concurrency_limit`,
-  `dynamic_concurrency_control_enabled`,
-  `require_hardware_watermark`,
-  `worker_probe_fail_message`,
-  `worker_upload_fail_message`,
-  `worker_success_message`,
-  `callback_http_url`,
-  `callback_rpc_endpoint`,
-  `callback_mq_topic`,
-  `mq_queue_name`,
-  `mq_host`,
-  `mq_port`,
-  `mq_username`,
-  `mq_password`,
-  `mq_vhost`,
-  `mq_consumer_tag`,
-  `mq_prefetch_count`,
-  `scheduler_worker_id`,
-  `worker_output_path`,
-  `worker_object_prefix`,
-  `change_summary`,
-  `created_at`,
-  `updated_at`
-) VALUES (
-  1,
-  1,
-  1,
-  1,
-  10,
-  60,
-  20,
-  1,
-  1,
-  1,
-  1,
-  5000,
-  3,
-  0,
-  800,
-  1000,
-  5000,
-  15000,
-  15000,
-  1,
-  1,
-  50,
-  85,
-  85,
-  90,
-  4,
-  1,
-  1,
-  'FFprobe 探测失败',
-  '对象存储上传失败',
-  '任务执行完成',
-  NULL,
-  NULL,
-  NULL,
-  NULL,
-  NULL,
-  5672,
-  NULL,
-  NULL,
-  '/',
-  'vod-mq-consumer',
-  10,
-  'worker-default',
-  NULL,
-  'transcode/',
-  '初始化最小可运行配置',
-  @now,
-  @now
-)
-ON DUPLICATE KEY UPDATE
-  `enable_http_server` = VALUES(`enable_http_server`),
-  `enable_callback` = VALUES(`enable_callback`),
-  `default_profile_id` = VALUES(`default_profile_id`),
-  `max_global_transcode_sessions` = VALUES(`max_global_transcode_sessions`),
-  `job_lease_ttl_sec` = VALUES(`job_lease_ttl_sec`),
-  `worker_heartbeat_timeout_sec` = VALUES(`worker_heartbeat_timeout_sec`),
-  `allow_request_override_profile` = VALUES(`allow_request_override_profile`),
-  `allow_request_override_segment_duration` = VALUES(`allow_request_override_segment_duration`),
-  `allow_request_override_hwaccel` = VALUES(`allow_request_override_hwaccel`),
-  `published` = VALUES(`published`),
-  `scheduler_loop_interval_ms` = VALUES(`scheduler_loop_interval_ms`),
-  `worker_assigned_status` = VALUES(`worker_assigned_status`),
-  `worker_probe_fail_progress_permille` = VALUES(`worker_probe_fail_progress_permille`),
-  `worker_upload_fail_progress_permille` = VALUES(`worker_upload_fail_progress_permille`),
-  `worker_success_progress_permille` = VALUES(`worker_success_progress_permille`),
-  `worker_loop_interval_ms` = VALUES(`worker_loop_interval_ms`),
-  `rpc_loop_interval_ms` = VALUES(`rpc_loop_interval_ms`),
-  `mq_loop_interval_ms` = VALUES(`mq_loop_interval_ms`),
-  `require_hardware_encode` = VALUES(`require_hardware_encode`),
-  `allow_software_decode_fallback` = VALUES(`allow_software_decode_fallback`),
-  `soft_decode_cpu_limit_percent` = VALUES(`soft_decode_cpu_limit_percent`),
-  `node_cpu_safety_limit_percent` = VALUES(`node_cpu_safety_limit_percent`),
-  `node_memory_safety_limit_percent` = VALUES(`node_memory_safety_limit_percent`),
-  `node_gpu_memory_safety_limit_percent` = VALUES(`node_gpu_memory_safety_limit_percent`),
-  `single_job_upload_concurrency_limit` = VALUES(`single_job_upload_concurrency_limit`),
-  `dynamic_concurrency_control_enabled` = VALUES(`dynamic_concurrency_control_enabled`),
-  `require_hardware_watermark` = VALUES(`require_hardware_watermark`),
-  `worker_probe_fail_message` = VALUES(`worker_probe_fail_message`),
-  `worker_upload_fail_message` = VALUES(`worker_upload_fail_message`),
-  `worker_success_message` = VALUES(`worker_success_message`),
-  `callback_http_url` = VALUES(`callback_http_url`),
-  `callback_rpc_endpoint` = VALUES(`callback_rpc_endpoint`),
-  `callback_mq_topic` = VALUES(`callback_mq_topic`),
-  `mq_queue_name` = VALUES(`mq_queue_name`),
-  `mq_host` = VALUES(`mq_host`),
-  `mq_port` = VALUES(`mq_port`),
-  `mq_username` = VALUES(`mq_username`),
-  `mq_password` = VALUES(`mq_password`),
-  `mq_vhost` = VALUES(`mq_vhost`),
-  `mq_consumer_tag` = VALUES(`mq_consumer_tag`),
-  `mq_prefetch_count` = VALUES(`mq_prefetch_count`),
-  `scheduler_worker_id` = VALUES(`scheduler_worker_id`),
-  `worker_output_path` = VALUES(`worker_output_path`),
-  `worker_object_prefix` = VALUES(`worker_object_prefix`),
-  `change_summary` = VALUES(`change_summary`),
   `updated_at` = VALUES(`updated_at`);
 
 COMMIT;

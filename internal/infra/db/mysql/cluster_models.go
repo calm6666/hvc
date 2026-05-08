@@ -56,23 +56,23 @@ func (NodeGPUDeviceRecord) TableName() string { return "t_node_gpu_device" }
 
 // WorkerInstanceRecord 表示 Worker 实例表映射。
 type WorkerInstanceRecord struct {
-	ID                 uint64    `gorm:"column:id;primaryKey"`
-	NodeID             uint64    `gorm:"column:node_id"`
-	WorkerID           string    `gorm:"column:worker_id"`
-	LogicalWorkerID    string    `gorm:"column:logical_worker_id"`
-	PhysicalWorkerID   string    `gorm:"column:physical_worker_id"`
-	MachineFingerprint string    `gorm:"column:machine_fingerprint"`
-	StartupInstanceID  string    `gorm:"column:startup_instance_id"`
-	BootID             string    `gorm:"column:boot_id"`
-	PID                int       `gorm:"column:pid"`
-	Version            string    `gorm:"column:version"`
-	Status             int       `gorm:"column:status"`
-	StartAt            time.Time `gorm:"column:start_at"`
-	ExitedAt           time.Time `gorm:"column:exited_at"`
-	ExitReason         string    `gorm:"column:exit_reason"`
-	LastHeartbeatAt    time.Time `gorm:"column:last_heartbeat_at"`
-	CreatedAt          time.Time `gorm:"column:created_at"`
-	UpdatedAt          time.Time `gorm:"column:updated_at"`
+	ID                 uint64     `gorm:"column:id;primaryKey"`
+	NodeID             uint64     `gorm:"column:node_id"`
+	WorkerID           string     `gorm:"column:worker_id"`
+	LogicalWorkerID    string     `gorm:"column:logical_worker_id"`
+	PhysicalWorkerID   string     `gorm:"column:physical_worker_id"`
+	MachineFingerprint string     `gorm:"column:machine_fingerprint"`
+	StartupInstanceID  string     `gorm:"column:startup_instance_id"`
+	BootID             string     `gorm:"column:boot_id"`
+	PID                int        `gorm:"column:pid"`
+	Version            string     `gorm:"column:version"`
+	Status             int        `gorm:"column:status"`
+	StartAt            time.Time  `gorm:"column:start_at"`
+	ExitedAt           *time.Time `gorm:"column:exited_at"`
+	ExitReason         string     `gorm:"column:exit_reason"`
+	LastHeartbeatAt    time.Time  `gorm:"column:last_heartbeat_at"`
+	CreatedAt          time.Time  `gorm:"column:created_at"`
+	UpdatedAt          time.Time  `gorm:"column:updated_at"`
 }
 
 func (WorkerInstanceRecord) TableName() string { return "t_worker_instance" }
@@ -94,7 +94,7 @@ type WorkerCodecCapabilityRecord struct {
 	MaxSessions           int       `gorm:"column:max_sessions"`
 	Enabled               bool      `gorm:"column:enabled"`
 	IsLatest              bool      `gorm:"column:is_latest"`
-	CapabilityPayloadJSON string    `gorm:"column:capability_payload_json"`
+	CapabilityPayloadJSON *string   `gorm:"column:capability_payload_json"`
 	CollectedAt           time.Time `gorm:"column:collected_at"`
 	CreatedAt             time.Time `gorm:"column:created_at"`
 }

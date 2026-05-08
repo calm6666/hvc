@@ -36,8 +36,13 @@ func (u *CreateJobUseCase) Execute(req model.CreateJobRequest) (CreateJobResult,
 			return CreateJobResult{}, ErrInvalidCallbackURL
 		}
 	}
-	if req.VideoOptions != nil && strings.TrimSpace(req.VideoOptions.AspectFillMode) != "" {
-		return CreateJobResult{}, ErrUnsupportedVideoOptions
+	if req.VideoOptions != nil {
+		// video_options 当前还没有真正落进转码执行链路。
+		// 为了避免“请求已被接受，但字段其实完全不生效”的假支持状态，
+		// 这里只要收到任何非零值的视频选项，就直接显式拒绝。
+		if req.VideoOptions.OutputAspectKeep || strings.TrimSpace(req.VideoOptions.AspectFillMode) != "" {
+			return CreateJobResult{}, ErrUnsupportedVideoOptions
+		}
 	}
 	if req.SegmentOptions != nil && req.SegmentOptions.NamingTemplateID != 0 {
 		return CreateJobResult{}, ErrUnsupportedNamingTemplate

@@ -11,7 +11,11 @@ import (
 func (r *AdminRepository) SaveUser(ctx context.Context, username, passwordHash, displayName string, status int) (AdminUserRecord, error) {
 	now := time.Now()
 	var record AdminUserRecord
-	if err := r.db.WithContext(ctx).Where("username = ?", username).Take(&record).Error; err == nil {
+	result := r.db.WithContext(ctx).Where("username = ?", username).Limit(1).Find(&record)
+	if result.Error != nil {
+		return AdminUserRecord{}, result.Error
+	}
+	if result.RowsAffected > 0 {
 		record.PasswordHash = passwordHash
 		record.DisplayName = displayName
 		record.Status = status

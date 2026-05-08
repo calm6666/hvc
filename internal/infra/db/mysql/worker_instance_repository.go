@@ -26,7 +26,11 @@ func NewWorkerInstanceRepository(db *DB) *WorkerInstanceRepository {
 func (r *WorkerInstanceRepository) EnsureOnline(ctx context.Context, nodeID uint64, workerID, logicalWorkerID, physicalWorkerID, machineFingerprint, startupInstanceID string) (uint64, error) {
 	now := time.Now()
 	var existing WorkerInstanceRecord
-	if err := r.db.WithContext(ctx).Where("worker_id = ?", workerID).Take(&existing).Error; err == nil {
+	result := r.db.WithContext(ctx).Where("worker_id = ?", workerID).Limit(1).Find(&existing)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
 		return existing.ID, r.db.WithContext(ctx).Model(&WorkerInstanceRecord{}).
 			Where("id = ?", existing.ID).
 			Updates(map[string]any{
@@ -37,6 +41,8 @@ func (r *WorkerInstanceRepository) EnsureOnline(ctx context.Context, nodeID uint
 				"startup_instance_id": startupInstanceID,
 				"status":              1,
 				"start_at":            now,
+				"exited_at":           nil,
+				"exit_reason":         "",
 				"last_heartbeat_at":   now,
 				"updated_at":          now,
 			}).Error
@@ -51,6 +57,7 @@ func (r *WorkerInstanceRepository) EnsureOnline(ctx context.Context, nodeID uint
 		StartupInstanceID:  startupInstanceID,
 		Status:             1,
 		StartAt:            now,
+		ExitedAt:           nil,
 		LastHeartbeatAt:    now,
 		CreatedAt:          now,
 		UpdatedAt:          now,

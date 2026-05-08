@@ -30,5 +30,5 @@ func (u *ReloadUseCase) Execute(ctx context.Context) {
 	if !ok {
 		return
 	}
-	u.effective.Replace(mysql.ToDynamicRuntimeConfig(record))
+	u.effective.ReplaceWithVersion(mysql.ToDynamicRuntimeConfig(record), record.ConfigVersion)
 }

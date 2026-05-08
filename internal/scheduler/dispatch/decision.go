@@ -81,33 +81,21 @@ func PickTopKRandom(candidates []model.DispatchCandidate, topK int) (model.Dispa
 
 // BuildDecision 生成调度结果。
 //
-// 当前策略采用"优先选第一张可用卡"的最小实现，但会同时把最终执行硬件类型写回决策结果。
-// 这样至少可以保证：
-//  1. selected_execution_hwaccel 不再写成无意义的 hardware；
-//  2. Worker、调度器、数据库字段对同一套执行模式常量达成一致；
-//  3. 后续就算要引入更复杂的多卡选择策略，也只需要在这里收敛。
+// 当前策略已经收敛为“先选节点，再在节点内选最合适的 GPU”：
+// 1. 若请求指定 PreferredHWAccel，则优先挑能满足该执行模式的卡；
+// 2. 节点内多卡按 active_sessions / gpu_memory_usage / gpu_utilization 综合评分；
+// 3. 若节点没有 GPU，则明确回落为 software，并把 selected_gpu_index 写成 -1。
 func BuildDecision(candidate model.DispatchCandidate, preferredHWAccel string, previousLeaseGeneration uint64, previousAttemptNo int) model.DispatchDecision {
-	selectedGPUIndex := 0
+	selectedGPUIndex := -1
 	selectedGPUDeviceID := uint64(0)
 	selectedExecutionHW := model.ExecutionHWSoftware
-	if len(candidate.Metrics.GPUCapabilities) > 0 {
-		capability := candidate.Metrics.GPUCapabilities[0]
+	if capability, ok := pickBestGPU(candidate.Metrics.GPUCapabilities, preferredHWAccel); ok {
 		selectedGPUIndex = capability.GPUIndex
 		selectedGPUDeviceID = capability.GPUDeviceID
 		if selectedGPUDeviceID == 0 {
 			selectedGPUDeviceID = uint64(capability.GPUIndex + 1)
 		}
-		if preferredHWAccel != "" {
-			for _, hwType := range capability.ExecutionHWTypes {
-				if hwType == preferredHWAccel {
-					selectedExecutionHW = hwType
-					break
-				}
-			}
-		}
-		if selectedExecutionHW == model.ExecutionHWSoftware && len(capability.ExecutionHWTypes) > 0 {
-			selectedExecutionHW = capability.ExecutionHWTypes[0]
-		}
+		selectedExecutionHW = resolveExecutionHW(capability, preferredHWAccel)
 	}
 	return model.DispatchDecision{
 		NodeID:              candidate.NodeID,
@@ -117,4 +105,71 @@ func BuildDecision(candidate model.DispatchCandidate, preferredHWAccel string, p
 		LeaseGeneration:     previousLeaseGeneration + 1,
 		AttemptNo:           previousAttemptNo + 1,
 	}
+}
+
+func pickBestGPU(capabilities []model.GPUCapability, preferredHWAccel string) (model.GPUCapability, bool) {
+	if len(capabilities) == 0 {
+		return model.GPUCapability{}, false
+	}
+
+	filtered := make([]model.GPUCapability, 0, len(capabilities))
+	for _, capability := range capabilities {
+		if preferredHWAccel != "" && !supportsExecutionHW(capability, preferredHWAccel) {
+			continue
+		}
+		if capability.MaxSessions > 0 && capability.ActiveSessions >= capability.MaxSessions {
+			continue
+		}
+		filtered = append(filtered, capability)
+	}
+	if len(filtered) == 0 {
+		for _, capability := range capabilities {
+			if capability.MaxSessions > 0 && capability.ActiveSessions >= capability.MaxSessions {
+				continue
+			}
+			filtered = append(filtered, capability)
+		}
+	}
+	if len(filtered) == 0 {
+		return model.GPUCapability{}, false
+	}
+
+	best := filtered[0]
+	bestScore := scoreGPU(best)
+	for _, capability := range filtered[1:] {
+		score := scoreGPU(capability)
+		if score < bestScore || (score == bestScore && capability.GPUIndex < best.GPUIndex) {
+			best = capability
+			bestScore = score
+		}
+	}
+	return best, true
+}
+
+func scoreGPU(capability model.GPUCapability) int {
+	score := 0
+	score += capability.ActiveSessions * 10000
+	score += capability.GPUMemoryUsagePercent * 100
+	score += capability.GPUUtilizationPercent * 10
+	score += capability.GPUIndex
+	return score
+}
+
+func supportsExecutionHW(capability model.GPUCapability, preferredHWAccel string) bool {
+	for _, hwType := range capability.ExecutionHWTypes {
+		if hwType == preferredHWAccel {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveExecutionHW(capability model.GPUCapability, preferredHWAccel string) string {
+	if preferredHWAccel != "" && supportsExecutionHW(capability, preferredHWAccel) {
+		return preferredHWAccel
+	}
+	if len(capability.ExecutionHWTypes) > 0 {
+		return capability.ExecutionHWTypes[0]
+	}
+	return model.ExecutionHWSoftware
 }

@@ -1,14 +1,14 @@
 # 服务 bootstrap 配置。
 # 生产约束：
-# 1. server/mysql/redis/config_center/id 属于启动配置；
-# 2. scheduler/worker/callback/storage/grpc/mq 仅在数据库还没有已发布 runtime config 时，
-#    作为“首启初始化默认值”写入数据库；
-# 3. 首次落库后，运行期业务配置统一通过后台动态接口维护并热更新，
+# 1. server/mysql/redis/internal_grpc/config_center/id 属于启动配置；
+# 2. scheduler/worker/callback/storage/public_grpc/mq 等业务运行参数统一通过后台 runtime config 维护；
+# 3. 程序内置一组稳定的首启默认值，仅在数据库还没有已发布 runtime config 时写入；
+# 4. 首次落库后，运行期业务配置统一通过后台动态接口维护并热更新，
 #    修改本文件不会直接变成运行期热更新。
 
 server:
   # HTTP 服务监听地址。
-  listen_address: ":8080"
+  listen_address: ":8888"
   # 对外广播 IP；为空或 auto 时自动探测。
   advertise_ip: ""
   # 服务名，用于日志和集群内标识。
@@ -20,7 +20,7 @@ server:
 
 mysql:
   # MySQL 连接串。
-  dsn: "root:root@tcp(127.0.0.1:3306)/hvc?parseTime=true&charset=utf8mb4"
+  dsn: "root:123456@tcp(127.0.0.1:3306)/hvc?parseTime=true&charset=utf8mb4"
   # 是否启用分库分表。
   sharding_enabled: false
   # 分片数量。
@@ -34,77 +34,22 @@ redis:
   # Redis 地址列表。
   addrs:
     - "127.0.0.1:6379"
-  password: ""
+  password: "123456"
   db: 0
   cluster_enabled: false
   dial_timeout: "2s"
   read_timeout: "2s"
   write_timeout: "2s"
 
-# 下面这些段不是“配置中心动态热更新源”，只用于首启给 runtime config 落默认值。
-mq:
-  rabbitmq_dsn: "amqp://guest:guest@127.0.0.1:5672/"
-  rabbitmq_host: "127.0.0.1"
-  rabbitmq_port: 5672
-  rabbitmq_user: "guest"
-  rabbitmq_password: "guest"
-  rabbitmq_vhost: "/"
-  queue_name: ""
-  consumer_tag: "vod-mq-consumer"
-  prefetch_count: 10
-  loop_interval: "15s"
-  callback_topic: ""
-
-storage:
-  storage_type: "s3"
-  endpoint: "127.0.0.1:9000"
-  bucket: "hvc-media"
-  access_key_id: "minioadmin"
-  secret_access_key: "minioadmin"
-  use_ssl: false
-  base_prefix: "hvc"
-  play_domain: ""
-  flv_domain: ""
-  local_base_path: "/data/hvc/media"
-  default_storage_id: 0
-
-callback:
-  http_url: "http://127.0.0.1:9090/callback"
-  http_timeout: "5s"
-  grpc_timeout: "3s"
-  mq_timeout: "3s"
-  retry_backoff: "2s"
-
-scheduler:
-  loop_interval: "3s"
-  job_lease_ttl: "5m"
-  worker_heartbeat_timeout: "30s"
-  require_hardware_encode: false
-  allow_software_decode_fallback: true
-  require_hardware_watermark: false
-  soft_decode_cpu_limit_percent: 80
-  node_cpu_safety_limit_percent: 90
-  node_memory_safety_limit_percent: 90
-  node_gpu_safety_limit_percent: 90
-  max_global_transcode_sessions: 100
-  max_node_transcode_sessions: 10
-  max_node_upload_concurrency: 20
-  dynamic_concurrency_control: true
-
-worker:
-  loop_interval: "2s"
-  single_job_upload_concurrency: 4
-  source_read_timeout: "30m"
-  upload_retry_base_delay: "1s"
-  upload_retry_max_delay: "30s"
-  upload_max_retry_count: 3
-  segment_template: "{job_id}-{media_type}-{number}.m4s"
-
-grpc:
-  listen_address: ":9090"
+internal_grpc:
+  # 集群内部 gRPC 通信入口，节点启动即初始化，不参与运行期热启停。
+  enabled: true
+  listen_address: ":19090"
+  # 集群内部控制面共享令牌；生产环境请替换为高强度随机值。
+  shared_token: "hvc-internal-local-token"
   max_recv_msg_size: 64
   max_send_msg_size: 64
-  connection_timeout: "5s"
+  graceful_stop_timeout: "5s"
 
 config_center:
   # 外部配置中心只承载 bootstrap / 集群基础配置，不直接承载 runtime 业务动态配置。

@@ -11,7 +11,7 @@ import (
 )
 
 var hwEncoderMap = map[string]map[string]string{
-	model.ExecutionHWNVIDIA:             {"h264": "h264_nvenc", "hevc": "hevc_nvenc"},
+	model.ExecutionHWNVIDIA:            {"h264": "h264_nvenc", "hevc": "hevc_nvenc"},
 	model.ExecutionHWIntelQSV:          {"h264": "h264_qsv", "hevc": "hevc_qsv"},
 	model.ExecutionHWAMDAMF:            {"h264": "h264_amf", "hevc": "hevc_amf"},
 	model.ExecutionHWVAAPI:             {"h264": "h264_vaapi", "hevc": "hevc_vaapi"},
@@ -19,7 +19,7 @@ var hwEncoderMap = map[string]map[string]string{
 }
 
 var hwDecoderMap = map[string]map[string]string{
-	model.ExecutionHWNVIDIA:             {"h264": "h264_cuvid", "hevc": "hevc_cuvid"},
+	model.ExecutionHWNVIDIA:            {"h264": "h264_cuvid", "hevc": "hevc_cuvid"},
 	model.ExecutionHWIntelQSV:          {"h264": "h264_qsv", "hevc": "hevc_qsv"},
 	model.ExecutionHWAMDAMF:            {"h264": "h264_d3d11va", "hevc": "hevc_d3d11va"},
 	model.ExecutionHWVAAPI:             {"h264": "h264_vaapi", "hevc": "hevc_vaapi"},
@@ -27,7 +27,7 @@ var hwDecoderMap = map[string]map[string]string{
 }
 
 var hwAccelFlagMap = map[string]string{
-	model.ExecutionHWNVIDIA:             "cuda",
+	model.ExecutionHWNVIDIA:            "cuda",
 	model.ExecutionHWIntelQSV:          "qsv",
 	model.ExecutionHWAMDAMF:            "d3d11va",
 	model.ExecutionHWVAAPI:             "vaapi",
@@ -322,6 +322,7 @@ func osTempDir() string {
 //
 // 模板占位符：
 //   - {job_id}       任务 ID（雪花 ID）
+//   - {rendition_key} 清晰度稳定短 key，同一任务同一清晰度重试时保持不变
 //   - {media_type}   媒体类型（video / audio）
 //   - {number}       分片序号（0=init, 1/2/3...=media）
 //   - {resolution}   视频分辨率（宽_高，如 1920_1080）
@@ -330,6 +331,7 @@ func osTempDir() string {
 func RenderSegmentName(template string, jobID uint64, rend RenditionSpec, mediaType string, number int, timestampMS int64) string {
 	result := template
 	result = strings.ReplaceAll(result, "{job_id}", fmt.Sprintf("%d", jobID))
+	result = strings.ReplaceAll(result, "{rendition_key}", rend.RenditionKey)
 	result = strings.ReplaceAll(result, "{media_type}", mediaType)
 	result = strings.ReplaceAll(result, "{number}", fmt.Sprintf("%d", number))
 	result = strings.ReplaceAll(result, "{resolution}", rend.Resolution())

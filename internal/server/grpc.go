@@ -7,13 +7,9 @@ import (
 	"sync"
 	"time"
 
-	clusterv1 "hvc/api/pb/clusterv1"
 	transcodev1 "hvc/api/pb/transcodev1"
-	"hvc/internal/cluster"
 	"hvc/internal/config"
 	"hvc/internal/configcenter"
-	rediscache "hvc/internal/infra/cache/redis"
-	"hvc/internal/infra/db/mysql"
 	grpcinterceptor "hvc/internal/interfaces/grpc/interceptor"
 	grpcpublic "hvc/internal/interfaces/grpc/public"
 	"hvc/internal/model"
@@ -23,35 +19,30 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-// GRPCServer 管理 gRPC 服务的生命周期，支持动态启停和监听地址切换。
+// GRPCServer 管理对外 public gRPC 服务的生命周期。
+//
+// 这一层只承载面向外部调用方发布的业务 RPC，支持运行期热启停和监听地址切换。
+// 集群内部通信使用独立的 InternalGRPCServer，避免热更新把内部链路一并打断。
 type GRPCServer struct {
 	initialConfig   config.DynamicRuntimeConfig
 	effectiveConfig *configcenter.EffectiveConfig
 	publicServer    grpcpublic.TranscodePublicServer
-	stateCache      *cluster.StateCache
-	progressStore   *rediscache.ProgressStore
-	segmentRepo     *mysql.SegmentRepository
-	jobRepo         *mysql.JobRepository
 	mu              sync.Mutex
 	running         bool
 	cancel          context.CancelFunc
 	currentAddress  string
 }
 
-// NewGRPCServer 创建 gRPC 服务器。
-func NewGRPCServer(initialConfig config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, publicServer grpcpublic.TranscodePublicServer, stateCache *cluster.StateCache, progressStore *rediscache.ProgressStore, segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository) *GRPCServer {
+// NewGRPCServer 创建对外 public gRPC 服务管理器。
+func NewGRPCServer(initialConfig config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, publicServer grpcpublic.TranscodePublicServer) *GRPCServer {
 	return &GRPCServer{
 		initialConfig:   initialConfig,
 		effectiveConfig: effectiveConfig,
 		publicServer:    publicServer,
-		stateCache:      stateCache,
-		progressStore:   progressStore,
-		segmentRepo:     segmentRepo,
-		jobRepo:         jobRepo,
 	}
 }
 
-// Reconcile 根据当前生效配置协调 gRPC 服务的启停状态。
+// Reconcile 根据当前生效配置协调 public gRPC 的启停状态。
 func (s *GRPCServer) Reconcile(parent context.Context) {
 	cfg := s.currentConfig()
 	address := cfg.GRPC.ListenAddress
@@ -81,10 +72,13 @@ func (s *GRPCServer) Reconcile(parent context.Context) {
 func (s *GRPCServer) serve(ctx context.Context, cfg config.DynamicRuntimeConfig, address string) {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		logx.Error("grpc.server.listen_failed", err, logx.Fields{"address": address})
+		logx.Error("grpc.public.listen_failed", err, logx.Fields{"address": address})
 		s.markStopped(address)
 		return
 	}
+	logx.Info("grpc.public.listening", logx.Fields{
+		"address": address,
+	})
 
 	serverOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpcinterceptor.UnaryLogInterceptor()),
@@ -95,14 +89,9 @@ func (s *GRPCServer) serve(ctx context.Context, cfg config.DynamicRuntimeConfig,
 	if cfg.GRPC.MaxSendMsgSizeMB > 0 {
 		serverOpts = append(serverOpts, grpc.MaxSendMsgSize(cfg.GRPC.MaxSendMsgSizeMB*1024*1024))
 	}
+
 	grpcServer := grpc.NewServer(serverOpts...)
 	transcodev1.RegisterTranscodePublicServiceServer(grpcServer, &transcodePublicRPCServer{service: s.publicServer})
-	clusterv1.RegisterClusterInternalServiceServer(grpcServer, &clusterInternalRPCServer{
-		stateCache:    s.stateCache,
-		progressStore: s.progressStore,
-		segmentRepo:   s.segmentRepo,
-		jobRepo:       s.jobRepo,
-	})
 	reflection.Register(grpcServer)
 
 	go func() {
@@ -121,7 +110,7 @@ func (s *GRPCServer) serve(ctx context.Context, cfg config.DynamicRuntimeConfig,
 	}()
 
 	if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
-		logx.Error("grpc.server.serve_failed", err, logx.Fields{"address": address})
+		logx.Error("grpc.public.serve_failed", err, logx.Fields{"address": address})
 	}
 	s.markStopped(address)
 }
@@ -188,57 +177,6 @@ func (s *transcodePublicRPCServer) QueryProgress(ctx context.Context, req *trans
 		CurrentBitrateKbps: progress.CurrentBitrateKbps,
 		CurrentSpeed:       progress.CurrentSpeed,
 	}, nil
-}
-
-type clusterInternalRPCServer struct {
-	clusterv1.UnimplementedClusterInternalServiceServer
-	stateCache    *cluster.StateCache
-	progressStore *rediscache.ProgressStore
-	segmentRepo   *mysql.SegmentRepository
-	jobRepo       *mysql.JobRepository
-}
-
-func (s *clusterInternalRPCServer) WorkerHeartbeat(ctx context.Context, req *clusterv1.WorkerHeartbeatRequest) (*clusterv1.WorkerHeartbeatResponse, error) {
-	if s.stateCache != nil {
-		s.stateCache.SaveHeartbeat(ctx, model.WorkerHeartbeat{
-			NodeID:             req.GetNodeId(),
-			WorkerID:           req.GetWorkerId(),
-			StartupInstanceID:  req.GetStartupInstanceId(),
-			MachineFingerprint: req.GetMachineFingerprint(),
-			Timestamp:          time.Now(),
-		})
-	}
-	return &clusterv1.WorkerHeartbeatResponse{Accepted: true}, nil
-}
-
-func (s *clusterInternalRPCServer) ReportProgress(ctx context.Context, req *clusterv1.ReportProgressRequest) (*clusterv1.ReportProgressResponse, error) {
-	snapshot := model.ProgressSnapshot{
-		JobID:              req.GetJobId(),
-		Status:             int(req.GetStatus()),
-		Stage:              req.GetStage(),
-		ProgressPermille:   int(req.GetProgressPermille()),
-		CurrentFPS:         req.GetFps(),
-		CurrentBitrateKbps: req.GetBitrateKbps(),
-		CurrentSpeed:       req.GetSpeed(),
-		UpdatedAt:          time.Now(),
-	}
-	if s.progressStore != nil {
-		s.progressStore.Save(ctx, snapshot)
-	}
-	if s.jobRepo != nil {
-		_ = s.jobRepo.UpdateProgress(ctx, snapshot.JobID, snapshot.ProgressPermille, snapshot.Stage)
-	}
-	return &clusterv1.ReportProgressResponse{Accepted: true}, nil
-}
-
-func (s *clusterInternalRPCServer) SegmentUploaded(ctx context.Context, req *clusterv1.SegmentUploadedRequest) (*clusterv1.SegmentUploadedResponse, error) {
-	if s.segmentRepo == nil {
-		return &clusterv1.SegmentUploadedResponse{Accepted: true}, nil
-	}
-	if err := s.segmentRepo.MarkUploaded(ctx, req.GetSegmentId(), req.GetObjectEtag(), req.GetObjectSizeBytes()); err != nil {
-		return nil, err
-	}
-	return &clusterv1.SegmentUploadedResponse{Accepted: true}, nil
 }
 
 func toModelCreateJobRequest(req *transcodev1.CreateJobRequest) model.CreateJobRequest {

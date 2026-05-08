@@ -24,7 +24,11 @@ func NewAdminRBACRepository(db *DB) *AdminRBACRepository {
 func (r *AdminRBACRepository) EnsureRole(ctx context.Context, roleKey, roleName, roleDesc string, status int) (AdminRoleRecord, error) {
 	now := time.Now()
 	var record AdminRoleRecord
-	if err := r.db.WithContext(ctx).Where("role_key = ?", roleKey).Take(&record).Error; err == nil {
+	result := r.db.WithContext(ctx).Where("role_key = ?", roleKey).Limit(1).Find(&record)
+	if result.Error != nil {
+		return AdminRoleRecord{}, result.Error
+	}
+	if result.RowsAffected > 0 {
 		record.RoleName = roleName
 		record.RoleDesc = roleDesc
 		record.Status = status
@@ -47,7 +51,11 @@ func (r *AdminRBACRepository) EnsureRole(ctx context.Context, roleKey, roleName,
 func (r *AdminRBACRepository) EnsurePermission(ctx context.Context, permKey, permName, permDesc, module string) (AdminPermissionRecord, error) {
 	now := time.Now()
 	var record AdminPermissionRecord
-	if err := r.db.WithContext(ctx).Where("perm_key = ?", permKey).Take(&record).Error; err == nil {
+	result := r.db.WithContext(ctx).Where("perm_key = ?", permKey).Limit(1).Find(&record)
+	if result.Error != nil {
+		return AdminPermissionRecord{}, result.Error
+	}
+	if result.RowsAffected > 0 {
 		record.PermName = permName
 		record.PermDesc = permDesc
 		record.Module = module
@@ -67,7 +75,11 @@ func (r *AdminRBACRepository) EnsurePermission(ctx context.Context, permKey, per
 // BindUserRole 绑定管理员用户与角色。
 func (r *AdminRBACRepository) BindUserRole(ctx context.Context, userID, roleID uint64) error {
 	var record AdminUserRoleRecord
-	if err := r.db.WithContext(ctx).Where("user_id = ? AND role_id = ?", userID, roleID).Take(&record).Error; err == nil {
+	result := r.db.WithContext(ctx).Where("user_id = ? AND role_id = ?", userID, roleID).Limit(1).Find(&record)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
 		return nil
 	}
 	return r.db.WithContext(ctx).Create(&AdminUserRoleRecord{
@@ -81,7 +93,11 @@ func (r *AdminRBACRepository) BindUserRole(ctx context.Context, userID, roleID u
 // BindRolePermission 绑定角色与权限点。
 func (r *AdminRBACRepository) BindRolePermission(ctx context.Context, roleID, permID uint64) error {
 	var record AdminRolePermissionRecord
-	if err := r.db.WithContext(ctx).Where("role_id = ? AND perm_id = ?", roleID, permID).Take(&record).Error; err == nil {
+	result := r.db.WithContext(ctx).Where("role_id = ? AND perm_id = ?", roleID, permID).Limit(1).Find(&record)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
 		return nil
 	}
 	return r.db.WithContext(ctx).Create(&AdminRolePermissionRecord{

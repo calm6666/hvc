@@ -17,12 +17,13 @@ import (
 //
 // 提供命名模板的查询、配置和生效接口。
 // 六种预置模板方案：
-//   方案一：{job_id}-{media_type}-{number}.m4s
-//   方案二：{job_id}-{resolution}-{media_type}-{number}.m4s
-//   方案三：{job_id}-{quality}-{media_type}-{number}.m4s
-//   方案四：{job_id}-{media_type}-{number}-{timestamp}.m4s
-//   方案五：{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s
-//   方案六：{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s
+//
+//	方案一：{job_id}-{rendition_key}-{media_type}-{number}.m4s
+//	方案二：{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s
+//	方案三：{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s
+//	方案四：{job_id}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
+//	方案五：{job_id}-{resolution}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
+//	方案六：{job_id}-{quality}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
 type NamingTemplateHandler struct {
 	namingTemplateRepo *mysql.NamingTemplateRepository
 	runtimeConfigRepo  *mysql.RuntimeConfigRepository
@@ -149,23 +150,23 @@ func (h *NamingTemplateHandler) ActivateTemplate(w http.ResponseWriter, r *http.
 	}
 
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
-		"template":         req.Template,
-		"published":        true,
-		"effective_scope":  "新提交的转码任务",
-		"running_jobs":     "不受影响，继续使用原模板",
+		"template":        req.Template,
+		"published":       true,
+		"effective_scope": "新提交的转码任务",
+		"running_jobs":    "不受影响，继续使用原模板",
 	}})
 }
 
 // PresetTemplate 预置模板方案。
 type PresetTemplate struct {
-	ID                  int    `json:"id"`
-	Name                string `json:"name"`
-	Template            string `json:"template"`
-	ExampleInitVideo    string `json:"example_init_video"`
-	ExampleMediaVideo   string `json:"example_media_video"`
-	ExampleInitAudio    string `json:"example_init_audio"`
-	ExampleMediaAudio   string `json:"example_media_audio"`
-	Description         string `json:"description"`
+	ID                int    `json:"id"`
+	Name              string `json:"name"`
+	Template          string `json:"template"`
+	ExampleInitVideo  string `json:"example_init_video"`
+	ExampleMediaVideo string `json:"example_media_video"`
+	ExampleInitAudio  string `json:"example_init_audio"`
+	ExampleMediaAudio string `json:"example_media_audio"`
+	Description       string `json:"description"`
 }
 
 func buildPresetTemplates() []PresetTemplate {
@@ -173,69 +174,69 @@ func buildPresetTemplates() []PresetTemplate {
 		{
 			ID:                1,
 			Name:              "方案一：简洁模式",
-			Template:          "{job_id}-{media_type}-{number}.m4s",
-			ExampleInitVideo:  "1893456789012345678-video-0.m4s",
-			ExampleMediaVideo: "1893456789012345678-video-1.m4s",
-			ExampleInitAudio:  "1893456789012345678-audio-0.m4s",
-			ExampleMediaAudio: "1893456789012345678-audio-1.m4s",
-			Description:       "最简洁，仅包含任务ID、媒体类型和序号",
+			Template:          "{job_id}-{rendition_key}-{media_type}-{number}.m4s",
+			ExampleInitVideo:  "1893456789012345678-Ab3kP9xQ-video-0.m4s",
+			ExampleMediaVideo: "1893456789012345678-Ab3kP9xQ-video-1.m4s",
+			ExampleInitAudio:  "1893456789012345678-Ab3kP9xQ-audio-0.m4s",
+			ExampleMediaAudio: "1893456789012345678-Ab3kP9xQ-audio-1.m4s",
+			Description:       "最简洁，带稳定 rendition_key，重试时文件名保持不变",
 		},
 		{
 			ID:                2,
 			Name:              "方案二：分辨率模式",
-			Template:          "{job_id}-{resolution}-{media_type}-{number}.m4s",
-			ExampleInitVideo:  "1893456789012345678-1920_1080-video-0.m4s",
-			ExampleMediaVideo: "1893456789012345678-1920_1080-video-1.m4s",
-			ExampleInitAudio:  "1893456789012345678-1920_1080-audio-0.m4s",
-			ExampleMediaAudio: "1893456789012345678-1920_1080-audio-1.m4s",
-			Description:       "分辨率使用视频真实宽高（下划线连接），文件名自描述",
+			Template:          "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s",
+			ExampleInitVideo:  "1893456789012345678-1920_1080-Ab3kP9xQ-video-0.m4s",
+			ExampleMediaVideo: "1893456789012345678-1920_1080-Ab3kP9xQ-video-1.m4s",
+			ExampleInitAudio:  "1893456789012345678-1920_1080-Ab3kP9xQ-audio-0.m4s",
+			ExampleMediaAudio: "1893456789012345678-1920_1080-Ab3kP9xQ-audio-1.m4s",
+			Description:       "分辨率可读性更高，同时保留稳定 rendition_key 防重名",
 		},
 		{
 			ID:                3,
 			Name:              "方案三：清晰度标签模式",
-			Template:          "{job_id}-{quality}-{media_type}-{number}.m4s",
-			ExampleInitVideo:  "1893456789012345678-1080p-video-0.m4s",
-			ExampleMediaVideo: "1893456789012345678-1080p-video-1.m4s",
-			ExampleInitAudio:  "1893456789012345678-1080p-audio-0.m4s",
-			ExampleMediaAudio: "1893456789012345678-1080p-audio-1.m4s",
-			Description:       "使用清晰度标签（1080p/720p/480p），简洁易读",
+			Template:          "{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s",
+			ExampleInitVideo:  "1893456789012345678-1080p-Ab3kP9xQ-video-0.m4s",
+			ExampleMediaVideo: "1893456789012345678-1080p-Ab3kP9xQ-video-1.m4s",
+			ExampleInitAudio:  "1893456789012345678-1080p-Ab3kP9xQ-audio-0.m4s",
+			ExampleMediaAudio: "1893456789012345678-1080p-Ab3kP9xQ-audio-1.m4s",
+			Description:       "使用清晰度标签，兼顾可读性和稳定唯一性",
 		},
 		{
 			ID:                4,
 			Name:              "方案四：简洁+时间戳模式",
-			Template:          "{job_id}-{media_type}-{number}-{timestamp}.m4s",
-			ExampleInitVideo:  "1893456789012345678-video-0-0.m4s",
-			ExampleMediaVideo: "1893456789012345678-video-1-6000.m4s",
-			ExampleInitAudio:  "1893456789012345678-audio-0-0.m4s",
-			ExampleMediaAudio: "1893456789012345678-audio-1-6000.m4s",
-			Description:       "方案一基础上增加分片起始时间戳（毫秒）",
+			Template:          "{job_id}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s",
+			ExampleInitVideo:  "1893456789012345678-Ab3kP9xQ-video-0-0.m4s",
+			ExampleMediaVideo: "1893456789012345678-Ab3kP9xQ-video-1-6000.m4s",
+			ExampleInitAudio:  "1893456789012345678-Ab3kP9xQ-audio-0-0.m4s",
+			ExampleMediaAudio: "1893456789012345678-Ab3kP9xQ-audio-1-6000.m4s",
+			Description:       "方案一基础上增加时间戳，便于排查分片时间位置",
 		},
 		{
 			ID:                5,
 			Name:              "方案五：分辨率+时间戳模式",
-			Template:          "{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s",
-			ExampleInitVideo:  "1893456789012345678-1920_1080-video-0-0.m4s",
-			ExampleMediaVideo: "1893456789012345678-1920_1080-video-1-6000.m4s",
-			ExampleInitAudio:  "1893456789012345678-1920_1080-audio-0-0.m4s",
-			ExampleMediaAudio: "1893456789012345678-1920_1080-audio-1-6000.m4s",
-			Description:       "方案二基础上增加时间戳，适合生产环境",
+			Template:          "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s",
+			ExampleInitVideo:  "1893456789012345678-1920_1080-Ab3kP9xQ-video-0-0.m4s",
+			ExampleMediaVideo: "1893456789012345678-1920_1080-Ab3kP9xQ-video-1-6000.m4s",
+			ExampleInitAudio:  "1893456789012345678-1920_1080-Ab3kP9xQ-audio-0-0.m4s",
+			ExampleMediaAudio: "1893456789012345678-1920_1080-Ab3kP9xQ-audio-1-6000.m4s",
+			Description:       "方案二基础上增加时间戳，适合线上审计和排障",
 		},
 		{
 			ID:                6,
 			Name:              "方案六：清晰度标签+时间戳模式",
-			Template:          "{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s",
-			ExampleInitVideo:  "1893456789012345678-1080p-video-0-0.m4s",
-			ExampleMediaVideo: "1893456789012345678-1080p-video-1-6000.m4s",
-			ExampleInitAudio:  "1893456789012345678-1080p-audio-0-0.m4s",
-			ExampleMediaAudio: "1893456789012345678-1080p-audio-1-6000.m4s",
-			Description:       "方案三基础上增加时间戳，兼顾可读性和时间索引",
+			Template:          "{job_id}-{quality}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s",
+			ExampleInitVideo:  "1893456789012345678-1080p-Ab3kP9xQ-video-0-0.m4s",
+			ExampleMediaVideo: "1893456789012345678-1080p-Ab3kP9xQ-video-1-6000.m4s",
+			ExampleInitAudio:  "1893456789012345678-1080p-Ab3kP9xQ-audio-0-0.m4s",
+			ExampleMediaAudio: "1893456789012345678-1080p-Ab3kP9xQ-audio-1-6000.m4s",
+			Description:       "方案三基础上增加时间戳，兼顾可读性、稳定性和索引能力",
 		},
 	}
 }
 
 // validateTemplate 校验自定义模板是否合法。
 func validateTemplate(template string) error {
-	required := []string{"{job_id}", "{media_type}", "{number}"}
+	required := []string{"{job_id}", "{rendition_key}", "{media_type}", "{number}"}
 	for _, r := range required {
 		if !contains(template, r) {
 			return fmt.Errorf("模板必须包含 %s 占位符", r)

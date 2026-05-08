@@ -1,9 +1,0 @@
-# import config
-packagefile fmt=D:\hilihili\server\hvc\.gocache\9d\9dbda6e832b423d90ca1c95ac9172eccafed6efaeed208ed6a80a0c79adc0121-d
-packagefile hvc/internal/model=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b245\_pkg_.a
-packagefile hvc/internal/worker/planner=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b398\_pkg_.a
-packagefile os=D:\hilihili\server\hvc\.gocache\24\24d2f90ded35e12caf40b55bbb600a5ba661275ad0182e13eb9cd22e15a1b23f-d
-packagefile path/filepath=D:\hilihili\server\hvc\.gocache\ff\ff372d706fe46868d0bdef8b59af133bd47045aac2cc49b428e73e83a41ac83d-d
-packagefile regexp=D:\hilihili\server\hvc\.gocache\c6\c6a33f88a8982fd4bc8ad69c12a463b4ccb3aa2ae3e9f342bb8711182490c079-d
-packagefile sort=D:\hilihili\server\hvc\.gocache\c8\c83b16b45b0c0680efdd365194e1609507e3a01feed17a7c803fd04c0c881bb2-d
-packagefile strconv=D:\hilihili\server\hvc\.gocache\3f\3f234232dacf33a8ad1915ecae2866501227e43ee673d71499dfd0f52af54ee1-d

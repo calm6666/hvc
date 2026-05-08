@@ -25,6 +25,10 @@ type ProbeResult struct {
 	GPUDeviceID      uint64
 	GPUUUID          string
 	GPUIndex         int
+	Vendor           string
+	Model            string
+	DriverVersion    string
+	MemoryTotalMB    int
 	EncodeCodecs     []string
 	DecodeCodecs     []string
 	ExecutionHWTypes []string
@@ -55,6 +59,10 @@ func ToGPUCapabilities(results []ProbeResult) []model.GPUCapability {
 			GPUDeviceID:      result.GPUDeviceID,
 			GPUUUID:          result.GPUUUID,
 			GPUIndex:         result.GPUIndex,
+			Vendor:           result.Vendor,
+			Model:            result.Model,
+			DriverVersion:    result.DriverVersion,
+			MemoryTotalMB:    result.MemoryTotalMB,
 			EncodeCodecs:     append([]string(nil), result.EncodeCodecs...),
 			DecodeCodecs:     append([]string(nil), result.DecodeCodecs...),
 			ExecutionHWTypes: append([]string(nil), result.ExecutionHWTypes...),

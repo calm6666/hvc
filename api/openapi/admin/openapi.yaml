@@ -6,7 +6,7 @@ info:
     
     包含认证、配置管理、回调管理、RBAC 权限、集群管理、
     转码任务管理、直播频道管理、审计日志等模块。
-    所有管理接口需要 JWT 认证和 RBAC 权限校验。
+    所有管理接口需要后台会话认证（Authorization Bearer 或 HttpOnly Cookie）和 RBAC 权限校验。
   version: 1.0.0
 
 servers:
@@ -17,7 +17,7 @@ paths:
   /v1/admin/auth/login:
     post:
       summary: 管理员登录
-      description: 使用用户名密码登录，返回 JWT Token。支持 OTP 二次验证和账户锁定。
+      description: 使用用户名密码登录；服务端通过 HttpOnly Cookie 写入后台会话，不在响应体回传明文 session token。
       tags: [Auth]
       requestBody:
         required: true
@@ -123,6 +123,7 @@ paths:
                   description: 发布后动态启停回调投递模块
                 callback_http_url:
                   type: string
+                  description: 默认 HTTP 回调地址，仅在未配置 callback_config 表时作为兼容兜底使用
                 callback_mq_topic:
                   type: string
                   description: 默认 MQ 回调 routing key，供系统级 MQ 回调兜底使用
@@ -134,7 +135,7 @@ paths:
                   description: gRPC 监听地址，格式如 :9090 或 0.0.0.0:9090
                 enable_mq_consumer:
                   type: boolean
-                  description: 发布后动态启停 MQ 创建任务消费者
+                  description: 发布后动态启停 MQ 创建任务消费者；启用时仍需同时提供 mq_queue_name 与 mq_host
                 mq_queue_name:
                   type: string
                 mq_host:
@@ -151,8 +152,27 @@ paths:
                   type: string
                 mq_prefetch_count:
                   type: integer
-                mq_loop_interval_ms:
+                storage_type:
+                  type: string
+                storage_endpoint:
+                  type: string
+                storage_bucket:
+                  type: string
+                storage_access_key_id:
+                  type: string
+                storage_secret_access_key:
+                  type: string
+                storage_use_ssl:
+                  type: boolean
+                storage_play_domain:
+                  type: string
+                storage_flv_domain:
+                  type: string
+                storage_local_base_path:
+                  type: string
+                default_storage_id:
                   type: integer
+                  format: uint64
                 worker_object_prefix:
                   type: string
                 change_summary:
@@ -204,7 +224,7 @@ paths:
       summary: 查询分片命名模板方案列表
       description: |
         返回六种预置模板方案及其示例，以及当前生效的模板。
-        管理员可据此选择合适的方案。
+        所有方案都包含稳定占位符 {rendition_key}，用于保证同一任务重试时分片文件名不漂移。
       tags: [NamingTemplate]
       responses:
         '200':
@@ -261,7 +281,7 @@ paths:
                   description: 预置方案ID（1~6），与 custom_template 二选一
                 custom_template:
                   type: string
-                  description: 自定义模板字符串（必须包含 {job_id} {media_type} {number}）
+                  description: 自定义模板字符串（必须包含 {job_id} {rendition_key} {media_type} {number}）
       responses:
         '200':
           description: 成功
@@ -283,7 +303,7 @@ paths:
               properties:
                 template:
                   type: string
-                  description: 命名模板字符串
+                  description: 命名模板字符串（必须包含 {job_id} {rendition_key} {media_type} {number}）
       responses:
         '200':
           description: 成功
@@ -291,7 +311,7 @@ paths:
   /v1/admin/config-center/list:
     get:
       summary: 查询 bootstrap 配置源绑定列表
-      description: 查询外部 bootstrap 配置源元数据，不直接返回运行期业务配置。
+      description: 查询外部 bootstrap 配置源元数据；返回会显式标明 config_scope=bootstrap、affects_runtime=false。
       tags: [ConfigCenter]
       responses:
         '200':
@@ -300,7 +320,7 @@ paths:
   /v1/admin/config-center/upsert:
     post:
       summary: 创建或更新 bootstrap 配置源绑定
-      description: 维护 MySQL/集群注册/节点身份等启动基础配置来源，不直接发布运行期业务配置。
+      description: 维护 MySQL/集群注册/节点身份等启动基础配置来源，不直接发布运行期业务配置；响应会显式标明 config_scope=bootstrap、affects_runtime=false。
       tags: [ConfigCenter]
       responses:
         '200':
@@ -309,7 +329,7 @@ paths:
   /v1/admin/config-center/enabled:
     post:
       summary: 启用/禁用 bootstrap 配置源绑定
-      description: 启用或禁用外部 bootstrap 配置源元数据，不影响已发布 runtime config 的热更新链路。
+      description: 启用或禁用外部 bootstrap 配置源元数据，不影响已发布 runtime config 的热更新链路；响应会显式标明 config_scope=bootstrap、affects_runtime=false。
       tags: [ConfigCenter]
       responses:
         '200':
@@ -446,10 +466,28 @@ paths:
       parameters:
         - name: node_id
           in: query
-          required: true
+          required: false
           schema:
             type: integer
             format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/cluster/overview:
+    get:
+      summary: 查询集群运行总览
+      description: 返回当前运行模式、模块开关状态、节点和 GPU 汇总信息、节点摘要，以及运行时配置在 MySQL/Redis 中的版本情况。
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/cluster/realtime:
+    get:
+      summary: 查询集群实时快照
+      description: 返回后台轮询所需的模式、模块状态、MySQL/Redis 版本、运行时配置缓存版本、任务状态计数，以及每个节点的实时资源聚合视图。
+      tags: [Cluster]
       responses:
         '200':
           description: 成功
@@ -652,10 +690,37 @@ paths:
         '200':
           description: 成功
 
+  /v1/admin/live/channel/list:
+    get:
+      summary: 查询直播频道列表
+      tags: [Live]
+      description: 支持分页，并将状态和 channel_key 过滤直接下推到数据库执行。
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: channel_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+
   /v1/admin/live/channel/detail:
     get:
-      summary: 查询频道详情
+      summary: 查询直播频道详情
       tags: [Live]
+      description: 返回 channel、playback 以及存在时的 active_session。
       parameters:
         - name: channel_id
           in: query
@@ -672,8 +737,9 @@ paths:
 
   /v1/admin/live/channel/update:
     post:
-      summary: 更新频道配置
+      summary: 更新直播频道配置
       tags: [Live]
+      description: 仅更新请求体中显式传入的字段，未传字段保持原值不变。
       requestBody:
         required: true
         content:
@@ -687,8 +753,17 @@ paths:
                   format: uint64
                 channel_name:
                   type: string
+                profile_id:
+                  type: integer
+                  format: uint64
+                enable_source_rendition:
+                  type: boolean
                 enable_watermark:
                   type: boolean
+                play_domain:
+                  type: string
+                push_domain:
+                  type: string
       responses:
         '200':
           description: 成功
@@ -732,6 +807,57 @@ paths:
                 channel_id:
                   type: integer
                   format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/live/channel/delete:
+    post:
+      summary: 删除直播频道
+      description: 仅允许删除不存在活动会话且未处于运行中的频道。
+      tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_id]
+              properties:
+                channel_id:
+                  type: integer
+                  format: uint64
+      responses:
+        '200':
+          description: 成功
+
+  /v1/admin/live/session/list:
+    get:
+      summary: 查询直播会话列表
+      tags: [Live]
+      description: 支持分页，并按 channel_id、channel_key、status 过滤。
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: channel_id
+          in: query
+          schema:
+            type: integer
+            format: uint64
+        - name: channel_key
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
       responses:
         '200':
           description: 成功

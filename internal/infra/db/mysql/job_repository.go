@@ -3,11 +3,15 @@ package mysql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"hvc/internal/model"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+var ErrJobAssignConflict = errors.New("job assign conflict")
 
 func toJobRecord(job model.TranscodeJob) JobRecord {
 	return JobRecord{
@@ -19,6 +23,7 @@ func toJobRecord(job model.TranscodeJob) JobRecord {
 		SourceURL:                  job.SourceURL,
 		ProfileID:                  job.ProfileID,
 		SegmentDurationSec:         job.SegmentDurationSec,
+		SegmentTemplate:            job.SegmentTemplate,
 		SupportDash:                job.SupportDash,
 		SupportHLS:                 job.SupportHLS,
 		EnableWatermark:            job.EnableWatermark,
@@ -71,6 +76,7 @@ func toJobModel(record JobRecord) model.TranscodeJob {
 		SourceURL:                  record.SourceURL,
 		ProfileID:                  record.ProfileID,
 		SegmentDurationSec:         record.SegmentDurationSec,
+		SegmentTemplate:            record.SegmentTemplate,
 		SupportDash:                record.SupportDash,
 		SupportHLS:                 record.SupportHLS,
 		EnableWatermark:            record.EnableWatermark,
@@ -214,7 +220,7 @@ func (r *JobRepository) ListAssigned(ctx context.Context, nodeID uint64, workerI
 
 // Assign 更新任务分配信息。
 func (r *JobRepository) Assign(ctx context.Context, jobID uint64, decision model.DispatchDecision, nodeID uint64, workerID string, workerInstanceID uint64) error {
-	return r.db.WithContext(ctx).Model(&JobRecord{}).Where("job_id = ?", jobID).Updates(map[string]any{
+	result := r.db.WithContext(ctx).Model(&JobRecord{}).Where("job_id = ? AND status = ?", jobID, model.JobStatusQueued).Updates(map[string]any{
 		"assigned_node_id":            nodeID,
 		"assigned_worker_id":          workerID,
 		"executor_worker_instance_id": workerInstanceID,
@@ -227,7 +233,14 @@ func (r *JobRepository) Assign(ctx context.Context, jobID uint64, decision model
 		"status":                      model.JobStatusAssigned,
 		"progress_stage":              model.StageQueued,
 		"updated_at":                  time.Now(),
-	}).Error
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrJobAssignConflict
+	}
+	return nil
 }
 
 // UpdateProgress 更新任务进度。
@@ -322,6 +335,38 @@ func (r *JobRepository) ResetToQueued(ctx context.Context, jobID uint64) error {
 		"lease_generation":   0,
 		"updated_at":         time.Now(),
 	}).Error
+}
+
+// EnsureSegmentTemplateSnapshot 为任务锁定首次执行时使用的分片命名模板。
+//
+// 运行时全局模板可以热更新，但单个任务一旦开始执行，就必须继续沿用首次锁定的模板，
+// 否则后续重试、动态清单生成和对象路径审计都会发生漂移。
+func (r *JobRepository) EnsureSegmentTemplateSnapshot(ctx context.Context, jobID uint64, template string) (string, error) {
+	template = strings.TrimSpace(template)
+	if template == "" {
+		template = "{job_id}-{rendition_key}-{media_type}-{number}.m4s"
+	}
+
+	var effective string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record JobRecord
+		if err := tx.Where("job_id = ?", jobID).Take(&record).Error; err != nil {
+			return err
+		}
+		if strings.TrimSpace(record.SegmentTemplate) != "" {
+			effective = record.SegmentTemplate
+			return nil
+		}
+		if err := tx.Model(&JobRecord{}).Where("job_id = ?", jobID).Updates(map[string]any{
+			"segment_template": template,
+			"updated_at":       time.Now(),
+		}).Error; err != nil {
+			return err
+		}
+		effective = template
+		return nil
+	})
+	return effective, err
 }
 
 // MarkCanceled 标记任务为已取消。

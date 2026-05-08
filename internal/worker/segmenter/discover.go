@@ -20,6 +20,7 @@ var (
 // DiscoveredSegment 表示扫描发现的分片文件信息。
 type DiscoveredSegment struct {
 	RenditionName    string
+	RenditionKey     string
 	IsInit           bool
 	SequenceNo       int
 	RepresentationID int
@@ -72,6 +73,7 @@ func Discover(job model.TranscodeJob, pipeline planner.Pipeline) Result {
 			objectKey := renderObjectKey(pipeline, job, rend, mediaTypeStr, seqNo, 0)
 			segments = append(segments, DiscoveredSegment{
 				RenditionName:    rend.Name,
+				RenditionKey:     rend.RenditionKey,
 				IsInit:           true,
 				SequenceNo:       seqNo,
 				RepresentationID: repID,
@@ -95,6 +97,7 @@ func Discover(job model.TranscodeJob, pipeline planner.Pipeline) Result {
 			objectKey := renderObjectKey(pipeline, job, rend, mediaTypeStr, seqNo, timestampMS)
 			segments = append(segments, DiscoveredSegment{
 				RenditionName:    rend.Name,
+				RenditionKey:     rend.RenditionKey,
 				IsInit:           false,
 				SequenceNo:       seqNo,
 				RepresentationID: repID,

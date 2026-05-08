@@ -23,12 +23,23 @@ type SessionStore interface {
 	FindLatestActiveByChannelID(ctx context.Context, channelID uint64) (*model.LiveSession, error)
 }
 
+type SessionEventWriter interface {
+	SaveEvent(ctx context.Context, sessionID uint64, channelID uint64, eventType string, payload any) error
+}
+
+type PublishSessionWriter interface {
+	SaveConnected(ctx context.Context, channelID uint64, sessionID uint64, streamKey string, publishIP string) error
+	MarkDisconnectedLatest(ctx context.Context, channelID uint64, streamKey string) error
+}
+
 type Manager struct {
-	channelStore ChannelStore
-	sessionStore SessionStore
-	mu           sync.RWMutex
-	channels     map[uint64]*model.LiveChannel
-	sessions     map[uint64]*model.LiveSession
+	channelStore  ChannelStore
+	sessionStore  SessionStore
+	eventWriter   SessionEventWriter
+	publishWriter PublishSessionWriter
+	mu            sync.RWMutex
+	channels      map[uint64]*model.LiveChannel
+	sessions      map[uint64]*model.LiveSession
 }
 
 func NewManager(channelStore ChannelStore, sessionStore SessionStore) *Manager {
@@ -38,6 +49,16 @@ func NewManager(channelStore ChannelStore, sessionStore SessionStore) *Manager {
 		channels:     make(map[uint64]*model.LiveChannel),
 		sessions:     make(map[uint64]*model.LiveSession),
 	}
+}
+
+// SetSessionEventWriter 注入直播会话事件记录器。
+func (m *Manager) SetSessionEventWriter(writer SessionEventWriter) {
+	m.eventWriter = writer
+}
+
+// SetPublishSessionWriter 注入推流会话记录器。
+func (m *Manager) SetPublishSessionWriter(writer PublishSessionWriter) {
+	m.publishWriter = writer
 }
 
 func (m *Manager) StartChannel(ctx context.Context, channelID uint64, nodeID uint64, workerID string) error {
@@ -71,6 +92,12 @@ func (m *Manager) StartChannel(ctx context.Context, channelID uint64, nodeID uin
 		"channel_id": channelID,
 		"node_id":    nodeID,
 		"worker_id":  workerID,
+	})
+	m.appendEvent(ctx, 0, channel.ChannelID, "live.channel.start_requested", map[string]any{
+		"channel_key": channel.ChannelKey,
+		"node_id":     nodeID,
+		"worker_id":   workerID,
+		"status":      channel.Status,
 	})
 	return nil
 }
@@ -124,10 +151,15 @@ func (m *Manager) StopChannel(ctx context.Context, channelID uint64) error {
 	logx.Info("live.manager.channel_stopped", logx.Fields{
 		"channel_id": channelID,
 	})
+	m.appendEvent(ctx, sessionID, channel.ChannelID, "live.channel.stopped", map[string]any{
+		"channel_key": channel.ChannelKey,
+		"session_id":  sessionID,
+		"status":      channel.Status,
+	})
 	return nil
 }
 
-func (m *Manager) OnPublish(ctx context.Context, channelKey string, nodeID uint64, workerID string) (*model.LiveSession, error) {
+func (m *Manager) OnPublish(ctx context.Context, channelKey string, nodeID uint64, workerID string, streamKey string, publishIP string, pushProtocol string, ingestURL string, playbackHLSURL string) (*model.LiveSession, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -139,12 +171,22 @@ func (m *Manager) OnPublish(ctx context.Context, channelKey string, nodeID uint6
 		return nil, fmt.Errorf("live channel %s not found", channelKey)
 	}
 
+	if pushProtocol == "" {
+		pushProtocol = "rtmp"
+	}
+	if streamKey == "" {
+		streamKey = channelKey
+	}
+
 	session := &model.LiveSession{
 		SessionID:        idgen.Next(),
 		ChannelID:        channel.ChannelID,
 		ChannelKey:       channelKey,
+		SessionKey:       streamKey,
 		Status:           model.LiveSessionStatusPublishing,
-		PushProtocol:     "rtmp",
+		IngestURL:        ingestURL,
+		PlaybackHLSURL:   playbackHLSURL,
+		PushProtocol:     pushProtocol,
 		AssignedNodeID:   nodeID,
 		AssignedWorkerID: workerID,
 		StartedAt:        time.Now(),
@@ -172,10 +214,23 @@ func (m *Manager) OnPublish(ctx context.Context, channelKey string, nodeID uint6
 		"session_id":  session.SessionID,
 		"node_id":     nodeID,
 	})
+	if m.publishWriter != nil {
+		if err := m.publishWriter.SaveConnected(ctx, channel.ChannelID, session.SessionID, streamKey, publishIP); err != nil {
+			return nil, err
+		}
+	}
+	m.appendEvent(ctx, session.SessionID, channel.ChannelID, "live.publish.connected", map[string]any{
+		"channel_key": channelKey,
+		"stream_key":  streamKey,
+		"publish_ip":  publishIP,
+		"node_id":     nodeID,
+		"worker_id":   workerID,
+		"status":      session.Status,
+	})
 	return session, nil
 }
 
-func (m *Manager) OnUnpublish(ctx context.Context, channelKey string) error {
+func (m *Manager) OnUnpublish(ctx context.Context, channelKey string, streamKey string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -224,10 +279,21 @@ func (m *Manager) OnUnpublish(ctx context.Context, channelKey string) error {
 		"channel_key": channelKey,
 		"session_id":  sessionID,
 	})
+	if m.publishWriter != nil {
+		if err := m.publishWriter.MarkDisconnectedLatest(ctx, channel.ChannelID, streamKey); err != nil {
+			return err
+		}
+	}
+	m.appendEvent(ctx, sessionID, channel.ChannelID, "live.publish.disconnected", map[string]any{
+		"channel_key": channelKey,
+		"stream_key":  streamKey,
+		"session_id":  sessionID,
+		"status":      channel.Status,
+	})
 	return nil
 }
 
-func (m *Manager) OnInterrupt(ctx context.Context, channelKey string) {
+func (m *Manager) OnInterrupt(ctx context.Context, channelKey string, streamKey string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -260,6 +326,15 @@ func (m *Manager) OnInterrupt(ctx context.Context, channelKey string) {
 	logx.Info("live.manager.on_interrupt", logx.Fields{
 		"channel_key": channelKey,
 		"session_id":  sessionID,
+	})
+	if m.publishWriter != nil {
+		_ = m.publishWriter.MarkDisconnectedLatest(ctx, channel.ChannelID, streamKey)
+	}
+	m.appendEvent(ctx, sessionID, channel.ChannelID, "live.stream.interrupted", map[string]any{
+		"channel_key": channelKey,
+		"stream_key":  streamKey,
+		"session_id":  sessionID,
+		"status":      channel.Status,
 	})
 }
 
@@ -372,4 +447,20 @@ func (m *Manager) findActiveSessionLocked(channelID uint64) (*model.LiveSession,
 		}
 	}
 	return nil, 0
+}
+
+func (m *Manager) appendEvent(ctx context.Context, sessionID uint64, channelID uint64, eventType string, payload any) {
+	// t_live_session_event 当前按“会话级事件”建模，session_id 为必填外键。
+	// 因此在尚未创建真实直播会话前，不写入 start_requested 这类频道级事件，
+	// 避免把 0 当成 session_id 落库后触发外键错误。
+	if m.eventWriter == nil || sessionID == 0 || channelID == 0 || eventType == "" {
+		return
+	}
+	if err := m.eventWriter.SaveEvent(ctx, sessionID, channelID, eventType, payload); err != nil {
+		logx.Error("live.manager.append_event_failed", err, logx.Fields{
+			"channel_id": channelID,
+			"session_id": sessionID,
+			"event_type": eventType,
+		})
+	}
 }

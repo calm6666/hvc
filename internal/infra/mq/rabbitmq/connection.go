@@ -17,10 +17,9 @@ type Connection struct {
 
 // Open 打开 RabbitMQ 连接。
 //
-// DSN 构建规则：
-//   - 优先使用配置中的完整 DSN（cfg.MQ.RabbitMQ.DSN）
-//   - 如果未提供 DSN，则根据 Host、Port、User、Password、VHost 构建
-//   - 默认使用 amqp://guest:guest@127.0.0.1:5672/
+// 连接串统一由 Host、Port、User、Password、VHost 组合生成，
+// 避免同时维护 DSN 与拆分字段两套来源导致配置语义分裂。
+// 默认使用 amqp://guest:guest@127.0.0.1:5672/
 func Open(cfg config.RuntimeConfig) (*Connection, error) {
 	dsn := buildDSN(cfg)
 	return openDSN(dsn)
@@ -68,10 +67,6 @@ func (c *Connection) DSN() string {
 // buildDSN 根据配置构建 RabbitMQ 连接字符串。
 func buildDSN(cfg config.RuntimeConfig) string {
 	mqCfg := cfg.MQ
-	if mqCfg.RabbitMQDSN != "" {
-		return mqCfg.RabbitMQDSN
-	}
-
 	host := mqCfg.RabbitMQHost
 	if host == "" {
 		host = "127.0.0.1"

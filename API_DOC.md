@@ -102,15 +102,10 @@ Content-Type: application/json
     "opacity": 0.8,
     "safe_margin_ratio": 0.02
   },
-  "video_options": {
-    "output_aspect_keep": true,
-    "aspect_fill_mode": "fit"
-  },
   "segment_options": {
     "segment_duration_sec": 6,
     "support_dash": true,
-    "support_hls": true,
-    "naming_template_id": 2
+    "support_hls": true
   },
   "thumbnail_options": {
     "enable_sprite": true,
@@ -126,14 +121,10 @@ Content-Type: application/json
     "binary_max_size_bytes": 1048576
   },
   "storage_options": {
-    "storage_id": 0,
-    "bucket_prefix": "hvc",
-    "segment_prefix": ""
+    "bucket_prefix": "hvc"
   },
   "schedule_options": {
-    "preferred_hwaccel": "nvidia",
-    "allow_software_decode_fallback": true,
-    "max_wait_seconds": 300
+    "preferred_hwaccel": "nvidia"
   },
   "renditions": [
     {
@@ -171,6 +162,13 @@ Content-Type: application/json
 - `https://callback.example.com/task/req-001`
 - `grpc://127.0.0.1:9000/transcode.callback.Service/Notify`
 - `mq://callback.exchange/transcode.job.completed`
+
+> 当前版本字段生效范围说明：
+> - `video_options` 暂未落入执行链路，服务端收到非空配置会直接拒绝请求；
+> - `segment_options.naming_template_id` 暂未开放单任务覆盖，命名模板仍通过后台全局配置生效；
+> - `storage_options.storage_id`、`storage_options.segment_prefix` 暂未开放单任务覆盖；
+> - `schedule_options.allow_software_decode_fallback`、`schedule_options.max_wait_seconds` 暂未开放单任务覆盖；
+> - 以上字段会返回 `400`，请不要在生产调用中依赖。
 
 **响应体：**
 
@@ -270,6 +268,27 @@ GET /v1/live/channel/playback?channel_key=live-001
 }
 ```
 
+说明补充：
+- 当频道不存在时，接口返回 `404`
+- 当前返回结果已包含 `play_token`、`expire_at`、签名后的 `master_hls_url` / `http_flv_url`
+- `renditions` 字段会给出每个清晰度的独立 HLS / HTTP-FLV 播放地址
+
+### 3.8 直播推流鉴权
+
+```
+GET /v1/live/channel/push-auth?channel_key=live-001&expire=1700000000&sign=xxxx
+```
+
+用于对接推流入口鉴权回调。返回字段包括 `allowed`、`reason`、`channel_key`、`expire_at`。
+
+### 3.9 直播播放鉴权
+
+```
+GET /v1/live/channel/play-auth?channel_key=live-001&expire=1700000000&sign=xxxx
+```
+
+用于对接播放层鉴权回调。返回字段包括 `allowed`、`reason`、`channel_key`、`expire_at`。
+
 ---
 
 ## 四、HTTP 后台管理接口
@@ -280,7 +299,7 @@ GET /v1/live/channel/playback?channel_key=live-001
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/v1/admin/auth/login` | POST | 管理员登录（表单提交），返回 session_token |
+| `/v1/admin/auth/login` | POST | 管理员登录（表单提交），通过 HttpOnly Cookie 建立后台会话 |
 | `/v1/admin/auth/logout` | POST | 管理员登出（需认证） |
 | `/v1/admin/auth/me` | GET | 获取当前用户信息（需认证） |
 | `/v1/admin/ping` | GET | 后台接口存活检查（需认证） |
@@ -301,12 +320,17 @@ username=admin&password=admin123&otp_code=
   "code": 0,
   "message": "ok",
   "data": {
-    "session_token": "eyJhbGciOiJIUzI1NiIs..."
+    "authenticated": true,
+    "token_transport": {
+      "type": "cookie",
+      "cookie_name": "admin_session",
+      "http_only": true
+    }
   }
 }
 ```
 
-登录成功后自动设置 Cookie：`admin_session={session_token}; Path=/; HttpOnly; Expires=24h`
+登录成功后自动设置 Cookie：`admin_session=<opaque_session_token>; Path=/; HttpOnly; SameSite=Lax; Expires=24h`
 
 **WhoAmI 响应：**
 
@@ -326,7 +350,8 @@ username=admin&password=admin123&otp_code=
 说明：
 
 - 运行期业务配置的唯一生效源是数据库中的已发布 `runtime config`
-- 本地 `configs/config.yaml` 里的 `scheduler/worker/callback/storage/grpc/mq` 仅在空库首启时用于初始化默认值
+- 本地 `configs/config.yaml` 已收敛为 bootstrap 配置；首版 runtime config 使用程序内置默认值初始化
+- 若启动配置里仍然写入 `scheduler/worker/callback/storage/grpc/mq` 段，服务会在启动校验阶段直接报错
 - 外部“配置中心”绑定不直接下发运行时业务配置，也不参与运行期热更新
 
 | 接口 | 方法 | 权限 | 说明 |
@@ -370,7 +395,16 @@ username=admin&password=admin123&otp_code=
   "mq_vhost": "/",
   "mq_consumer_tag": "hvc-runtime",
   "mq_prefetch_count": 16,
-  "mq_loop_interval_ms": 15000,
+  "storage_type": "s3",
+  "storage_endpoint": "127.0.0.1:9000",
+  "storage_bucket": "hvc-media",
+  "storage_access_key_id": "minioadmin",
+  "storage_secret_access_key": "minioadmin",
+  "storage_use_ssl": false,
+  "storage_play_domain": "https://play.example.com/live",
+  "storage_flv_domain": "https://flv.example.com/live",
+  "storage_local_base_path": "/data/hvc/media",
+  "default_storage_id": 0,
   "worker_object_prefix": "hvc/runtime",
   "change_summary": "增加全局并发数"
 }
@@ -379,10 +413,12 @@ username=admin&password=admin123&otp_code=
 发布后生效范围：
 
 - `scheduler` / `worker` / `callback` 运行参数会按最新生效配置热更新
-- `HTTP` 对外入口、`WebSocket` 监控入口跟随 `enable_http_server` 热启停
+- `HTTP` 对外入口、`WebSocket` 监控入口跟随 `enable_http_server` 热启停；监听地址仍由 bootstrap `server.listen_address` 固定
 - `callback` 投递模块支持通过 `enable_callback` 热启停
-- 对外 `gRPC` 服务支持动态启停与监听地址切换
-- `MQ` 创建任务消费者支持动态启停与队列/连接参数切换
+- 对外 `public gRPC` 服务支持动态启停与监听地址切换
+- `internal_grpc` 属于 bootstrap 配置，不参与运行期热更新，也不会被 `enable_grpc_server` 影响
+- `MQ` 创建任务消费者支持动态启停与队列/连接参数切换；启用时必须同时提供 `mq_queue_name` 和 `mq_host`
+- 配置发布后会先更新 MySQL，再刷新 Redis 缓存版本；所有节点通过 Redis 版本探测自动同步到最新已发布版本
 - 已在运行中的转码任务不会被强制中断，但后续轮询、上传、回调和新任务派发会按新配置执行
 
 **发布配置请求：**
@@ -449,7 +485,9 @@ username=admin&password=admin123&otp_code=
 说明：
 - 系统级回调目标通过 `/v1/admin/config/callback/upsert` 和 `/v1/admin/config/callback/enabled` 保存后立即生效，无需发布运行时配置版本。
 - 单任务 `callback_url` 优先级高于系统级回调配置。
-- 单次投递失败会写入补偿记录，记录中带具体 `callback_target`，便于排障和审计。
+- 系统级回调同时支持 HTTP、gRPC、MQ 三种形式；其中 gRPC 使用 `rpc_endpoint + rpc_service_name`，MQ 使用 `mq_exchange + mq_routing_key`。
+- runtime config 里的 `callback_http_url` / `callback_mq_topic` 仅保留兼容兜底语义；主配置入口仍然是 `callback_config` 表。
+- 单次投递失败会写入补偿记录，记录中会落具体的 `callback_url` 实际目标值（字段名为 `callback_target`），便于排障和审计。
 
 ### 4.4 命名模板管理
 
@@ -470,18 +508,18 @@ username=admin&password=admin123&otp_code=
 
 | template_id | 模板 | 示例（video init） |
 |-------------|------|-------------------|
-| 1 | `{job_id}-{media_type}-{number}.m4s` | `1893456789012345678-video-0.m4s` |
-| 2 | `{job_id}-{resolution}-{media_type}-{number}.m4s` | `1893456789012345678-1920_1080-video-0.m4s` |
-| 3 | `{job_id}-{quality}-{media_type}-{number}.m4s` | `1893456789012345678-1080p-video-0.m4s` |
-| 4 | `{job_id}-{media_type}-{number}-{timestamp}.m4s` | `1893456789012345678-video-0-0.m4s` |
-| 5 | `{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s` | `1893456789012345678-1920_1080-video-0-0.m4s` |
-| 6 | `{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s` | `1893456789012345678-1080p-video-0-0.m4s` |
+| 1 | `{job_id}-{rendition_key}-{media_type}-{number}.m4s` | `1893456789012345678-Ab3kP9xQ-video-0.m4s` |
+| 2 | `{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s` | `1893456789012345678-1920_1080-Ab3kP9xQ-video-0.m4s` |
+| 3 | `{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s` | `1893456789012345678-1080p-Ab3kP9xQ-video-0.m4s` |
+| 4 | `{job_id}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s` | `1893456789012345678-Ab3kP9xQ-video-0-0.m4s` |
+| 5 | `{job_id}-{resolution}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s` | `1893456789012345678-1920_1080-Ab3kP9xQ-video-0-0.m4s` |
+| 6 | `{job_id}-{quality}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s` | `1893456789012345678-1080p-Ab3kP9xQ-video-0-0.m4s` |
 
 **立即生效请求：**
 
 ```json
 {
-  "template": "{job_id}-{resolution}-{media_type}-{number}.m4s"
+  "template": "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s"
 }
 ```
 
@@ -492,7 +530,7 @@ username=admin&password=admin123&otp_code=
   "code": 0,
   "message": "ok",
   "data": {
-    "template": "{job_id}-{resolution}-{media_type}-{number}.m4s",
+    "template": "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s",
     "published": true,
     "effective_scope": "新提交的转码任务",
     "running_jobs": "不受影响，继续使用原模板"
@@ -512,7 +550,9 @@ username=admin&password=admin123&otp_code=
 
 - 该组接口用于维护外部 bootstrap 配置源元数据，例如 MySQL/集群注册/节点身份这类启动基础配置来源
 - 该组接口不直接发布 `scheduler/worker/callback/http/grpc/mq` 等运行期业务配置
+- 本地 `configs/config.yaml` 同样不允许再携带这些业务动态段，误写会导致启动失败
 - 运行期业务配置仍通过 `/v1/admin/config/runtime/update` + `/v1/admin/config/publish` 生效
+- `list`/`upsert`/`enabled` 返回都会显式带上 `config_scope=bootstrap` 与 `affects_runtime=false`
 
 **配置中心绑定请求：**
 
@@ -611,18 +651,51 @@ username=admin&password=admin123&otp_code=
 | 接口 | 方法 | 权限 | 说明 |
 |------|------|------|------|
 | `/v1/admin/cluster/node/list` | GET | cluster.node.read | 节点列表 |
-| `/v1/admin/cluster/node/detail` | GET | cluster.node.read | 节点详情（JSON Body） |
+| `/v1/admin/cluster/node/detail` | GET | cluster.node.read | 节点详情（Query） |
 | `/v1/admin/cluster/node/metrics` | GET | cluster.node.metrics.read | 节点指标 |
+| `/v1/admin/cluster/overview` | GET | cluster.read | 集群运行总览 |
+| `/v1/admin/cluster/realtime` | GET | cluster.read | 集群实时快照 |
 | `/v1/admin/cluster/member/list` | GET | cluster.read | 集群成员列表 |
 | `/v1/admin/cluster/node/enabled` | POST | cluster.node.enable | 启用/禁用节点 |
 | `/v1/admin/cluster/node/quarantined` | POST | cluster.node.quarantine | 隔离/取消隔离节点 |
 
-**节点详情请求（GET + JSON Body）：**
+`/v1/admin/cluster/overview` 返回重点包括：
 
-```json
-{
-  "node_id": 1
-}
+- 当前运行模式：`standalone / cluster-control / cluster-worker / cluster-allinone`
+- 模块状态：HTTP、public gRPC、internal gRPC、MQ consumer、scheduler、worker、callback
+- 集群统计：节点总数、启用节点数、隔离节点数、在线节点数、成员数、GPU 总数、可调度 GPU 数、活动会话数、上传队列深度
+- 节点摘要：每个节点的启用/隔离/在线状态、GPU 总数、可调度 GPU 数、活动转码会话、上传队列深度
+- 版本信息：MySQL 服务端版本、Redis 服务端版本、Redis 模式、运行时配置数据库版本、运行时配置 Redis 缓存版本、缓存 TTL
+
+`/v1/admin/cluster/realtime` 适合后台轮询，除 `overview` 的聚合字段外，还直接返回：
+
+- 任务队列计数：`queued / assigned / running / uploading / completed / failed / canceled`
+- `nodes` 节点聚合视图：节点主档、`metrics_available`、`online_estimate`、`last_metrics_at`
+- `gpu_summary`：单节点 GPU 数、健康数、可调度数、最大并发会话数
+- `gpu_devices[*].runtime_capability`：实时上报的 `gpu_uuid / gpu_index / 编解码能力 / execution_hw_types / max_sessions`
+
+**节点详情请求（GET Query）：**
+
+```
+GET /v1/admin/cluster/node/detail?node_id=1
+```
+
+**节点指标请求（GET Query）：**
+
+```
+GET /v1/admin/cluster/node/metrics
+GET /v1/admin/cluster/node/metrics?node_id=1
+```
+
+说明：
+- `node.detail` 统一从 query string 读取 `node_id`
+- `node.metrics` 支持全量查询；传 `node_id` 时仅返回指定节点指标
+- `node.list` 与 `node.detail` 返回聚合视图，而不是单纯数据库原始行；后台不需要再自行拼装 GPU 与实时指标
+
+**集群实时快照请求（GET）：**
+
+```
+GET /v1/admin/cluster/realtime
 ```
 
 **启用/禁用节点请求：**
@@ -654,7 +727,7 @@ username=admin&password=admin123&otp_code=
 | `/v1/admin/transcode/job/retry` | POST | transcode.job.retry | 重试失败任务 |
 | `/v1/admin/transcode/job/cancel` | POST | transcode.job.cancel | 取消任务 |
 
-**任务列表查询参数：** `page`, `page_size`, `status`, `biz_key`
+**任务列表查询参数：** `page`, `page_size`, `status`, `biz_key`, `request_id`
 
 **任务详情查询参数：** `job_id`
 
@@ -694,10 +767,13 @@ username=admin&password=admin123&otp_code=
 | 接口 | 方法 | 权限 | 说明 |
 |------|------|------|------|
 | `/v1/admin/live/channel/create` | POST | live.channel.create | 创建频道 |
+| `/v1/admin/live/channel/list` | GET | live.channel.read | 频道列表（数据库分页/过滤） |
 | `/v1/admin/live/channel/detail` | GET | live.channel.read | 频道详情 |
 | `/v1/admin/live/channel/update` | POST | live.channel.update | 更新频道 |
 | `/v1/admin/live/channel/start` | POST | live.channel.start | 启动频道 |
 | `/v1/admin/live/channel/stop` | POST | live.channel.stop | 停止频道 |
+| `/v1/admin/live/channel/delete` | POST | live.channel.delete | 删除频道 |
+| `/v1/admin/live/session/list` | GET | live.session.read | 直播会话列表（数据库分页/过滤） |
 
 **创建频道请求：**
 
@@ -709,7 +785,13 @@ username=admin&password=admin123&otp_code=
 }
 ```
 
+**频道列表查询参数：** `page`, `page_size`, `status`, `channel_key`
+
 **频道详情查询参数：** `channel_id` 或 `channel_key`
+
+说明：
+- 频道详情响应会同时返回 `channel`、`playback`，以及存在时的 `active_session`。
+- 当使用 `channel_key` 查询详情时，返回的仍然是完整频道详情，而不是仅播放地址快照。
 
 **更新频道请求：**
 
@@ -717,9 +799,16 @@ username=admin&password=admin123&otp_code=
 {
   "channel_id": 1,
   "channel_name": "新名称",
-  "enable_watermark": true
+  "profile_id": 2,
+  "enable_source_rendition": true,
+  "enable_watermark": true,
+  "play_domain": "https://play.example.com/live",
+  "push_domain": "rtmp://push.example.com/live"
 }
 ```
+
+说明：
+- `update` 只会修改请求体中明确传入的字段；未传字段保持原值，不会被零值覆盖。
 
 **启动频道请求：**
 
@@ -731,6 +820,17 @@ username=admin&password=admin123&otp_code=
 }
 ```
 
+**删除频道请求：**
+
+```json
+{
+  "channel_id": 1
+}
+```
+
+说明：
+- 仅允许删除不存在活动会话且未处于运行中的频道
+
 **停止频道请求：**
 
 ```json
@@ -738,6 +838,8 @@ username=admin&password=admin123&otp_code=
   "channel_id": 1
 }
 ```
+
+**会话列表查询参数：** `page`, `page_size`, `channel_id`, `channel_key`, `status`
 
 ### 4.10 审计日志
 
@@ -1081,15 +1183,10 @@ rpc SegmentUploaded(SegmentUploadedRequest) returns (SegmentUploadedResponse);
     "opacity": 0.8,
     "safe_margin_ratio": 0.02
   },
-  "video_options": {
-    "output_aspect_keep": true,
-    "aspect_fill_mode": "fit"
-  },
   "segment_options": {
     "segment_duration_sec": 6,
     "support_dash": true,
-    "support_hls": true,
-    "naming_template_id": 2
+    "support_hls": true
   },
   "thumbnail_options": {
     "enable_sprite": true,
@@ -1105,14 +1202,10 @@ rpc SegmentUploaded(SegmentUploadedRequest) returns (SegmentUploadedResponse);
     "binary_max_size_bytes": 1048576
   },
   "storage_options": {
-    "storage_id": 0,
-    "bucket_prefix": "hvc",
-    "segment_prefix": ""
+    "bucket_prefix": "hvc"
   },
   "schedule_options": {
-    "preferred_hwaccel": "nvidia",
-    "allow_software_decode_fallback": true,
-    "max_wait_seconds": 300
+    "preferred_hwaccel": "nvidia"
   },
   "renditions": [
     {
@@ -1124,6 +1217,9 @@ rpc SegmentUploaded(SegmentUploadedRequest) returns (SegmentUploadedResponse);
   ]
 }
 ```
+
+> MQ / public gRPC 创建任务的字段约束与 HTTP `/v1/transcode/job/create` 完全一致；
+> 上述“暂未开放单任务覆盖”的字段同样会被服务端拒绝。
 
 ### 8.4 转码完成消息（transcode.job.completed）
 
@@ -1277,7 +1373,7 @@ Content-Type: application/json
   "segment_duration_sec": 6,
   "support_dash": true,
   "support_hls": true,
-  "segment_template": "{job_id}-{resolution}-{media_type}-{number}.m4s",
+  "segment_template": "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s",
   "storage_type": "s3",
   "storage_bucket": "hvc-media",
   "play_domain": "https://cdn.example.com",
@@ -1477,6 +1573,7 @@ Created(1) → Queued(2) → Assigned(3) → Running(4) → Uploading(5) → Com
 | transcode.job.retry | 重试任务 |
 | transcode.job.cancel | 取消任务 |
 | live.channel.read | 查看频道详情 |
+| live.session.read | 查看直播会话 |
 | live.channel.create | 创建频道 |
 | live.channel.update | 更新频道 |
 | live.channel.start | 启动频道 |

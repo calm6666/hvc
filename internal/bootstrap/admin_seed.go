@@ -6,12 +6,12 @@ import (
 	"hvc/internal/infra/db/mysql"
 )
 
-// ensureAdminRBACSeed 初始化第一阶段后台最小 RBAC 数据。
+// ensureAdminRBACSeed 初始化后台最小可用 RBAC 数据。
 //
-// 这里先保证：
-// 1. 默认管理员至少绑定一个 super_admin 角色；
-// 2. super_admin 至少拥有当前已挂上的后台接口所需权限；
-// 3. 用户第一次启动后就能登录后台并走完整的权限链验证。
+// 目标是保证：
+// 1. 默认 admin 用户具备 super_admin 角色；
+// 2. super_admin 拥有当前后台接口所需的全部基础权限；
+// 3. operator / viewer 角色也能覆盖常见只读与运维场景。
 func ensureAdminRBACSeed(ctx context.Context, adminRepo *mysql.AdminRepository, rbacRepo *mysql.AdminRBACRepository) {
 	if adminRepo == nil || rbacRepo == nil {
 		return
@@ -63,6 +63,7 @@ func ensureAdminRBACSeed(ctx context.Context, adminRepo *mysql.AdminRepository, 
 		{"transcode.job.cancel", "取消任务", "transcode"},
 		{"transcode.job.create", "创建转码任务", "transcode"},
 		{"live.channel.read", "查看直播频道", "live"},
+		{"live.session.read", "查看直播会话", "live"},
 		{"live.channel.create", "创建直播频道", "live"},
 		{"live.channel.update", "更新直播频道", "live"},
 		{"live.channel.start", "启动直播频道", "live"},
@@ -81,7 +82,7 @@ func ensureAdminRBACSeed(ctx context.Context, adminRepo *mysql.AdminRepository, 
 	operatorPermissions := []string{
 		"cluster.node.read", "cluster.node.metrics.read", "cluster.read",
 		"transcode.job.read", "transcode.job.detail.read", "transcode.job.retry",
-		"live.channel.read",
+		"live.channel.read", "live.session.read",
 		"audit.read",
 		"config.version.read",
 	}
@@ -98,7 +99,7 @@ func ensureAdminRBACSeed(ctx context.Context, adminRepo *mysql.AdminRepository, 
 	viewerPermissions := []string{
 		"cluster.node.read", "cluster.read",
 		"transcode.job.read",
-		"live.channel.read",
+		"live.channel.read", "live.session.read",
 		"config.version.read",
 	}
 	for _, permKey := range viewerPermissions {

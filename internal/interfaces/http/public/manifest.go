@@ -32,7 +32,7 @@ func NewManifestHandler(builder *manifest.Builder) *ManifestHandler {
 //   - renditions: 逗号分隔的清晰度白名单（版权保护，如 renditions=720p,480p）
 //   - max_height: 最大允许高度（如 max_height=720）
 func (h *ManifestHandler) ServeMPD(w http.ResponseWriter, r *http.Request) {
-	jobID, err := strconv.ParseUint(getPathValue(r, "job_id"), 10, 64)
+	jobID, err := parsePathUintWithSuffix(r, "job_id", ".mpd")
 	if err != nil || jobID == 0 {
 		http.Error(w, "invalid job_id", http.StatusBadRequest)
 		return
@@ -59,7 +59,7 @@ func (h *ManifestHandler) ServeMPD(w http.ResponseWriter, r *http.Request) {
 //   - renditions: 逗号分隔的清晰度白名单
 //   - max_height: 最大允许高度
 func (h *ManifestHandler) ServeMasterM3U8(w http.ResponseWriter, r *http.Request) {
-	jobID, err := strconv.ParseUint(getPathValue(r, "job_id"), 10, 64)
+	jobID, err := parsePathUintWithSuffix(r, "job_id", ".m3u8")
 	if err != nil || jobID == 0 {
 		http.Error(w, "invalid job_id", http.StatusBadRequest)
 		return
@@ -82,13 +82,13 @@ func (h *ManifestHandler) ServeMasterM3U8(w http.ResponseWriter, r *http.Request
 //
 // GET /v1/manifest/hls/{job_id}/{rendition}.m3u8
 func (h *ManifestHandler) ServeVariantM3U8(w http.ResponseWriter, r *http.Request) {
-	jobID, err := strconv.ParseUint(getPathValue(r, "job_id"), 10, 64)
+	jobID, err := parsePathUintWithSuffix(r, "job_id", "")
 	if err != nil || jobID == 0 {
 		http.Error(w, "invalid job_id", http.StatusBadRequest)
 		return
 	}
 
-	rendition := getPathValue(r, "rendition")
+	rendition := parsePathStringWithSuffix(r, "rendition", ".m3u8")
 	if rendition == "" {
 		http.Error(w, "invalid rendition", http.StatusBadRequest)
 		return
@@ -110,6 +110,7 @@ func (h *ManifestHandler) ServeVariantM3U8(w http.ResponseWriter, r *http.Reques
 // 支持两种过滤方式：
 //   - renditions=720p,480p  按名称白名单过滤
 //   - max_height=720        按最大高度过滤
+//
 // 两者同时存在时取交集。
 func parseRenditionFilter(r *http.Request) manifest.RenditionFilter {
 	filter := manifest.RenditionFilter{}
@@ -137,4 +138,20 @@ func parseRenditionFilter(r *http.Request) manifest.RenditionFilter {
 // getPathValue 从 URL 路径中获取命名参数。
 func getPathValue(r *http.Request, key string) string {
 	return r.PathValue(key)
+}
+
+func parsePathUintWithSuffix(r *http.Request, key string, suffix string) (uint64, error) {
+	value := parsePathStringWithSuffix(r, key, suffix)
+	return strconv.ParseUint(value, 10, 64)
+}
+
+func parsePathStringWithSuffix(r *http.Request, key string, suffix string) string {
+	value := strings.TrimSpace(getPathValue(r, key))
+	if suffix == "" {
+		return value
+	}
+	if !strings.HasSuffix(value, suffix) {
+		return ""
+	}
+	return strings.TrimSuffix(value, suffix)
 }

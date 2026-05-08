@@ -114,7 +114,7 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64, filter RenditionFi
 	videoRenditions := make(map[string][]model.Segment)
 	audioRenditions := make(map[string][]model.Segment)
 	for key, segs := range renditions {
-		if strings.Contains(key, "-audio-") {
+		if strings.HasSuffix(key, "-audio") {
 			audioRenditions[key] = segs
 		} else {
 			videoRenditions[key] = segs
@@ -134,6 +134,7 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64, filter RenditionFi
 
 		rend := planner.RenditionSpec{
 			Name:         initSeg.RenditionName,
+			RenditionKey: initSeg.RenditionKey,
 			QualityLabel: planner.QualityLabelFromHeight(initSeg.Height),
 			Width:        initSeg.Width,
 			Height:       initSeg.Height,
@@ -148,7 +149,7 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64, filter RenditionFi
 		sb.WriteString(`>`)
 
 		initURL := b.objectURL(initSeg.ObjectKey)
-		mediaURL := b.renderMediaTemplateURL(jobID, rend, "video")
+		mediaURL := b.renderMediaTemplateURL(job.SegmentTemplate, jobID, rend, "video")
 
 		sb.WriteString(`<SegmentTemplate`)
 		sb.WriteString(fmt.Sprintf(` timescale="1000"`))
@@ -180,13 +181,14 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64, filter RenditionFi
 			continue
 		}
 
-		videoSegs, ok := videoRenditions[strings.Replace(rendKey, "-audio-", "-video-", 1)]
+		videoSegs, ok := videoRenditions[strings.TrimSuffix(rendKey, "-audio")+"-video"]
 		var rend planner.RenditionSpec
 		if ok {
 			videoInit := findInitSegment(videoSegs)
 			if videoInit != nil {
 				rend = planner.RenditionSpec{
 					Name:         videoInit.RenditionName,
+					RenditionKey: videoInit.RenditionKey,
 					QualityLabel: planner.QualityLabelFromHeight(videoInit.Height),
 					Width:        videoInit.Width,
 					Height:       videoInit.Height,
@@ -196,6 +198,7 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64, filter RenditionFi
 		if rend.QualityLabel == "" {
 			rend = planner.RenditionSpec{
 				Name:         initSeg.RenditionName,
+				RenditionKey: initSeg.RenditionKey,
 				QualityLabel: planner.QualityLabelFromHeight(initSeg.Height),
 				Width:        initSeg.Width,
 				Height:       initSeg.Height,
@@ -211,7 +214,7 @@ func (b *Builder) BuildMPD(ctx context.Context, jobID uint64, filter RenditionFi
 		sb.WriteString(`>`)
 
 		initURL := b.objectURL(initSeg.ObjectKey)
-		mediaURL := b.renderMediaTemplateURL(jobID, rend, "audio")
+		mediaURL := b.renderMediaTemplateURL(job.SegmentTemplate, jobID, rend, "audio")
 
 		sb.WriteString(`<SegmentTemplate`)
 		sb.WriteString(fmt.Sprintf(` timescale="1000"`))
@@ -338,14 +341,14 @@ func (b *Builder) BuildVariantM3U8(ctx context.Context, jobID uint64, renditionN
 //
 // 使用 $Number$ 作为 FFmpeg/DASH 标准占位符，
 // 其余占位符按后台配置模板渲染。
-func (b *Builder) renderMediaTemplateURL(jobID uint64, rend planner.RenditionSpec, mediaType string) string {
-	cfg := b.currentConfig()
-	tmpl := cfg.Worker.SegmentTemplate
+func (b *Builder) renderMediaTemplateURL(template string, jobID uint64, rend planner.RenditionSpec, mediaType string) string {
+	tmpl := template
 	if tmpl == "" {
-		tmpl = "{job_id}-{media_type}-{number}.m4s"
+		tmpl = "{job_id}-{rendition_key}-{media_type}-{number}.m4s"
 	}
 	result := tmpl
 	result = strings.ReplaceAll(result, "{job_id}", fmt.Sprintf("%d", jobID))
+	result = strings.ReplaceAll(result, "{rendition_key}", rend.RenditionKey)
 	result = strings.ReplaceAll(result, "{media_type}", mediaType)
 	result = strings.ReplaceAll(result, "{number}", "$Number$")
 	result = strings.ReplaceAll(result, "{resolution}", rend.Resolution())
@@ -363,7 +366,7 @@ func (b *Builder) objectURL(objectKey string) string {
 }
 
 func (b *Builder) variantM3U8URL(jobID uint64, rendName string) string {
-	return fmt.Sprintf("/api/v1/manifest/hls/%d/%s.m3u8", jobID, rendName)
+	return fmt.Sprintf("/v1/manifest/hls/%d/%s.m3u8", jobID, rendName)
 }
 
 func groupSegmentsByRendition(segments []model.Segment) map[string][]model.Segment {

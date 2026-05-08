@@ -9,26 +9,32 @@ import (
 func (r *ClusterNodeRepository) EnsureLocalNode(ctx context.Context, nodeID uint64, nodeName, hostIP, httpHost string) error {
 	var record ClusterNodeRecord
 	now := time.Now()
-	if err := r.db.WithContext(ctx).Where("node_id = ?", nodeID).Take(&record).Error; err == nil {
+	result := r.db.WithContext(ctx).Where("node_id = ?", nodeID).Limit(1).Find(&record)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
 		return r.db.WithContext(ctx).Model(&ClusterNodeRecord{}).Where("node_id = ?", nodeID).Updates(map[string]any{
-			"node_name":      nodeName,
-			"host_ip":        hostIP,
-			"http_host":      httpHost,
-			"enabled":        true,
-			"updated_at":     now,
-			"last_heartbeat_at": now,
+			"node_name":            nodeName,
+			"host_ip":              hostIP,
+			"http_host":            httpHost,
+			"enabled":              true,
+			"last_state_change_at": now,
+			"updated_at":           now,
+			"last_heartbeat_at":    now,
 		}).Error
 	}
 	record = ClusterNodeRecord{
-		NodeID:            nodeID,
-		NodeName:          nodeName,
-		HostIP:            hostIP,
-		HTTPHost:          httpHost,
-		Enabled:           true,
-		Quarantined:       false,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		LastHeartbeatAt:   now,
+		NodeID:             nodeID,
+		NodeName:           nodeName,
+		HostIP:             hostIP,
+		HTTPHost:           httpHost,
+		Enabled:            true,
+		Quarantined:        false,
+		LastStateChangeAt:  now,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		LastHeartbeatAt:    now,
 		CapacityGeneration: 1,
 	}
 	return r.db.WithContext(ctx).Create(&record).Error
@@ -45,9 +51,9 @@ func (r *ClusterNodeRepository) SetEnabled(ctx context.Context, nodeID uint64, e
 // SetQuarantined 切换节点隔离状态。
 func (r *ClusterNodeRepository) SetQuarantined(ctx context.Context, nodeID uint64, quarantined bool, reason string) error {
 	return r.db.WithContext(ctx).Model(&ClusterNodeRecord{}).Where("node_id = ?", nodeID).Updates(map[string]any{
-		"quarantined":        quarantined,
-		"quarantine_reason":  reason,
+		"quarantined":          quarantined,
+		"quarantine_reason":    reason,
 		"last_state_change_at": time.Now(),
-		"updated_at":         time.Now(),
+		"updated_at":           time.Now(),
 	}).Error
 }

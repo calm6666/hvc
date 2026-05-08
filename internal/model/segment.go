@@ -16,6 +16,7 @@ type Segment struct {
 	JobID              uint64
 	RenditionID        uint64
 	RenditionName      string
+	RenditionKey       string
 	SegmentType        string
 	MediaType          int
 	IsInitSegment      bool

@@ -39,9 +39,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
 		Expires:  time.Now().Add(24 * time.Hour),
 	})
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"session_token": token}})
+	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
+		"authenticated": true,
+		"token_transport": map[string]any{
+			"type":        "cookie",
+			"cookie_name": "admin_session",
+			"http_only":   true,
+		},
+	}})
 }
 
 // WhoAmI 返回当前管理员会话概要。
@@ -52,16 +61,20 @@ func (h *AuthHandler) WhoAmI(w http.ResponseWriter, r *http.Request) {
 
 // Logout 处理管理员登出。
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	token := r.Header.Get("Authorization")
-	if token == "" {
-		if cookie, err := r.Cookie("admin_session"); err == nil {
-			token = cookie.Value
-		}
-	}
+	token := internalauth.ExtractAdminSessionToken(r)
 	if token != "" && h.adminRepository != nil {
 		_ = h.adminRepository.RevokeSessionByToken(r.Context(), token)
 	}
-	http.SetCookie(w, &http.Cookie{Name: "admin_session", Value: "", Path: "/", Expires: time.Unix(0, 0), MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+	})
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok"})
 }
 

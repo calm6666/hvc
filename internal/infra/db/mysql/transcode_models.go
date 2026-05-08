@@ -94,6 +94,7 @@ type TranscodeRenditionRecord struct {
 	RenditionID       uint64    `gorm:"column:rendition_id;primaryKey"`
 	JobID             uint64    `gorm:"column:job_id"`
 	RenditionName     string    `gorm:"column:rendition_name"`
+	RenditionKey      string    `gorm:"column:rendition_key"`
 	Status            int       `gorm:"column:status"`
 	OutWidth          int       `gorm:"column:out_width"`
 	OutHeight         int       `gorm:"column:out_height"`

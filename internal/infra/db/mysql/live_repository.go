@@ -12,6 +12,20 @@ type LiveChannelRepository struct {
 	db *DB
 }
 
+type LiveChannelListFilter struct {
+	Page       int
+	PageSize   int
+	Status     string
+	ChannelKey string
+}
+
+type LiveSessionListFilter struct {
+	Page      int
+	PageSize  int
+	ChannelID uint64
+	Status    string
+}
+
 func NewLiveChannelRepository(db *DB) *LiveChannelRepository {
 	return &LiveChannelRepository{db: db}
 }
@@ -60,6 +74,38 @@ func (r *LiveChannelRepository) UpdateStatus(ctx context.Context, channelID uint
 		"assigned_worker_id": workerID,
 		"updated_at":         time.Now(),
 	}).Error
+}
+
+func (r *LiveChannelRepository) Delete(ctx context.Context, channelID uint64) error {
+	return r.db.WithContext(ctx).Where("channel_id = ?", channelID).Delete(&LiveChannelRecord{}).Error
+}
+
+func (r *LiveChannelRepository) ListPage(ctx context.Context, filter LiveChannelListFilter) ([]model.LiveChannel, int64, error) {
+	page, pageSize := normalizePage(filter.Page, filter.PageSize)
+
+	query := r.db.WithContext(ctx).Model(&LiveChannelRecord{})
+	if filter.ChannelKey != "" {
+		query = query.Where("channel_key = ?", filter.ChannelKey)
+	}
+	if status, ok := parseLiveChannelStatusFilter(filter.Status); ok {
+		query = query.Where("status = ?", status)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var records []LiveChannelRecord
+	if err := query.Order("channel_id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]model.LiveChannel, 0, len(records))
+	for _, record := range records {
+		items = append(items, toLiveChannelModel(record))
+	}
+	return items, total, nil
 }
 
 type LiveProfileRenditionRepository struct {
@@ -128,6 +174,34 @@ func (r *LiveSessionRepository) FindLatestActiveByChannelID(ctx context.Context,
 	return toLiveSessionModel(record), true
 }
 
+func (r *LiveSessionRepository) ListPage(ctx context.Context, filter LiveSessionListFilter) ([]model.LiveSession, int64, error) {
+	page, pageSize := normalizePage(filter.Page, filter.PageSize)
+
+	query := r.db.WithContext(ctx).Model(&LiveSessionRecord{})
+	if filter.ChannelID > 0 {
+		query = query.Where("channel_id = ?", filter.ChannelID)
+	}
+	if status, ok := parseLiveSessionStatusFilter(filter.Status); ok {
+		query = query.Where("status = ?", status)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var records []LiveSessionRecord
+	if err := query.Order("session_id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]model.LiveSession, 0, len(records))
+	for _, record := range records {
+		items = append(items, toLiveSessionModel(record))
+	}
+	return items, total, nil
+}
+
 func toLiveChannelRecord(channel model.LiveChannel) LiveChannelRecord {
 	return LiveChannelRecord{
 		ChannelID:             channel.ChannelID,
@@ -170,6 +244,8 @@ func toLiveSessionRecord(session model.LiveSession) LiveSessionRecord {
 		ChannelID:        session.ChannelID,
 		SessionKey:       buildLiveSessionKey(session),
 		Status:           liveSessionStatusToDB(session.Status),
+		IngestURL:        session.IngestURL,
+		PlaybackHLSURL:   session.PlaybackHLSURL,
 		PushProtocol:     session.PushProtocol,
 		AssignedNodeID:   session.AssignedNodeID,
 		AssignedWorkerID: session.AssignedWorkerID,
@@ -179,7 +255,7 @@ func toLiveSessionRecord(session model.LiveSession) LiveSessionRecord {
 		UpdatedAt:        session.StartedAt,
 	}
 	if session.StoppedAt != nil {
-		record.EndedAt = *session.StoppedAt
+		record.EndedAt = session.StoppedAt
 		record.UpdatedAt = *session.StoppedAt
 	}
 	return record
@@ -189,21 +265,27 @@ func toLiveSessionModel(record LiveSessionRecord) model.LiveSession {
 	session := model.LiveSession{
 		SessionID:        record.SessionID,
 		ChannelID:        record.ChannelID,
+		SessionKey:       record.SessionKey,
 		Status:           liveSessionStatusFromDB(record.Status),
+		IngestURL:        record.IngestURL,
+		PlaybackHLSURL:   record.PlaybackHLSURL,
 		PushProtocol:     record.PushProtocol,
 		AssignedNodeID:   record.AssignedNodeID,
 		AssignedWorkerID: record.AssignedWorkerID,
 		StartedAt:        record.StartedAt,
 		ResumeCount:      record.ResumeCount,
 	}
-	if !record.EndedAt.IsZero() {
-		stoppedAt := record.EndedAt
+	if record.EndedAt != nil && !record.EndedAt.IsZero() {
+		stoppedAt := *record.EndedAt
 		session.StoppedAt = &stoppedAt
 	}
 	return session
 }
 
 func buildLiveSessionKey(session model.LiveSession) string {
+	if session.SessionKey != "" {
+		return session.SessionKey
+	}
 	if session.ChannelKey != "" {
 		return fmt.Sprintf("%s-%d", session.ChannelKey, session.SessionID)
 	}
@@ -263,5 +345,50 @@ func liveSessionStatusFromDB(status int) string {
 		return model.LiveSessionStatusRejected
 	default:
 		return model.LiveSessionStatusConnecting
+	}
+}
+
+func normalizePage(page int, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return page, pageSize
+}
+
+func parseLiveChannelStatusFilter(status string) (int, bool) {
+	switch status {
+	case model.LiveChannelStatusIdle:
+		return 1, true
+	case model.LiveChannelStatusStarting, model.LiveChannelStatusLive:
+		return 2, true
+	case model.LiveChannelStatusStopped:
+		return 3, true
+	case model.LiveChannelStatusError:
+		return 4, true
+	default:
+		return 0, false
+	}
+}
+
+func parseLiveSessionStatusFilter(status string) (int, bool) {
+	switch status {
+	case model.LiveSessionStatusConnecting:
+		return 1, true
+	case model.LiveSessionStatusPublishing, model.LiveSessionStatusResumed:
+		return 2, true
+	case model.LiveSessionStatusStopped:
+		return 3, true
+	case model.LiveSessionStatusInterruptWaitResume:
+		return 4, true
+	case model.LiveSessionStatusRejected:
+		return 5, true
+	default:
+		return 0, false
 	}
 }

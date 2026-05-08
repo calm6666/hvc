@@ -12,16 +12,16 @@ const (
 
 // OutboxEvent 表示回调事件。
 type OutboxEvent struct {
-	EventID           uint64
-	EventType         string
-	JobID             uint64
-	RequestID         string
-	PayloadJSON       string
-	Status            int
-	RetryCount        int
-	MaxRetryCount     int
-	NextRetryAt       time.Time
-	LastErrorMessage  string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	EventID          uint64
+	EventType        string
+	JobID            uint64
+	RequestID        string
+	PayloadJSON      string
+	Status           int
+	RetryCount       int
+	MaxRetryCount    int
+	NextRetryAt      *time.Time
+	LastErrorMessage string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }

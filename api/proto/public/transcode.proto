@@ -25,12 +25,12 @@ message SegmentOptions {
   int32 segment_duration_sec = 3;
   // 分片命名模板 ID，关联 t_config_naming_template 表。
   // 六种预置方案：
-  //   方案一：{job_id}-{media_type}-{number}.m4s
-  //   方案二：{job_id}-{resolution}-{media_type}-{number}.m4s
-  //   方案三：{job_id}-{quality}-{media_type}-{number}.m4s
-  //   方案四：{job_id}-{media_type}-{number}-{timestamp}.m4s
-  //   方案五：{job_id}-{resolution}-{media_type}-{number}-{timestamp}.m4s
-  //   方案六：{job_id}-{quality}-{media_type}-{number}-{timestamp}.m4s
+  //   方案一：{job_id}-{rendition_key}-{media_type}-{number}.m4s
+  //   方案二：{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s
+  //   方案三：{job_id}-{quality}-{rendition_key}-{media_type}-{number}.m4s
+  //   方案四：{job_id}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
+  //   方案五：{job_id}-{resolution}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
+  //   方案六：{job_id}-{quality}-{rendition_key}-{media_type}-{number}-{timestamp}.m4s
   uint64 naming_template_id = 4;
 }
 

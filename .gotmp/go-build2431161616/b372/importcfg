@@ -1,9 +1,0 @@
-# import config
-packagefile context=D:\hilihili\server\hvc\.gocache\b4\b4183b72b01ee34c104f2643ea9dc36e464f79f396a677679e635b2811db203c-d
-packagefile encoding/json=D:\hilihili\server\hvc\.gocache\ef\ef224f26b95fa1070d909134b1a46a45abd5f642d57d809f245e3451417a1637-d
-packagefile fmt=D:\hilihili\server\hvc\.gocache\9d\9dbda6e832b423d90ca1c95ac9172eccafed6efaeed208ed6a80a0c79adc0121-d
-packagefile hvc/internal/cluster/membership=D:\hilihili\server\hvc\.gocache\c1\c16c7715a3713cf278321c1c2558fd8ffe8965c732fd6eac8ab88162c86dabb4-d
-packagefile hvc/internal/config=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b001\_pkg_.a
-packagefile hvc/internal/infra/cache/redis=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b374\_pkg_.a
-packagefile hvc/internal/model=D:\hilihili\server\hvc\.gotmp\go-build2431161616\b245\_pkg_.a
-packagefile time=D:\hilihili\server\hvc\.gocache\c0\c0551600e2e3bb397c29fcf9657ed0b6e5230061afaccb8926d5c4dfa35125c7-d

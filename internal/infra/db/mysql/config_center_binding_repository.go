@@ -7,17 +7,17 @@ import (
 	"hvc/pkg/idgen"
 )
 
-// ConfigCenterBindingRepository 表示配置中心绑定仓储。
+// ConfigCenterBindingRepository 表示外部 bootstrap 配置源绑定仓储。
 type ConfigCenterBindingRepository struct {
 	db *DB
 }
 
-// NewConfigCenterBindingRepository 创建配置中心绑定仓储。
+// NewConfigCenterBindingRepository 创建外部 bootstrap 配置源绑定仓储。
 func NewConfigCenterBindingRepository(db *DB) *ConfigCenterBindingRepository {
 	return &ConfigCenterBindingRepository{db: db}
 }
 
-// ListAll 返回全部配置中心绑定。
+// ListAll 返回全部 bootstrap 配置源绑定。
 func (r *ConfigCenterBindingRepository) ListAll(ctx context.Context) []ConfigCenterBindingRecord {
 	var records []ConfigCenterBindingRecord
 	if err := r.db.WithContext(ctx).Order("priority desc, updated_at desc").Find(&records).Error; err != nil {
@@ -26,15 +26,15 @@ func (r *ConfigCenterBindingRepository) ListAll(ctx context.Context) []ConfigCen
 	return records
 }
 
-// Save 保存配置中心绑定。
+// Save 保存 bootstrap 配置源绑定。
 func (r *ConfigCenterBindingRepository) Save(ctx context.Context, record ConfigCenterBindingRecord) error {
 	if record.BindingID == 0 {
 		record.BindingID = idgen.Next()
 	}
-		now := time.Now()
-		if record.CreatedAt.IsZero() {
-			record.CreatedAt = now
-		}
-		record.UpdatedAt = now
+	now := time.Now()
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = now
+	}
+	record.UpdatedAt = now
 	return r.db.WithContext(ctx).Save(&record).Error
 }

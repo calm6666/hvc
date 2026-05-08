@@ -5,8 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"hvc/internal/model"
+	"time"
 
 	rediscache "hvc/internal/infra/cache/redis"
+)
+
+const (
+	// workerHeartbeatTTL 控制心跳在 Redis 热路径中的有效窗口。
+	// 超过该时间还没有刷新，后台观测和调度就不应继续把该 Worker 视为在线。
+	workerHeartbeatTTL = 2 * time.Minute
+	// nodeMetricsTTL 控制节点指标在 Redis 中的保鲜时间。
+	// 指标本身允许秒级延迟，但不能无限陈旧。
+	nodeMetricsTTL = 30 * time.Second
 )
 
 // StateCache 表示集群热路径状态缓存。
@@ -29,7 +39,7 @@ func (c *StateCache) SaveHeartbeat(ctx context.Context, heartbeat model.WorkerHe
 		return
 	}
 	key := fmt.Sprintf("hvc:worker:%s:heartbeat", heartbeat.WorkerID)
-	_ = c.client.Engine.Set(ctx, key, payload, 0).Err()
+	_ = c.client.Engine.Set(ctx, key, payload, workerHeartbeatTTL).Err()
 }
 
 // SaveNodeMetrics 保存节点指标。
@@ -42,7 +52,7 @@ func (c *StateCache) SaveNodeMetrics(ctx context.Context, metrics model.NodeMetr
 		return
 	}
 	key := fmt.Sprintf("hvc:node:%d:metrics", metrics.NodeID)
-	_ = c.client.Engine.Set(ctx, key, payload, 0).Err()
+	_ = c.client.Engine.Set(ctx, key, payload, nodeMetricsTTL).Err()
 }
 
 // GetNodeMetrics 获取节点指标。

@@ -18,6 +18,7 @@ import (
 // HTTPServer 表示 HTTP 服务。
 type HTTPServer struct {
 	listenAddress        string
+	internalAuthToken    string
 	systemHandler        *handler.SystemHandler
 	transcodeHandler     *publichttp.TranscodeHandler
 	clusterHandler       *publichttp.ClusterHandler
@@ -37,9 +38,10 @@ type HTTPServer struct {
 }
 
 // NewHTTPServer 创建 HTTP 服务。
-func NewHTTPServer(cfg config.ServerConfig, systemHandler *handler.SystemHandler, transcodeHandler *publichttp.TranscodeHandler, clusterHandler *publichttp.ClusterHandler, liveHandler *publichttp.LiveHandler, manifestHandler *publichttp.ManifestHandler, authHandler *adminhttp.AuthHandler, configHandler *adminhttp.ConfigHandler, callbackHandler *adminhttp.CallbackHandler, rbacHandler *adminhttp.RBACHandler, writeRBACHandler *adminhttp.WriteRBAC, configCenterHandler *adminhttp.ConfigCenterHandler, adminClusterHandler *adminhttp.ClusterHandler, adminTranscodeHandler *adminhttp.TranscodeHandler, adminLiveHandler *adminhttp.LiveHandler, namingTemplateHandler *adminhttp.NamingTemplateHandler, monitorHandler *wsmonitor.SnapshotHandler) *HTTPServer {
+func NewHTTPServer(cfg config.ServerConfig, internalAuthToken string, systemHandler *handler.SystemHandler, transcodeHandler *publichttp.TranscodeHandler, clusterHandler *publichttp.ClusterHandler, liveHandler *publichttp.LiveHandler, manifestHandler *publichttp.ManifestHandler, authHandler *adminhttp.AuthHandler, configHandler *adminhttp.ConfigHandler, callbackHandler *adminhttp.CallbackHandler, rbacHandler *adminhttp.RBACHandler, writeRBACHandler *adminhttp.WriteRBAC, configCenterHandler *adminhttp.ConfigCenterHandler, adminClusterHandler *adminhttp.ClusterHandler, adminTranscodeHandler *adminhttp.TranscodeHandler, adminLiveHandler *adminhttp.LiveHandler, namingTemplateHandler *adminhttp.NamingTemplateHandler, monitorHandler *wsmonitor.SnapshotHandler) *HTTPServer {
 	return &HTTPServer{
 		listenAddress:        cfg.ListenAddress,
+		internalAuthToken:    internalAuthToken,
 		systemHandler:        systemHandler,
 		transcodeHandler:     transcodeHandler,
 		clusterHandler:       clusterHandler,
@@ -61,19 +63,30 @@ func NewHTTPServer(cfg config.ServerConfig, systemHandler *handler.SystemHandler
 
 // Start 启动 HTTP 服务。
 func (s *HTTPServer) Start(ctx context.Context) error {
+	logx.Info("http.server.listening", logx.Fields{
+		"address": s.listenAddress,
+	})
 	mux := http.NewServeMux()
+	internalOnly := func(next http.HandlerFunc) http.Handler {
+		return httpmiddleware.RequireInternalAccess(s.internalAuthToken, next)
+	}
 	mux.HandleFunc("/healthz", s.systemHandler.Health)
 	mux.HandleFunc("/v1/transcode/job/create", s.transcodeHandler.CreateJob)
 	mux.HandleFunc("/v1/transcode/job/progress", s.transcodeHandler.QueryProgress)
 	mux.HandleFunc("/v1/live/channel/playback", s.liveHandler.GetPlaybackInfo)
-	mux.HandleFunc("/v1/manifest/dash/{job_id}.mpd", s.manifestHandler.ServeMPD)
-	mux.HandleFunc("/v1/manifest/hls/{job_id}.m3u8", s.manifestHandler.ServeMasterM3U8)
-	mux.HandleFunc("/v1/manifest/hls/{job_id}/{rendition}.m3u8", s.manifestHandler.ServeVariantM3U8)
-	mux.HandleFunc("/v1/internal/worker/heartbeat", s.clusterHandler.ReportHeartbeat)
-	mux.HandleFunc("/v1/internal/worker/metrics", s.clusterHandler.ReportMetrics)
-	mux.HandleFunc("/v1/internal/jobs/lease/renew", s.clusterHandler.RenewLease)
-	mux.HandleFunc("/v1/internal/segments/upload-failed", s.clusterHandler.ReportUploadFailed)
-	mux.HandleFunc("/v1/internal/segments/upload-succeeded", s.clusterHandler.ReportUploadSucceeded)
+	mux.HandleFunc("/v1/live/channel/push-auth", s.liveHandler.PushAuth)
+	mux.HandleFunc("/v1/live/channel/play-auth", s.liveHandler.PlayAuth)
+	mux.Handle("/v1/internal/live/publish-connected", internalOnly(s.liveHandler.PublishConnected))
+	mux.Handle("/v1/internal/live/publish-disconnected", internalOnly(s.liveHandler.PublishDisconnected))
+	mux.Handle("/v1/internal/live/publish-interrupted", internalOnly(s.liveHandler.PublishInterrupted))
+	mux.HandleFunc("/v1/manifest/dash/{job_id}", s.manifestHandler.ServeMPD)
+	mux.HandleFunc("/v1/manifest/hls/{job_id}", s.manifestHandler.ServeMasterM3U8)
+	mux.HandleFunc("/v1/manifest/hls/{job_id}/{rendition}", s.manifestHandler.ServeVariantM3U8)
+	mux.Handle("/v1/internal/worker/heartbeat", internalOnly(s.clusterHandler.ReportHeartbeat))
+	mux.Handle("/v1/internal/worker/metrics", internalOnly(s.clusterHandler.ReportMetrics))
+	mux.Handle("/v1/internal/jobs/lease/renew", internalOnly(s.clusterHandler.RenewLease))
+	mux.Handle("/v1/internal/segments/upload-failed", internalOnly(s.clusterHandler.ReportUploadFailed))
+	mux.Handle("/v1/internal/segments/upload-succeeded", internalOnly(s.clusterHandler.ReportUploadSucceeded))
 
 	mux.HandleFunc("/v1/admin/auth/login", s.authHandler.Login)
 	mux.Handle("/v1/admin/auth/logout", httpmiddleware.RequirePermission("auth.session.write", http.HandlerFunc(s.authHandler.Logout)))
@@ -106,6 +119,8 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	mux.Handle("/v1/admin/cluster/node/list", httpmiddleware.RequirePermission("cluster.node.read", http.HandlerFunc(s.adminClusterHandle.ListNodes)))
 	mux.Handle("/v1/admin/cluster/node/detail", httpmiddleware.RequirePermission("cluster.node.read", http.HandlerFunc(s.adminClusterHandle.GetNodeDetail)))
 	mux.Handle("/v1/admin/cluster/node/metrics", httpmiddleware.RequirePermission("cluster.node.metrics.read", http.HandlerFunc(s.adminClusterHandle.ListNodeMetrics)))
+	mux.Handle("/v1/admin/cluster/overview", httpmiddleware.RequirePermission("cluster.read", http.HandlerFunc(s.adminClusterHandle.Overview)))
+	mux.Handle("/v1/admin/cluster/realtime", httpmiddleware.RequirePermission("cluster.read", http.HandlerFunc(s.adminClusterHandle.Realtime)))
 	mux.Handle("/v1/admin/cluster/member/list", httpmiddleware.RequirePermission("cluster.read", http.HandlerFunc(s.adminClusterHandle.ListMembers)))
 	mux.Handle("/v1/admin/cluster/node/enabled", httpmiddleware.RequirePermission("cluster.node.enable", http.HandlerFunc(s.adminClusterHandle.SetNodeEnabled)))
 	mux.Handle("/v1/admin/cluster/node/quarantined", httpmiddleware.RequirePermission("cluster.node.quarantine", http.HandlerFunc(s.adminClusterHandle.SetNodeQuarantined)))
@@ -119,10 +134,13 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	mux.Handle("/v1/admin/transcode/monitor/ws", httpmiddleware.RequirePermission("transcode.job.read", http.HandlerFunc(s.monitorHandle.HandleWS)))
 
 	mux.Handle("/v1/admin/live/channel/create", httpmiddleware.RequirePermission("live.channel.create", http.HandlerFunc(s.adminLiveHandle.CreateChannel)))
+	mux.Handle("/v1/admin/live/channel/list", httpmiddleware.RequirePermission("live.channel.read", http.HandlerFunc(s.adminLiveHandle.ListChannels)))
 	mux.Handle("/v1/admin/live/channel/detail", httpmiddleware.RequirePermission("live.channel.read", http.HandlerFunc(s.adminLiveHandle.ChannelDetail)))
 	mux.Handle("/v1/admin/live/channel/update", httpmiddleware.RequirePermission("live.channel.update", http.HandlerFunc(s.adminLiveHandle.UpdateChannel)))
 	mux.Handle("/v1/admin/live/channel/start", httpmiddleware.RequirePermission("live.channel.start", http.HandlerFunc(s.adminLiveHandle.StartChannel)))
 	mux.Handle("/v1/admin/live/channel/stop", httpmiddleware.RequirePermission("live.channel.stop", http.HandlerFunc(s.adminLiveHandle.StopChannel)))
+	mux.Handle("/v1/admin/live/channel/delete", httpmiddleware.RequirePermission("live.channel.delete", http.HandlerFunc(s.adminLiveHandle.DeleteChannel)))
+	mux.Handle("/v1/admin/live/session/list", httpmiddleware.RequirePermission("live.session.read", http.HandlerFunc(s.adminLiveHandle.ListSessions)))
 
 	server := &http.Server{
 		Addr:    s.listenAddress,
