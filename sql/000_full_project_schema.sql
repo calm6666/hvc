@@ -67,6 +67,19 @@ CREATE TABLE IF NOT EXISTS `t_admin_audit_log` (
   KEY `idx_action_name_created_at` (`action_name`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='管理员审计日志表，用于记录后台登录、配置变更和任务管理等关键操作';
 
+CREATE TABLE IF NOT EXISTS `t_system_runtime_log` (
+  `log_id` BIGINT UNSIGNED NOT NULL COMMENT '运行日志主键ID',
+  `service_name` VARCHAR(128) NOT NULL COMMENT '服务名称',
+  `log_level` VARCHAR(16) NOT NULL COMMENT '日志级别，例如 info、error',
+  `action_name` VARCHAR(128) NOT NULL COMMENT '日志动作名称',
+  `fields_json` JSON NOT NULL COMMENT '结构化日志字段 JSON',
+  `logged_at` DATETIME NOT NULL COMMENT '日志产生时间',
+  PRIMARY KEY (`log_id`),
+  KEY `idx_level_logged_at` (`log_level`, `logged_at`),
+  KEY `idx_action_logged_at` (`action_name`, `logged_at`),
+  KEY `idx_service_logged_at` (`service_name`, `logged_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统运行日志表，用于持久化结构化业务日志并支持后台分页查询';
+
 CREATE TABLE IF NOT EXISTS `t_admin_role` (
   `role_id` BIGINT UNSIGNED NOT NULL COMMENT '角色主键ID',
   `role_key` VARCHAR(64) NOT NULL COMMENT '角色唯一键，例如 super_admin、operator、viewer',
@@ -115,6 +128,38 @@ CREATE TABLE IF NOT EXISTS `t_admin_role_permission` (
   CONSTRAINT `fk_admin_role_permission_role_id` FOREIGN KEY (`role_id`) REFERENCES `t_admin_role` (`role_id`),
   CONSTRAINT `fk_admin_role_permission_perm_id` FOREIGN KEY (`perm_id`) REFERENCES `t_admin_permission` (`perm_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色与权限点绑定表';
+
+CREATE TABLE IF NOT EXISTS `t_admin_menu` (
+  `menu_id` BIGINT UNSIGNED NOT NULL COMMENT '菜单主键ID',
+  `parent_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '父级菜单ID，0表示根节点',
+  `menu_key` VARCHAR(128) NOT NULL COMMENT '菜单唯一键',
+  `menu_name` VARCHAR(128) NOT NULL COMMENT '菜单名称',
+  `route_path` VARCHAR(255) DEFAULT NULL COMMENT '前端路由路径',
+  `component_name` VARCHAR(255) DEFAULT NULL COMMENT '前端组件名或页面标识',
+  `icon_name` VARCHAR(128) DEFAULT NULL COMMENT '前端图标名称',
+  `menu_type` VARCHAR(32) NOT NULL DEFAULT 'menu' COMMENT '菜单类型，例如 directory、menu、button',
+  `permission_key` VARCHAR(128) DEFAULT NULL COMMENT '关联权限点 key，可为空',
+  `sort_no` INT NOT NULL DEFAULT 0 COMMENT '同级排序值，越小越靠前',
+  `hidden` TINYINT NOT NULL DEFAULT 0 COMMENT '是否隐藏，0=否，1=是',
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态，1=启用，2=禁用',
+  `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
+  `updated_at` DATETIME NOT NULL COMMENT '记录更新时间',
+  PRIMARY KEY (`menu_id`),
+  UNIQUE KEY `uk_menu_key` (`menu_key`),
+  KEY `idx_parent_sort_status` (`parent_id`, `sort_no`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台菜单表';
+
+CREATE TABLE IF NOT EXISTS `t_admin_role_menu` (
+  `id` BIGINT UNSIGNED NOT NULL COMMENT '角色菜单绑定主键ID',
+  `role_id` BIGINT UNSIGNED NOT NULL COMMENT '角色ID',
+  `menu_id` BIGINT UNSIGNED NOT NULL COMMENT '菜单ID',
+  `created_at` DATETIME NOT NULL COMMENT '记录创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_role_menu` (`role_id`, `menu_id`),
+  KEY `idx_menu_id` (`menu_id`),
+  CONSTRAINT `fk_admin_role_menu_role_id` FOREIGN KEY (`role_id`) REFERENCES `t_admin_role` (`role_id`),
+  CONSTRAINT `fk_admin_role_menu_menu_id` FOREIGN KEY (`menu_id`) REFERENCES `t_admin_menu` (`menu_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色与菜单绑定表';
 
 -- ============================================================
 -- 2. 点播转码任务主链路
@@ -559,6 +604,8 @@ CREATE TABLE IF NOT EXISTS `t_cluster_node` (
   `enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用：0=否；1=是',
   `quarantined` TINYINT NOT NULL DEFAULT 0 COMMENT '是否隔离：0=否；1=是',
   `quarantine_reason` VARCHAR(256) DEFAULT NULL COMMENT '隔离原因',
+  `draining` TINYINT NOT NULL DEFAULT 0 COMMENT '是否排空：0=否；1=是；排空后不再接收新任务但允许存量任务跑完',
+  `drain_reason` VARCHAR(256) DEFAULT NULL COMMENT '排空原因',
   `last_state_change_at` DATETIME DEFAULT NULL COMMENT '最近一次节点状态变化时间',
   `capacity_generation` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '节点能力或容量变更代次，用于调度缓存失效',
   `support_nvenc` TINYINT NOT NULL DEFAULT 0 COMMENT '是否支持 NVIDIA NVENC',
@@ -580,7 +627,8 @@ CREATE TABLE IF NOT EXISTS `t_cluster_node` (
   PRIMARY KEY (`node_id`),
   UNIQUE KEY `uk_node_name` (`node_name`),
   KEY `idx_enabled_heartbeat` (`enabled`, `last_heartbeat_at`),
-  KEY `idx_quarantined` (`quarantined`)
+  KEY `idx_quarantined` (`quarantined`),
+  KEY `idx_draining` (`draining`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='集群节点表';
 
 CREATE TABLE IF NOT EXISTS `t_node_gpu_device` (
@@ -846,6 +894,17 @@ CREATE TABLE IF NOT EXISTS `t_effective_runtime_config_snapshot` (
   KEY `idx_config_version` (`config_version`),
   KEY `idx_config_hash` (`config_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='有效运行配置快照表，用于持久化最终配置结果；运行期热路径应优先从 Redis 缓存读取';
+
+CREATE TABLE IF NOT EXISTS `t_config_naming_template` (
+  `id` BIGINT UNSIGNED NOT NULL COMMENT '命名模板记录主键ID',
+  `config_version` BIGINT UNSIGNED NOT NULL COMMENT '命名模板记录版本号，仅用于模板自身历史追踪',
+  `output_base_prefix_tpl` VARCHAR(255) DEFAULT NULL COMMENT '输出根前缀模板，当前保留用于后续扩展',
+  `init_seg_name_tpl` VARCHAR(255) NOT NULL COMMENT '初始化分片命名模板',
+  `media_seg_name_tpl` VARCHAR(255) NOT NULL COMMENT '媒体分片命名模板',
+  `created_at` DATETIME NOT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_config_version` (`config_version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分片命名模板配置表，用于保存待发布或立即生效的全局命名模板记录';
 
 -- ============================================================
 -- 8. 可选初始化种子数据

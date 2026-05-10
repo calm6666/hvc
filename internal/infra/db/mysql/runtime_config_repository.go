@@ -26,6 +26,24 @@ func (r *RuntimeConfigRepository) LatestPublished(ctx context.Context) (RuntimeC
 	return record, true
 }
 
+// ListVersionsPage 返回运行配置版本分页列表。
+func (r *RuntimeConfigRepository) ListVersionsPage(ctx context.Context, page, pageSize int, published *bool) ([]RuntimeConfigRecord, int64, error) {
+	page, pageSize = normalizeAdminPage(page, pageSize)
+	query := r.db.WithContext(ctx).Model(&RuntimeConfigRecord{})
+	if published != nil {
+		query = query.Where("published = ?", *published)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var records []RuntimeConfigRecord
+	if err := query.Order("config_version desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
+}
+
 // Save 保存运行配置版本。
 func (r *RuntimeConfigRepository) Save(ctx context.Context, record RuntimeConfigRecord) error {
 	return r.db.WithContext(ctx).Create(&record).Error

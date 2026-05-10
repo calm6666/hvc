@@ -96,13 +96,14 @@ for PLATFORM in "${PLATFORMS[@]}"; do
   if [ "${GOOS}" = "windows" ]; then
     BINARY_NAME="hvc-server.exe"
   fi
+  mkdir -p "${OUTPUT_DIR}/${GOOS}_${GOARCH}"
 
   echo "  编译: ${GOOS}/${GOARCH}"
   CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
     go build \
     -ldflags "${LDFLAGS}" \
     -o "${OUTPUT_DIR}/${GOOS}_${GOARCH}/${BINARY_NAME}" \
-    ./cmd/server
+    ./cmd
 done
 
 echo "  多平台编译完成"

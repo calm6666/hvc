@@ -1,13 +1,24 @@
 package filter
 
 import (
+	"fmt"
 	"hvc/internal/config"
 	"hvc/internal/model"
+	"time"
 )
 
 // Filter 根据运行配置对候选节点进行硬约束过滤。
 type Filter struct {
 	cfg config.DynamicRuntimeConfig
+}
+
+// Evaluation 表示单个候选节点的过滤结论。
+//
+// Apply 仍然用于真正的调度流程；
+// Evaluate 额外暴露拒绝原因，供后台调度洞察接口直接复用。
+type Evaluation struct {
+	Passed  bool
+	Reasons []string
 }
 
 // NewFilter 创建节点过滤器。
@@ -27,39 +38,73 @@ func NewFilter(cfg config.DynamicRuntimeConfig) *Filter {
 func (f *Filter) Apply(req model.CreateJobRequest, candidates []model.DispatchCandidate) []model.DispatchCandidate {
 	passed := make([]model.DispatchCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		if !candidate.Enabled || candidate.Quarantined {
-			continue
-		}
-		if candidate.Metrics.CPUUsagePercent >= f.cfg.Scheduler.NodeCPUSafetyLimitPercent {
-			continue
-		}
-		if candidate.Metrics.MemoryUsagePercent >= f.cfg.Scheduler.NodeMemorySafetyLimitPercent {
-			continue
-		}
-		if candidate.Metrics.GPUMemoryUsagePercent >= f.cfg.Scheduler.NodeGPUSafetyLimitPercent {
-			continue
-		}
-		if candidate.Metrics.ActiveTranscodeSessions >= f.cfg.Scheduler.MaxNodeTranscodeSessions {
-			continue
-		}
-		if candidate.Metrics.UploadQueueDepth >= f.cfg.Scheduler.MaxNodeUploadConcurrency {
-			continue
-		}
-		if req.EnableWatermark && f.cfg.Scheduler.RequireHardwareWatermark && !candidate.SupportsHardwareWatermark {
-			continue
-		}
-		if !f.matchHWAccel(req, candidate) {
-			continue
-		}
-		if !f.matchGPUCapacity(req, candidate) {
-			continue
-		}
-		if !f.matchCodec(req, candidate) {
+		if !f.Evaluate(req, candidate).Passed {
 			continue
 		}
 		passed = append(passed, candidate)
 	}
 	return passed
+}
+
+// Evaluate 返回候选节点是否通过过滤，以及具体拒绝原因。
+func (f *Filter) Evaluate(req model.CreateJobRequest, candidate model.DispatchCandidate) Evaluation {
+	reasons := make([]string, 0, 8)
+	now := time.Now()
+	heartbeatGrace := resolveHeartbeatGracePeriod(f.cfg)
+
+	if !candidate.Enabled {
+		reasons = append(reasons, "node_disabled")
+	}
+	if candidate.Quarantined {
+		reasons = append(reasons, "node_quarantined")
+	}
+	if candidate.Draining {
+		reasons = append(reasons, "node_draining")
+	}
+	if !candidate.Online {
+		reasons = append(reasons, "node_offline")
+	}
+	if !candidate.MetricsAvailable {
+		reasons = append(reasons, "metrics_missing")
+	}
+	if !candidate.MetricsFresh {
+		reasons = append(reasons, "metrics_stale")
+	}
+	if !candidate.LastHeartbeatAt.IsZero() && now.Sub(candidate.LastHeartbeatAt) > heartbeatGrace {
+		reasons = append(reasons, fmt.Sprintf("heartbeat_stale(>%s)", heartbeatGrace.String()))
+	}
+	if limit := f.cfg.Scheduler.NodeCPUSafetyLimitPercent; limit > 0 && candidate.Metrics.CPUUsagePercent >= limit {
+		reasons = append(reasons, fmt.Sprintf("cpu_usage_percent(%d)>=limit(%d)", candidate.Metrics.CPUUsagePercent, limit))
+	}
+	if limit := f.cfg.Scheduler.NodeMemorySafetyLimitPercent; limit > 0 && candidate.Metrics.MemoryUsagePercent >= limit {
+		reasons = append(reasons, fmt.Sprintf("memory_usage_percent(%d)>=limit(%d)", candidate.Metrics.MemoryUsagePercent, limit))
+	}
+	if limit := f.cfg.Scheduler.NodeGPUSafetyLimitPercent; limit > 0 && candidate.Metrics.GPUMemoryUsagePercent >= limit {
+		reasons = append(reasons, fmt.Sprintf("gpu_memory_usage_percent(%d)>=limit(%d)", candidate.Metrics.GPUMemoryUsagePercent, limit))
+	}
+	if limit := f.cfg.Scheduler.MaxNodeTranscodeSessions; limit > 0 && candidate.Metrics.ActiveTranscodeSessions >= limit {
+		reasons = append(reasons, fmt.Sprintf("active_transcode_sessions(%d)>=limit(%d)", candidate.Metrics.ActiveTranscodeSessions, limit))
+	}
+	if limit := f.cfg.Scheduler.MaxNodeUploadConcurrency; limit > 0 && candidate.Metrics.UploadQueueDepth >= limit {
+		reasons = append(reasons, fmt.Sprintf("upload_queue_depth(%d)>=limit(%d)", candidate.Metrics.UploadQueueDepth, limit))
+	}
+	if req.EnableWatermark && f.cfg.Scheduler.RequireHardwareWatermark && !candidate.SupportsHardwareWatermark {
+		reasons = append(reasons, "hardware_watermark_required_but_not_supported")
+	}
+	if !f.matchHWAccel(req, candidate) {
+		reasons = append(reasons, "preferred_hwaccel_not_supported")
+	}
+	if !f.matchGPUCapacity(req, candidate) {
+		reasons = append(reasons, "no_gpu_capacity_for_request")
+	}
+	if !f.matchCodec(req, candidate) {
+		reasons = append(reasons, "codec_not_supported")
+	}
+
+	return Evaluation{
+		Passed:  len(reasons) == 0,
+		Reasons: reasons,
+	}
 }
 
 // matchHWAccel 校验请求指定的硬件加速类型是否被候选节点支持。
@@ -150,4 +195,11 @@ func supportsExecutionHW(capability model.GPUCapability, preferredHWAccel string
 		}
 	}
 	return false
+}
+
+func resolveHeartbeatGracePeriod(cfg config.DynamicRuntimeConfig) time.Duration {
+	if cfg.Scheduler.WorkerHeartbeatTimeout > 0 {
+		return cfg.Scheduler.WorkerHeartbeatTimeout * 2
+	}
+	return time.Minute
 }

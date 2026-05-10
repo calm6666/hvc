@@ -96,3 +96,33 @@ type AdminRolePermissionRecord struct {
 }
 
 func (AdminRolePermissionRecord) TableName() string { return "t_admin_role_permission" }
+
+// AdminMenuRecord 表示后台菜单表映射。
+type AdminMenuRecord struct {
+	MenuID        uint64    `gorm:"column:menu_id;primaryKey"`
+	ParentID      uint64    `gorm:"column:parent_id"`
+	MenuKey       string    `gorm:"column:menu_key"`
+	MenuName      string    `gorm:"column:menu_name"`
+	RoutePath     string    `gorm:"column:route_path"`
+	ComponentName string    `gorm:"column:component_name"`
+	IconName      string    `gorm:"column:icon_name"`
+	MenuType      string    `gorm:"column:menu_type"`
+	PermissionKey string    `gorm:"column:permission_key"`
+	SortNo        int       `gorm:"column:sort_no"`
+	Hidden        bool      `gorm:"column:hidden"`
+	Status        int       `gorm:"column:status"`
+	CreatedAt     time.Time `gorm:"column:created_at"`
+	UpdatedAt     time.Time `gorm:"column:updated_at"`
+}
+
+func (AdminMenuRecord) TableName() string { return "t_admin_menu" }
+
+// AdminRoleMenuRecord 表示角色与菜单绑定表映射。
+type AdminRoleMenuRecord struct {
+	ID        uint64    `gorm:"column:id;primaryKey"`
+	RoleID    uint64    `gorm:"column:role_id"`
+	MenuID    uint64    `gorm:"column:menu_id"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (AdminRoleMenuRecord) TableName() string { return "t_admin_role_menu" }

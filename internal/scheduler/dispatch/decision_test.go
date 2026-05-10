@@ -75,3 +75,37 @@ func TestBuildDecision_PicksLessLoadedGPU(t *testing.T) {
 		t.Fatalf("expected gpu index 1, got %d", decision.SelectedGPUIndex)
 	}
 }
+
+func TestScoreCandidate_PrefersHigherResidualCapacity(t *testing.T) {
+	nearFull := ScoreCandidate(model.DispatchCandidate{
+		Online:               true,
+		MetricsAvailable:     true,
+		MetricsFresh:         true,
+		MaxTranscodeSessions: 8,
+		MaxUploadConcurrency: 4,
+		Metrics: model.NodeMetrics{
+			ActiveTranscodeSessions: 7,
+			CPUUsagePercent:         30,
+			MemoryUsagePercent:      30,
+			GPUMemoryUsagePercent:   30,
+			UploadQueueDepth:        1,
+		},
+	})
+	roomy := ScoreCandidate(model.DispatchCandidate{
+		Online:               true,
+		MetricsAvailable:     true,
+		MetricsFresh:         true,
+		MaxTranscodeSessions: 16,
+		MaxUploadConcurrency: 8,
+		Metrics: model.NodeMetrics{
+			ActiveTranscodeSessions: 7,
+			CPUUsagePercent:         30,
+			MemoryUsagePercent:      30,
+			GPUMemoryUsagePercent:   30,
+			UploadQueueDepth:        1,
+		},
+	})
+	if roomy >= nearFull {
+		t.Fatalf("expected roomier node to score better, roomy=%d near_full=%d", roomy, nearFull)
+	}
+}

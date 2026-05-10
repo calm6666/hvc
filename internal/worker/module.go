@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,7 @@ type Module struct {
 	progressStore           *rediscache.ProgressStore
 	outboxRepository        *mysql.OutboxRepository
 	workerInstanceRepo      *mysql.WorkerInstanceRepository
+	clusterNodeRepository   *mysql.ClusterNodeRepository
 	gpuDeviceRepository     *mysql.GPUDeviceRepository
 	gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository
 	jobExecutionRepository  *mysql.JobExecutionRepository
@@ -72,7 +74,7 @@ type Module struct {
 }
 
 // NewModule 创建执行模块。
-func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, renditionRepository *mysql.TranscodeRenditionRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus, stateCache *cluster.StateCache, workerInstanceRepo *mysql.WorkerInstanceRepository, gpuDeviceRepository *mysql.GPUDeviceRepository, gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Module {
+func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, renditionRepository *mysql.TranscodeRenditionRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus, stateCache *cluster.StateCache, workerInstanceRepo *mysql.WorkerInstanceRepository, clusterNodeRepository *mysql.ClusterNodeRepository, gpuDeviceRepository *mysql.GPUDeviceRepository, gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Module {
 	uploader, _ := storage.Open(cfg.Storage)
 	startupInstanceID := workerID + "-startup"
 	machineFingerprint := "node-" + workerID
@@ -87,6 +89,7 @@ func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.Ef
 		progressStore:           progressStore,
 		outboxRepository:        outboxRepository,
 		workerInstanceRepo:      workerInstanceRepo,
+		clusterNodeRepository:   clusterNodeRepository,
 		gpuDeviceRepository:     gpuDeviceRepository,
 		gpuCapabilityRepository: gpuCapabilityRepository,
 		jobExecutionRepository:  jobExecutionRepository,
@@ -145,6 +148,7 @@ func (m *Module) CanAcceptNewTask(cpuPercent, memPercent, gpuMemPercent, uploadQ
 // 不阻塞主循环。主循环仅负责触发，不等待完成。
 func (m *Module) Start(ctx context.Context) error {
 	m.ensureWorkerInstance(ctx)
+	defer m.markWorkerExited(context.Background(), "context_canceled")
 
 	jobSem := make(chan struct{}, 1024)
 	uploadSem := make(chan struct{}, 1024)
@@ -618,15 +622,23 @@ func (m *Module) ensureWorkerInstance(ctx context.Context) {
 }
 
 func (m *Module) reportHeartbeatOnce(ctx context.Context) {
+	heartbeatAt := time.Now()
 	heartbeat := model.WorkerHeartbeat{
 		NodeID:             m.nodeID,
 		WorkerID:           m.workerID,
 		StartupInstanceID:  m.startupInstanceID,
 		MachineFingerprint: m.machineFingerprint,
-		Timestamp:          time.Now(),
+		Timestamp:          heartbeatAt,
 	}
 	if m.stateCache != nil {
 		m.stateCache.SaveHeartbeat(ctx, heartbeat)
+	}
+	if m.clusterNodeRepository != nil {
+		if err := m.clusterNodeRepository.TouchHeartbeat(ctx, m.nodeID, heartbeatAt); err != nil {
+			logx.Error("worker.node.touch_heartbeat_failed", err, logx.Fields{
+				"node_id": m.nodeID,
+			})
+		}
 	}
 	if m.workerInstanceRepo != nil {
 		if err := m.workerInstanceRepo.TouchHeartbeat(ctx, m.workerID); err != nil {
@@ -657,6 +669,21 @@ func (m *Module) reportMetricsOnce(ctx context.Context) {
 		Timestamp:               time.Now(),
 	}
 	reporter.ReportMetrics(ctx, m.stateCache, metrics)
+	if m.clusterNodeRepository != nil {
+		if err := m.clusterNodeRepository.SaveSnapshot(
+			ctx,
+			m.nodeID,
+			runtime.NumCPU(),
+			hoststats.TotalMemoryMB(),
+			cfg.Scheduler.MaxNodeTranscodeSessions,
+			cfg.Scheduler.MaxNodeUploadConcurrency,
+			buildNodeTags(cfg, gpuCapabilities),
+		); err != nil {
+			logx.Error("worker.node.save_snapshot_failed", err, logx.Fields{
+				"node_id": m.nodeID,
+			})
+		}
+	}
 }
 
 func (m *Module) attachRuntimeGPUStats(capabilities []model.GPUCapability, runtime []hoststats.GPUDeviceSnapshot) []model.GPUCapability {
@@ -962,4 +989,35 @@ func loopInterval(interval time.Duration, fallback time.Duration) time.Duration 
 		return interval
 	}
 	return fallback
+}
+
+func (m *Module) markWorkerExited(ctx context.Context, reason string) {
+	if m.workerInstanceRepo == nil || m.workerID == "" {
+		return
+	}
+	if err := m.workerInstanceRepo.MarkExited(ctx, m.workerID, reason); err != nil {
+		logx.Error("worker.instance.mark_exited_failed", err, logx.Fields{
+			"worker_id": m.workerID,
+			"reason":    reason,
+		})
+	}
+}
+
+func buildNodeTags(cfg config.DynamicRuntimeConfig, capabilities []model.GPUCapability) string {
+	tags := make([]string, 0, 4)
+	if cfg.IsStandalone() {
+		tags = append(tags, "mode:standalone")
+	} else if cfg.IsClusterAllInOne() {
+		tags = append(tags, "mode:cluster-allinone")
+	} else if cfg.IsClusterControl() {
+		tags = append(tags, "mode:cluster-control")
+	} else if cfg.IsClusterWorker() {
+		tags = append(tags, "mode:cluster-worker")
+	}
+	if len(capabilities) == 0 {
+		tags = append(tags, "compute:cpu")
+	} else {
+		tags = append(tags, "compute:gpu")
+	}
+	return strings.Join(tags, ",")
 }

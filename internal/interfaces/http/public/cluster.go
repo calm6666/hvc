@@ -19,16 +19,18 @@ type ClusterHandler struct {
 	jobRepository      *mysql.JobRepository
 	segmentRepository  *mysql.SegmentRepository
 	workerInstanceRepo *mysql.WorkerInstanceRepository
+	clusterNodeRepo    *mysql.ClusterNodeRepository
 }
 
 // NewClusterHandler 创建集群处理器。
-func NewClusterHandler(cache *clusterstate.StateCache, leaseCache *clusterstate.LeaseCache, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository, workerInstanceRepo *mysql.WorkerInstanceRepository) *ClusterHandler {
+func NewClusterHandler(cache *clusterstate.StateCache, leaseCache *clusterstate.LeaseCache, jobRepository *mysql.JobRepository, segmentRepository *mysql.SegmentRepository, workerInstanceRepo *mysql.WorkerInstanceRepository, clusterNodeRepo *mysql.ClusterNodeRepository) *ClusterHandler {
 	return &ClusterHandler{
 		cache:              cache,
 		leaseCache:         leaseCache,
 		jobRepository:      jobRepository,
 		segmentRepository:  segmentRepository,
 		workerInstanceRepo: workerInstanceRepo,
+		clusterNodeRepo:    clusterNodeRepo,
 	}
 }
 
@@ -47,6 +49,16 @@ func (h *ClusterHandler) ReportHeartbeat(w http.ResponseWriter, r *http.Request)
 		MachineFingerprint: req.MachineFingerprint,
 		Timestamp:          req.Timestamp,
 	})
+	if h.clusterNodeRepo != nil {
+		if err := h.clusterNodeRepo.TouchHeartbeat(r.Context(), req.NodeID, req.Timestamp); err != nil {
+			logx.Error("http.cluster.heartbeat.node_touch_failed", err, logx.Fields{
+				"node_id":   req.NodeID,
+				"worker_id": req.WorkerID,
+			})
+			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "heartbeat persist failed"})
+			return
+		}
+	}
 	if h.workerInstanceRepo != nil {
 		if err := h.workerInstanceRepo.TouchHeartbeat(r.Context(), req.WorkerID); err != nil {
 			logx.Error("http.cluster.heartbeat.worker_touch_failed", err, logx.Fields{

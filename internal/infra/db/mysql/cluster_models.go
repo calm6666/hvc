@@ -12,6 +12,8 @@ type ClusterNodeRecord struct {
 	Enabled              bool      `gorm:"column:enabled"`
 	Quarantined          bool      `gorm:"column:quarantined"`
 	QuarantineReason     string    `gorm:"column:quarantine_reason"`
+	Draining             bool      `gorm:"column:draining"`
+	DrainReason          string    `gorm:"column:drain_reason"`
 	LastStateChangeAt    time.Time `gorm:"column:last_state_change_at"`
 	CapacityGeneration   uint64    `gorm:"column:capacity_generation"`
 	SupportNVENC         bool      `gorm:"column:support_nvenc"`
@@ -103,25 +105,25 @@ func (WorkerCodecCapabilityRecord) TableName() string { return "t_worker_codec_c
 
 // JobExecutionRecord 表示任务执行实例表映射。
 type JobExecutionRecord struct {
-	ExecutionID            uint64    `gorm:"column:execution_id;primaryKey"`
-	JobID                  uint64    `gorm:"column:job_id"`
-	AttemptNo              int       `gorm:"column:attempt_no"`
-	LeaseGeneration        uint64    `gorm:"column:lease_generation"`
-	NodeID                 uint64    `gorm:"column:node_id"`
-	WorkerInstanceID       uint64    `gorm:"column:worker_instance_id"`
-	GPUDeviceID            uint64    `gorm:"column:gpu_device_id"`
-	SelectedGPUIndex       int       `gorm:"column:selected_gpu_index"`
-	SelectedExecutionHWAcc string    `gorm:"column:selected_execution_hwaccel"`
-	Status                 int       `gorm:"column:status"`
-	LeaseOwner             string    `gorm:"column:lease_owner"`
-	LeaseExpireAt          time.Time `gorm:"column:lease_expire_at"`
-	LastHeartbeatAt        time.Time `gorm:"column:last_heartbeat_at"`
-	FailureReason          string    `gorm:"column:failure_reason"`
-	RecoverableFlag        bool      `gorm:"column:recoverable_flag"`
-	StartedAt              time.Time `gorm:"column:started_at"`
-	FinishedAt             time.Time `gorm:"column:finished_at"`
-	CreatedAt              time.Time `gorm:"column:created_at"`
-	UpdatedAt              time.Time `gorm:"column:updated_at"`
+	ExecutionID            uint64     `gorm:"column:execution_id;primaryKey"`
+	JobID                  uint64     `gorm:"column:job_id"`
+	AttemptNo              int        `gorm:"column:attempt_no"`
+	LeaseGeneration        uint64     `gorm:"column:lease_generation"`
+	NodeID                 uint64     `gorm:"column:node_id"`
+	WorkerInstanceID       uint64     `gorm:"column:worker_instance_id"`
+	GPUDeviceID            uint64     `gorm:"column:gpu_device_id"`
+	SelectedGPUIndex       int        `gorm:"column:selected_gpu_index"`
+	SelectedExecutionHWAcc string     `gorm:"column:selected_execution_hwaccel"`
+	Status                 int        `gorm:"column:status"`
+	LeaseOwner             string     `gorm:"column:lease_owner"`
+	LeaseExpireAt          *time.Time `gorm:"column:lease_expire_at"`
+	LastHeartbeatAt        *time.Time `gorm:"column:last_heartbeat_at"`
+	FailureReason          string     `gorm:"column:failure_reason"`
+	RecoverableFlag        bool       `gorm:"column:recoverable_flag"`
+	StartedAt              *time.Time `gorm:"column:started_at"`
+	FinishedAt             *time.Time `gorm:"column:finished_at"`
+	CreatedAt              time.Time  `gorm:"column:created_at"`
+	UpdatedAt              time.Time  `gorm:"column:updated_at"`
 }
 
 func (JobExecutionRecord) TableName() string { return "t_transcode_job_execution" }

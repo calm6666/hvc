@@ -9,7 +9,9 @@ func LoadDynamicRuntimeConfigFromDB(ctx context.Context, db *DB) (DynamicRuntime
 	if !ok {
 		return DynamicRuntimeConfigResult{}, false
 	}
-	return DynamicRuntimeConfigResult{Record: record, Config: ToDynamicRuntimeConfig(record)}, true
+	namingTemplateRepo := NewNamingTemplateRepository(db)
+	cfg := ApplyLatestNamingTemplate(ctx, namingTemplateRepo, ToDynamicRuntimeConfig(record))
+	return DynamicRuntimeConfigResult{Record: record, Config: cfg}, true
 }
 
 // DynamicRuntimeConfigResult 表示数据库中读取到的动态运行配置结果。

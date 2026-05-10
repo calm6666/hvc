@@ -19,36 +19,29 @@ type ConfigCenterHandler struct {
 	repository *mysql.ConfigCenterBindingRepository
 }
 
-// ConfigCenterBindingView 表示对外返回的 bootstrap 配置源绑定视图。
-//
-// 这里显式补上 scope / affects_runtime 字段，
-// 防止后台或调用方把“配置中心绑定”和“runtime config 发布”继续混为一谈。
-type ConfigCenterBindingView struct {
-	mysql.ConfigCenterBindingRecord
-	ConfigScope    string   `json:"config_scope"`
-	AffectsRuntime bool     `json:"affects_runtime"`
-	BindingUsage   []string `json:"binding_usage"`
-}
-
 // NewConfigCenterHandler 创建 bootstrap 配置源绑定处理器。
 func NewConfigCenterHandler(repository *mysql.ConfigCenterBindingRepository) *ConfigCenterHandler {
 	return &ConfigCenterHandler{repository: repository}
 }
 
-// List 返回全部 bootstrap 配置源绑定。
+// List 返回 bootstrap 配置源绑定分页列表。
 func (h *ConfigCenterHandler) List(w http.ResponseWriter, r *http.Request) {
-	items := h.repository.ListAll(r.Context())
-	views := make([]ConfigCenterBindingView, 0, len(items))
+	page, pageSize := parsePageParams(r)
+	items, total, err := h.repository.ListPage(r.Context(), page, pageSize, r.URL.Query().Get("provider_type"), parseOptionalBool(r.URL.Query().Get("enabled")))
+	if err != nil {
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "query config center bindings failed"})
+		return
+	}
+	views := make([]configCenterBindingView, 0, len(items))
 	for _, item := range items {
 		views = append(views, buildConfigCenterBindingView(sanitizeConfigCenterBindingRecord(item)))
 	}
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
+	writePageResponseWithMeta(w, page, pageSize, total, views, map[string]any{
 		"config_scope":         configCenterBindingScopeBootstrap,
 		"affects_runtime":      false,
 		"runtime_update_path":  "/v1/admin/config/runtime/update",
 		"runtime_publish_path": "/v1/admin/config/publish",
-		"items":                views,
-	}})
+	})
 }
 
 // Upsert 保存 bootstrap 配置源绑定。
@@ -129,18 +122,4 @@ func (h *ConfigCenterHandler) SetEnabled(w http.ResponseWriter, r *http.Request)
 		"config_scope":    configCenterBindingScopeBootstrap,
 		"affects_runtime": false,
 	}})
-}
-
-func buildConfigCenterBindingView(record mysql.ConfigCenterBindingRecord) ConfigCenterBindingView {
-	return ConfigCenterBindingView{
-		ConfigCenterBindingRecord: record,
-		ConfigScope:               configCenterBindingScopeBootstrap,
-		AffectsRuntime:            false,
-		BindingUsage: []string{
-			"mysql",
-			"redis",
-			"cluster_registry",
-			"node_identity",
-		},
-	}
 }

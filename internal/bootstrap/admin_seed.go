@@ -45,17 +45,28 @@ func ensureAdminRBACSeed(ctx context.Context, adminRepo *mysql.AdminRepository, 
 		{"system.role.read", "查看角色", "system"},
 		{"system.role.update", "更新角色", "system"},
 		{"system.permission.read", "查看权限", "system"},
+		{"system.log.read", "查看运行日志", "system"},
 		{"system.role.permission_bind", "绑定角色权限", "system"},
+		{"system.menu.read", "查看菜单", "system"},
+		{"system.menu.update", "更新菜单", "system"},
+		{"system.menu.delete", "删除菜单", "system"},
+		{"system.role.menu_bind", "绑定角色菜单", "system"},
 		{"config.version.read", "查看配置版本", "config"},
 		{"config.version.publish", "发布配置版本", "config"},
 		{"config.runtime.update", "更新运行配置", "config"},
 		{"config.callback.read", "查看回调配置", "config"},
 		{"config.callback.update", "更新回调配置", "config"},
+		{"config.naming_template.read", "查看命名模板", "config"},
+		{"config.naming_template.update", "更新命名模板", "config"},
 		{"audit.read", "查看审计日志", "audit"},
 		{"cluster.node.read", "查看集群节点", "cluster"},
 		{"cluster.node.metrics.read", "查看节点指标", "cluster"},
 		{"cluster.node.enable", "启用/禁用节点", "cluster"},
 		{"cluster.node.quarantine", "隔离/恢复节点", "cluster"},
+		{"cluster.node.drain", "排空/恢复节点", "cluster"},
+		{"cluster.worker.offline", "下线 Worker", "cluster"},
+		{"cluster.worker.exit", "标记 Worker 退出", "cluster"},
+		{"cluster.job.takeover", "强制接管任务", "cluster"},
 		{"cluster.read", "查看集群信息", "cluster"},
 		{"transcode.job.read", "查看转码任务", "transcode"},
 		{"transcode.job.detail.read", "查看任务详情", "transcode"},
@@ -80,11 +91,15 @@ func ensureAdminRBACSeed(ctx context.Context, adminRepo *mysql.AdminRepository, 
 	}
 
 	operatorPermissions := []string{
-		"cluster.node.read", "cluster.node.metrics.read", "cluster.read",
+		"auth.session.read",
+		"system.log.read",
+		"cluster.node.read", "cluster.node.metrics.read", "cluster.read", "cluster.node.drain", "cluster.worker.offline", "cluster.worker.exit", "cluster.job.takeover",
 		"transcode.job.read", "transcode.job.detail.read", "transcode.job.retry",
 		"live.channel.read", "live.session.read",
 		"audit.read",
 		"config.version.read",
+		"config.callback.read",
+		"config.naming_template.read",
 	}
 	for _, permKey := range operatorPermissions {
 		perms := rbacRepo.ListPermissions(ctx)
@@ -97,6 +112,7 @@ func ensureAdminRBACSeed(ctx context.Context, adminRepo *mysql.AdminRepository, 
 	}
 
 	viewerPermissions := []string{
+		"auth.session.read",
 		"cluster.node.read", "cluster.read",
 		"transcode.job.read",
 		"live.channel.read", "live.session.read",
@@ -111,4 +127,91 @@ func ensureAdminRBACSeed(ctx context.Context, adminRepo *mysql.AdminRepository, 
 			}
 		}
 	}
+
+	ensureAdminMenuSeed(ctx, rbacRepo, map[string]uint64{
+		"super_admin": role.RoleID,
+		"operator":    operatorRole.RoleID,
+		"viewer":      viewerRole.RoleID,
+	})
+}
+
+func ensureAdminMenuSeed(ctx context.Context, rbacRepo *mysql.AdminRBACRepository, roleIDs map[string]uint64) {
+	if rbacRepo == nil {
+		return
+	}
+	menuSeeds := []mysql.AdminMenuRecord{
+		{ParentID: 0, MenuKey: "system", MenuName: "系统管理", RoutePath: "/system", IconName: "settings", MenuType: "directory", SortNo: 10, Status: 1},
+		{ParentID: 0, MenuKey: "config", MenuName: "配置中心", RoutePath: "/config", IconName: "sliders-horizontal", MenuType: "directory", SortNo: 20, Status: 1},
+		{ParentID: 0, MenuKey: "cluster", MenuName: "集群管理", RoutePath: "/cluster", IconName: "server", MenuType: "directory", SortNo: 30, Status: 1},
+		{ParentID: 0, MenuKey: "transcode", MenuName: "转码任务", RoutePath: "/transcode", IconName: "film", MenuType: "directory", SortNo: 40, Status: 1},
+		{ParentID: 0, MenuKey: "live", MenuName: "直播管理", RoutePath: "/live", IconName: "radio", MenuType: "directory", SortNo: 50, Status: 1},
+	}
+
+	menuIndex := make(map[string]mysql.AdminMenuRecord, 16)
+	for _, seed := range menuSeeds {
+		record, err := rbacRepo.EnsureMenu(ctx, seed)
+		if err != nil {
+			continue
+		}
+		menuIndex[seed.MenuKey] = record
+	}
+
+	children := []mysql.AdminMenuRecord{
+		{ParentID: menuIndex["system"].MenuID, MenuKey: "system_users", MenuName: "用户管理", RoutePath: "/system/users", ComponentName: "SystemUsers", MenuType: "menu", PermissionKey: "system.user.read", SortNo: 10, Status: 1},
+		{ParentID: menuIndex["system"].MenuID, MenuKey: "system_roles", MenuName: "角色管理", RoutePath: "/system/roles", ComponentName: "SystemRoles", MenuType: "menu", PermissionKey: "system.role.read", SortNo: 20, Status: 1},
+		{ParentID: menuIndex["system"].MenuID, MenuKey: "system_permissions", MenuName: "权限管理", RoutePath: "/system/permissions", ComponentName: "SystemPermissions", MenuType: "menu", PermissionKey: "system.permission.read", SortNo: 30, Status: 1},
+		{ParentID: menuIndex["system"].MenuID, MenuKey: "system_menus", MenuName: "菜单管理", RoutePath: "/system/menus", ComponentName: "SystemMenus", MenuType: "menu", PermissionKey: "system.menu.read", SortNo: 40, Status: 1},
+		{ParentID: menuIndex["system"].MenuID, MenuKey: "system_audit", MenuName: "审计日志", RoutePath: "/system/audit", ComponentName: "SystemAudit", MenuType: "menu", PermissionKey: "audit.read", SortNo: 50, Status: 1},
+		{ParentID: menuIndex["system"].MenuID, MenuKey: "system_runtime_logs", MenuName: "运行日志", RoutePath: "/system/runtime-logs", ComponentName: "SystemRuntimeLogs", MenuType: "menu", PermissionKey: "system.log.read", SortNo: 60, Status: 1},
+		{ParentID: menuIndex["config"].MenuID, MenuKey: "config_runtime", MenuName: "运行配置", RoutePath: "/config/runtime", ComponentName: "RuntimeConfig", MenuType: "menu", PermissionKey: "config.version.read", SortNo: 10, Status: 1},
+		{ParentID: menuIndex["config"].MenuID, MenuKey: "config_callback", MenuName: "回调配置", RoutePath: "/config/callbacks", ComponentName: "CallbackConfig", MenuType: "menu", PermissionKey: "config.callback.read", SortNo: 20, Status: 1},
+		{ParentID: menuIndex["config"].MenuID, MenuKey: "config_naming", MenuName: "命名模板", RoutePath: "/config/naming-templates", ComponentName: "NamingTemplateConfig", MenuType: "menu", PermissionKey: "config.naming_template.read", SortNo: 30, Status: 1},
+		{ParentID: menuIndex["cluster"].MenuID, MenuKey: "cluster_overview", MenuName: "集群概览", RoutePath: "/cluster/overview", ComponentName: "ClusterOverview", MenuType: "menu", PermissionKey: "cluster.read", SortNo: 10, Status: 1},
+		{ParentID: menuIndex["cluster"].MenuID, MenuKey: "cluster_nodes", MenuName: "节点列表", RoutePath: "/cluster/nodes", ComponentName: "ClusterNodes", MenuType: "menu", PermissionKey: "cluster.node.read", SortNo: 20, Status: 1},
+		{ParentID: menuIndex["cluster"].MenuID, MenuKey: "cluster_members", MenuName: "成员列表", RoutePath: "/cluster/members", ComponentName: "ClusterMembers", MenuType: "menu", PermissionKey: "cluster.read", SortNo: 30, Status: 1},
+		{ParentID: menuIndex["transcode"].MenuID, MenuKey: "transcode_jobs", MenuName: "任务列表", RoutePath: "/transcode/jobs", ComponentName: "TranscodeJobs", MenuType: "menu", PermissionKey: "transcode.job.read", SortNo: 10, Status: 1},
+		{ParentID: menuIndex["transcode"].MenuID, MenuKey: "transcode_monitor", MenuName: "实时监控", RoutePath: "/transcode/monitor", ComponentName: "TranscodeMonitor", MenuType: "menu", PermissionKey: "transcode.job.read", SortNo: 20, Status: 1},
+		{ParentID: menuIndex["live"].MenuID, MenuKey: "live_channels", MenuName: "频道管理", RoutePath: "/live/channels", ComponentName: "LiveChannels", MenuType: "menu", PermissionKey: "live.channel.read", SortNo: 10, Status: 1},
+		{ParentID: menuIndex["live"].MenuID, MenuKey: "live_sessions", MenuName: "会话列表", RoutePath: "/live/sessions", ComponentName: "LiveSessions", MenuType: "menu", PermissionKey: "live.session.read", SortNo: 20, Status: 1},
+	}
+	for _, seed := range children {
+		record, err := rbacRepo.EnsureMenu(ctx, seed)
+		if err != nil {
+			continue
+		}
+		menuIndex[seed.MenuKey] = record
+	}
+
+	assignRoleMenus(ctx, rbacRepo, roleIDs["super_admin"], menuIndex,
+		"system", "system_users", "system_roles", "system_permissions", "system_menus", "system_audit", "system_runtime_logs",
+		"config", "config_runtime", "config_callback", "config_naming",
+		"cluster", "cluster_overview", "cluster_nodes", "cluster_members",
+		"transcode", "transcode_jobs", "transcode_monitor",
+		"live", "live_channels", "live_sessions",
+	)
+	assignRoleMenus(ctx, rbacRepo, roleIDs["operator"], menuIndex,
+		"config", "config_runtime", "config_callback", "config_naming",
+		"cluster", "cluster_overview", "cluster_nodes", "cluster_members",
+		"transcode", "transcode_jobs", "transcode_monitor",
+		"live", "live_channels", "live_sessions",
+		"system", "system_audit", "system_runtime_logs",
+	)
+	assignRoleMenus(ctx, rbacRepo, roleIDs["viewer"], menuIndex,
+		"cluster", "cluster_overview", "cluster_nodes",
+		"transcode", "transcode_jobs",
+		"live", "live_channels", "live_sessions",
+	)
+}
+
+func assignRoleMenus(ctx context.Context, rbacRepo *mysql.AdminRBACRepository, roleID uint64, menuIndex map[string]mysql.AdminMenuRecord, menuKeys ...string) {
+	if roleID == 0 || rbacRepo == nil {
+		return
+	}
+	menuIDs := make([]uint64, 0, len(menuKeys))
+	for _, menuKey := range menuKeys {
+		if item, ok := menuIndex[menuKey]; ok && item.MenuID != 0 {
+			menuIDs = append(menuIDs, item.MenuID)
+		}
+	}
+	_ = rbacRepo.ReplaceRoleMenus(ctx, roleID, menuIDs)
 }

@@ -32,16 +32,18 @@ type InternalGRPCServer struct {
 	progressStore *rediscache.ProgressStore
 	segmentRepo   *mysql.SegmentRepository
 	jobRepo       *mysql.JobRepository
+	nodeRepo      *mysql.ClusterNodeRepository
 }
 
 // NewInternalGRPCServer 创建集群内部 gRPC 服务。
-func NewInternalGRPCServer(cfg config.InternalGRPCConfig, stateCache *cluster.StateCache, progressStore *rediscache.ProgressStore, segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository) *InternalGRPCServer {
+func NewInternalGRPCServer(cfg config.InternalGRPCConfig, stateCache *cluster.StateCache, progressStore *rediscache.ProgressStore, segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository, nodeRepo *mysql.ClusterNodeRepository) *InternalGRPCServer {
 	return &InternalGRPCServer{
 		cfg:           cfg,
 		stateCache:    stateCache,
 		progressStore: progressStore,
 		segmentRepo:   segmentRepo,
 		jobRepo:       jobRepo,
+		nodeRepo:      nodeRepo,
 	}
 }
 
@@ -81,6 +83,7 @@ func (s *InternalGRPCServer) Start(ctx context.Context) error {
 		progressStore: s.progressStore,
 		segmentRepo:   s.segmentRepo,
 		jobRepo:       s.jobRepo,
+		nodeRepo:      s.nodeRepo,
 	})
 
 	go func() {
@@ -114,6 +117,7 @@ type clusterInternalRPCServer struct {
 	progressStore *rediscache.ProgressStore
 	segmentRepo   *mysql.SegmentRepository
 	jobRepo       *mysql.JobRepository
+	nodeRepo      *mysql.ClusterNodeRepository
 }
 
 func internalGRPCTokenInterceptor(sharedToken string) grpc.UnaryServerInterceptor {
@@ -134,14 +138,18 @@ func internalGRPCTokenInterceptor(sharedToken string) grpc.UnaryServerIntercepto
 }
 
 func (s *clusterInternalRPCServer) WorkerHeartbeat(ctx context.Context, req *clusterv1.WorkerHeartbeatRequest) (*clusterv1.WorkerHeartbeatResponse, error) {
+	heartbeatAt := time.Now()
 	if s.stateCache != nil {
 		s.stateCache.SaveHeartbeat(ctx, model.WorkerHeartbeat{
 			NodeID:             req.GetNodeId(),
 			WorkerID:           req.GetWorkerId(),
 			StartupInstanceID:  req.GetStartupInstanceId(),
 			MachineFingerprint: req.GetMachineFingerprint(),
-			Timestamp:          time.Now(),
+			Timestamp:          heartbeatAt,
 		})
+	}
+	if s.nodeRepo != nil {
+		_ = s.nodeRepo.TouchHeartbeat(ctx, req.GetNodeId(), heartbeatAt)
 	}
 	return &clusterv1.WorkerHeartbeatResponse{Accepted: true}, nil
 }

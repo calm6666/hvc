@@ -32,8 +32,7 @@ func (h *LiveHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	page, pageSize := parsePageParams(r)
 	status := r.URL.Query().Get("status")
 	channelKey := r.URL.Query().Get("channel_key")
 
@@ -54,13 +53,7 @@ func (h *LiveHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, pageSize = normalizePage(page, pageSize)
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
-		"items":     items,
-	}})
+	writePageResponse(w, page, pageSize, total, items)
 }
 
 // ListSessions 返回直播会话列表，支持按频道和状态过滤。
@@ -70,8 +63,7 @@ func (h *LiveHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	page, pageSize := parsePageParams(r)
 	channelID, _ := strconv.ParseUint(r.URL.Query().Get("channel_id"), 10, 64)
 	channelKey := r.URL.Query().Get("channel_key")
 	status := r.URL.Query().Get("status")
@@ -95,13 +87,7 @@ func (h *LiveHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, pageSize = normalizePage(page, pageSize)
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
-		"items":     items,
-	}})
+	writePageResponse(w, page, pageSize, total, items)
 }
 
 // CreateChannel 创建直播频道。
@@ -314,17 +300,4 @@ func (h *LiveHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 
 	logx.Info("admin.live.channel_deleted", logx.Fields{"channel_id": req.ChannelID})
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok"})
-}
-
-func normalizePage(page int, pageSize int) (int, int) {
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
-	return page, pageSize
 }

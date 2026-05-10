@@ -41,6 +41,15 @@ func memoryUsagePercent() int {
 	return int((usedBytes * 100) / totalBytes)
 }
 
+func totalMemoryMB() int {
+	totalText := string(commandOutput("sysctl", "-n", "hw.memsize"))
+	totalBytes, err := strconv.ParseUint(strings.TrimSpace(totalText), 10, 64)
+	if err != nil || totalBytes == 0 {
+		return 0
+	}
+	return int(totalBytes / 1024 / 1024)
+}
+
 func parseVMStatValue(line string) uint64 {
 	line = strings.TrimSpace(strings.TrimSuffix(strings.SplitN(line, ":", 2)[1], "."))
 	value, err := strconv.ParseUint(strings.ReplaceAll(line, ".", ""), 10, 64)

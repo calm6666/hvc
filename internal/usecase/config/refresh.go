@@ -9,13 +9,18 @@ import (
 
 // RefreshUseCase 表示配置刷新用例。
 type RefreshUseCase struct {
-	effective                *configcenter.EffectiveConfig
-	runtimeConfigRepository  *mysql.RuntimeConfigRepository
+	effective               *configcenter.EffectiveConfig
+	runtimeConfigRepository *mysql.RuntimeConfigRepository
+	namingTemplateRepo      *mysql.NamingTemplateRepository
 }
 
 // NewRefreshUseCase 创建配置刷新用例。
-func NewRefreshUseCase(effective *configcenter.EffectiveConfig, runtimeConfigRepository *mysql.RuntimeConfigRepository) *RefreshUseCase {
-	return &RefreshUseCase{effective: effective, runtimeConfigRepository: runtimeConfigRepository}
+func NewRefreshUseCase(effective *configcenter.EffectiveConfig, runtimeConfigRepository *mysql.RuntimeConfigRepository, namingTemplateRepo *mysql.NamingTemplateRepository) *RefreshUseCase {
+	return &RefreshUseCase{
+		effective:               effective,
+		runtimeConfigRepository: runtimeConfigRepository,
+		namingTemplateRepo:      namingTemplateRepo,
+	}
 }
 
 // Execute 执行配置刷新。
@@ -30,5 +35,6 @@ func (u *RefreshUseCase) Execute(ctx context.Context) {
 	if !ok {
 		return
 	}
-	u.effective.ReplaceWithVersion(mysql.ToDynamicRuntimeConfig(record), record.ConfigVersion)
+	cfg := mysql.ApplyLatestNamingTemplate(ctx, u.namingTemplateRepo, mysql.ToDynamicRuntimeConfig(record))
+	u.effective.ReplaceWithVersion(cfg, record.ConfigVersion)
 }

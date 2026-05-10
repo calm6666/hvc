@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"hvc/internal/model"
 	"hvc/pkg/logx"
 )
 
@@ -26,7 +27,7 @@ func RequireInternalAccess(sharedToken string, next http.Handler) http.Handler {
 			"path":      r.URL.Path,
 			"remote_ip": r.RemoteAddr,
 		})
-		logx.WriteJSON(w, http.StatusUnauthorized, map[string]any{"code": 401, "message": "unauthorized"})
+		logx.WriteJSON(w, http.StatusUnauthorized, model.Response{Code: 401, Message: "unauthorized"})
 	})
 }
 

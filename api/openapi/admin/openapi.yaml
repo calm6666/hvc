@@ -37,6 +37,29 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      authenticated:
+                        type: boolean
+                      token_transport:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                          cookie_name:
+                            type: string
+                          http_only:
+                            type: boolean
 
   /v1/admin/auth/logout:
     post:
@@ -45,29 +68,260 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/auth/me:
     get:
       summary: 获取当前用户信息
+      description: 返回当前登录管理员的会话状态、脱敏后的用户信息、权限键列表以及可见菜单树。
       tags: [Auth]
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      authenticated:
+                        type: boolean
+                      admin_user_id:
+                        type: integer
+                        format: uint64
+                      user:
+                        type: object
+                        properties:
+                          admin_user_id:
+                            type: integer
+                            format: uint64
+                          username:
+                            type: string
+                          display_name:
+                            type: string
+                          status:
+                            type: integer
+                          last_login_at:
+                            type: string
+                            format: date-time
+                          last_login_ip:
+                            type: string
+                          created_at:
+                            type: string
+                            format: date-time
+                          updated_at:
+                            type: string
+                            format: date-time
+                      permission_keys:
+                        type: array
+                        items:
+                          type: string
+                      menu_tree:
+                        type: array
+                        items:
+                          type: object
+
+  /v1/admin/ping:
+    get:
+      summary: 后台接口存活检查
+      description: 用于验证后台会话与权限链路是否可用，响应结构遵循统一 `code/message` 格式。
+      tags: [Auth]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/config/runtime/versions:
     get:
       summary: 查询运行配置版本列表
-      description: 查询所有历史配置版本，支持回滚到指定版本。
+      description: 查询所有历史配置版本，支持回滚到指定版本；敏感连接字段仅返回脱敏值。
       tags: [Config]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: published
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            config_version:
+                              type: integer
+                              format: uint64
+                            enable_http_server:
+                              type: boolean
+                            enable_callback:
+                              type: boolean
+                            default_profile_id:
+                              type: integer
+                              format: uint64
+                            max_global_transcode_sessions:
+                              type: integer
+                            job_lease_ttl_sec:
+                              type: integer
+                            worker_heartbeat_timeout_sec:
+                              type: integer
+                            allow_request_override_profile:
+                              type: boolean
+                            allow_request_override_segment_duration:
+                              type: boolean
+                            allow_request_override_hwaccel:
+                              type: boolean
+                            published:
+                              type: boolean
+                            scheduler_loop_interval_ms:
+                              type: integer
+                            worker_loop_interval_ms:
+                              type: integer
+                            require_hardware_encode:
+                              type: boolean
+                            allow_software_decode_fallback:
+                              type: boolean
+                            require_hardware_watermark:
+                              type: boolean
+                            node_cpu_safety_limit_percent:
+                              type: integer
+                            node_memory_safety_limit_percent:
+                              type: integer
+                            node_gpu_safety_limit_percent:
+                              type: integer
+                            single_job_upload_concurrency:
+                              type: integer
+                            callback_http_url:
+                              type: string
+                            callback_rpc_endpoint:
+                              type: string
+                              description: 已脱敏显示
+                            callback_mq_topic:
+                              type: string
+                            enable_grpc_server:
+                              type: boolean
+                            grpc_listen_address:
+                              type: string
+                            enable_mq_consumer:
+                              type: boolean
+                            mq_queue_name:
+                              type: string
+                            mq_host:
+                              type: string
+                            mq_port:
+                              type: integer
+                            mq_username:
+                              type: string
+                            mq_password:
+                              type: string
+                              description: 已脱敏显示
+                            mq_vhost:
+                              type: string
+                            mq_consumer_tag:
+                              type: string
+                            mq_prefetch_count:
+                              type: integer
+                            storage_type:
+                              type: string
+                            storage_endpoint:
+                              type: string
+                            storage_bucket:
+                              type: string
+                            storage_access_key_id:
+                              type: string
+                              description: 已脱敏显示
+                            storage_secret_access_key:
+                              type: string
+                              description: 已脱敏显示
+                            storage_use_ssl:
+                              type: boolean
+                            storage_play_domain:
+                              type: string
+                            storage_flv_domain:
+                              type: string
+                            storage_local_base_path:
+                              type: string
+                            default_storage_id:
+                              type: integer
+                              format: uint64
+                            worker_object_prefix:
+                              type: string
+                            change_summary:
+                              type: string
+                            config_source:
+                              type: string
+                            source_revision:
+                              type: string
+                            published_by:
+                              type: string
+                            published_at:
+                              type: string
+                              format: date-time
+                            effective_config_hash:
+                              type: string
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
 
   /v1/admin/config/runtime/update:
     post:
       summary: 更新运行配置
-      description: 运行期业务配置只从数据库已发布版本生效；本地 YAML 仅在空库首启时初始化默认值。
       description: |
+        运行期业务配置只从数据库已发布版本生效；本地 YAML 仅在空库首启时初始化默认值。
         更新动态运行配置（调度器、Worker、gRPC、MQ、回调等）。
         更新后生成新版本，需通过 /publish 发布生效。
         发布后会热更新新任务、待调度任务以及运行中的后台模块状态。
@@ -180,23 +434,156 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      pending_config_version:
+                        type: integer
+                        format: uint64
+                      published:
+                        type: boolean
 
   /v1/admin/config/publish:
     post:
       summary: 发布配置版本
       tags: [Config]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [config_version]
+              properties:
+                config_version:
+                  type: integer
+                  format: uint64
+                publish_reason:
+                  type: string
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      config_version:
+                        type: integer
+                        format: uint64
+                      published:
+                        type: boolean
+                      effective_scope:
+                        type: object
+                        properties:
+                          new_jobs:
+                            type: boolean
+                          queued_jobs:
+                            type: boolean
+                          running_jobs:
+                            type: boolean
 
   /v1/admin/config/callback/list:
     get:
       summary: 查询回调配置列表
       description: 查询所有回调目标配置（HTTP/gRPC/MQ），支持动态启用/禁用。
       tags: [Callback]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: callback_name
+          in: query
+          schema:
+            type: string
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            callback_config_id:
+                              type: integer
+                              format: uint64
+                            callback_name:
+                              type: string
+                            callback_type:
+                              type: integer
+                            target_url:
+                              type: string
+                            rpc_endpoint:
+                              type: string
+                            rpc_service_name:
+                              type: string
+                            mq_exchange:
+                              type: string
+                            mq_routing_key:
+                              type: string
+                            timeout_ms:
+                              type: integer
+                            retry_times:
+                              type: integer
+                            enabled:
+                              type: boolean
+                            priority:
+                              type: integer
+                            registry_id:
+                              type: integer
+                              format: uint64
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
 
   /v1/admin/config/callback/upsert:
     post:
@@ -207,25 +594,116 @@ paths:
         - gRPC 回调：调用指定 gRPC 服务
         - MQ 回调：发送消息到指定消息队列
       tags: [Callback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                callback_config_id:
+                  type: integer
+                  format: uint64
+                callback_name:
+                  type: string
+                callback_type:
+                  type: integer
+                target_url:
+                  type: string
+                rpc_endpoint:
+                  type: string
+                rpc_service_name:
+                  type: string
+                mq_exchange:
+                  type: string
+                mq_routing_key:
+                  type: string
+                timeout_ms:
+                  type: integer
+                retry_times:
+                  type: integer
+                enabled:
+                  type: boolean
+                priority:
+                  type: integer
+                registry_id:
+                  type: integer
+                  format: uint64
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      callback_config_id:
+                        type: integer
+                        format: uint64
 
   /v1/admin/config/callback/enabled:
     post:
       summary: 启用/禁用回调配置
       tags: [Callback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [callback_config_id, enabled]
+              properties:
+                callback_config_id:
+                  type: integer
+                  format: uint64
+                enabled:
+                  type: boolean
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      callback_config_id:
+                        type: integer
+                        format: uint64
+                      enabled:
+                        type: boolean
 
   /v1/admin/config/naming-template/list:
     get:
       summary: 查询分片命名模板方案列表
       description: |
-        返回六种预置模板方案及其示例，以及当前生效的模板。
+        分页返回六种预置模板方案及其示例，以及当前生效的模板。
         所有方案都包含稳定占位符 {rendition_key}，用于保证同一任务重试时分片文件名不漂移。
       tags: [NamingTemplate]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
       responses:
         '200':
           description: 成功
@@ -239,7 +717,14 @@ paths:
                   data:
                     type: object
                     properties:
-                      templates:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
                         type: array
                         items:
                           type: object
@@ -256,6 +741,8 @@ paths:
                             example_media_video:
                               type: string
                             example_init_audio:
+                              type: string
+                            example_media_audio:
                               type: string
                             description:
                               type: string
@@ -285,13 +772,34 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      template:
+                        type: string
+                      config_version:
+                        type: integer
+                        format: uint64
+                      published:
+                        type: boolean
+                      effective_scope:
+                        type: string
 
   /v1/admin/config/naming-template/activate:
     post:
       summary: 立即生效命名模板
       description: |
-        直接修改当前运行时配置中的分片命名模板，立即对新任务生效。
-        已运行中的任务不受影响。
+        保存命名模板记录后，立即发布新的 runtime config 版本，并通过 Redis + 版本同步让各节点自动收敛。
+        已运行中的任务不受影响，继续沿用各自首次锁定的分片命名模板。
       tags: [NamingTemplate]
       requestBody:
         required: true
@@ -307,105 +815,977 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      template:
+                        type: string
+                      config_version:
+                        type: integer
+                        format: uint64
+                      published:
+                        type: boolean
+                      effective_scope:
+                        type: string
+                      running_jobs:
+                        type: string
 
   /v1/admin/config-center/list:
     get:
       summary: 查询 bootstrap 配置源绑定列表
-      description: 查询外部 bootstrap 配置源元数据；返回会显式标明 config_scope=bootstrap、affects_runtime=false。
+      description: 查询外部 bootstrap 配置源元数据；返回会显式标明 config_scope=bootstrap、affects_runtime=false，且 access_key/secret_key/token 仅返回脱敏值。
       tags: [ConfigCenter]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: provider_type
+          in: query
+          schema:
+            type: string
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      config_scope:
+                        type: string
+                      affects_runtime:
+                        type: boolean
+                      runtime_update_path:
+                        type: string
+                      runtime_publish_path:
+                        type: string
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            binding_id:
+                              type: integer
+                              format: uint64
+                            binding_name:
+                              type: string
+                            provider_type:
+                              type: string
+                            endpoint:
+                              type: string
+                            namespace:
+                              type: string
+                            auth_mode:
+                              type: string
+                            access_key:
+                              type: string
+                              description: 已脱敏显示
+                            secret_key:
+                              type: string
+                              description: 已脱敏显示
+                            token:
+                              type: string
+                              description: 已脱敏显示
+                            enabled:
+                              type: boolean
+                            priority:
+                              type: integer
+                            last_sync_status:
+                              type: string
+                            last_sync_message:
+                              type: string
+                            last_sync_at:
+                              type: string
+                              format: date-time
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
+                            config_scope:
+                              type: string
+                            affects_runtime:
+                              type: boolean
+                            binding_usage:
+                              type: array
+                              items:
+                                type: string
 
   /v1/admin/config-center/upsert:
     post:
       summary: 创建或更新 bootstrap 配置源绑定
       description: 维护 MySQL/集群注册/节点身份等启动基础配置来源，不直接发布运行期业务配置；响应会显式标明 config_scope=bootstrap、affects_runtime=false。
       tags: [ConfigCenter]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                binding_id:
+                  type: integer
+                  format: uint64
+                binding_name:
+                  type: string
+                provider_type:
+                  type: string
+                endpoint:
+                  type: string
+                namespace:
+                  type: string
+                auth_mode:
+                  type: string
+                access_key:
+                  type: string
+                secret_key:
+                  type: string
+                token:
+                  type: string
+                enabled:
+                  type: boolean
+                priority:
+                  type: integer
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      binding_id:
+                        type: integer
+                        format: uint64
+                      config_scope:
+                        type: string
+                      affects_runtime:
+                        type: boolean
 
   /v1/admin/config-center/enabled:
     post:
       summary: 启用/禁用 bootstrap 配置源绑定
       description: 启用或禁用外部 bootstrap 配置源元数据，不影响已发布 runtime config 的热更新链路；响应会显式标明 config_scope=bootstrap、affects_runtime=false。
       tags: [ConfigCenter]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [binding_id, enabled]
+              properties:
+                binding_id:
+                  type: integer
+                  format: uint64
+                enabled:
+                  type: boolean
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      binding_id:
+                        type: integer
+                        format: uint64
+                      enabled:
+                        type: boolean
+                      config_scope:
+                        type: string
+                      affects_runtime:
+                        type: boolean
 
   /v1/admin/system/user/list:
     get:
-      summary: 查询用户列表
+      summary: 查询用户分页列表
+      description: 返回脱敏后的管理员用户列表，不包含 password_hash 与 password_salt。
       tags: [RBAC]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: username
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: integer
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            admin_user_id:
+                              type: integer
+                              format: uint64
+                            username:
+                              type: string
+                            display_name:
+                              type: string
+                            status:
+                              type: integer
+                            last_login_at:
+                              type: string
+                              format: date-time
+                            last_login_ip:
+                              type: string
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
 
   /v1/admin/system/role/list:
     get:
-      summary: 查询角色列表
+      summary: 查询角色分页列表
+      tags: [RBAC]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: role_key
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            role_id:
+                              type: integer
+                              format: uint64
+                            role_key:
+                              type: string
+                            role_name:
+                              type: string
+                            role_desc:
+                              type: string
+                            status:
+                              type: integer
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
+
+  /v1/admin/system/role/all:
+    get:
+      summary: 查询全部角色列表
+      description: 返回全部角色，供下拉选择器和绑定界面使用，不分页。
       tags: [RBAC]
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            role_id:
+                              type: integer
+                              format: uint64
+                            role_key:
+                              type: string
+                            role_name:
+                              type: string
+                            role_desc:
+                              type: string
+                            status:
+                              type: integer
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
 
   /v1/admin/system/permission/list:
     get:
-      summary: 查询权限列表
+      summary: 查询权限树
+      description: 兼容旧 list 路径，实际返回树形结构，不分页；树数据位于 data.items，且 data.tree=true。
       tags: [RBAC]
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      tree:
+                        type: boolean
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+
+  /v1/admin/system/permission/tree:
+    get:
+      summary: 查询权限树
+      description: 返回完整权限树，不分页；树数据位于 data.items，且 data.tree=true。
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      tree:
+                        type: boolean
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+
+  /v1/admin/system/menu/tree:
+    get:
+      summary: 查询全部菜单树
+      description: 返回完整菜单树，不分页；树数据位于 data.items，且 data.tree=true。
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      tree:
+                        type: boolean
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+
+  /v1/admin/system/menu/current-tree:
+    get:
+      summary: 查询当前管理员可见菜单树
+      description: 根据当前登录管理员的角色权限返回其可见菜单树；树数据位于 data.items，且 data.tree=true。
+      tags: [RBAC]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      tree:
+                        type: boolean
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+
+  /v1/admin/system/role/menu/tree:
+    get:
+      summary: 查询角色菜单树与已选菜单
+      description: 返回完整菜单树和当前角色已绑定的 menu_ids。
+      tags: [RBAC]
+      parameters:
+        - name: role_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      role_id:
+                        type: integer
+                        format: uint64
+                      menu_ids:
+                        type: array
+                        items:
+                          type: integer
+                          format: uint64
+                      menu_tree:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+
+  /v1/admin/system/menu/upsert:
+    post:
+      summary: 创建或更新菜单
+      tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                menu_id:
+                  type: integer
+                  format: uint64
+                parent_id:
+                  type: integer
+                  format: uint64
+                menu_key:
+                  type: string
+                menu_name:
+                  type: string
+                route_path:
+                  type: string
+                component_name:
+                  type: string
+                icon_name:
+                  type: string
+                menu_type:
+                  type: string
+                permission_key:
+                  type: string
+                sort_no:
+                  type: integer
+                hidden:
+                  type: boolean
+                status:
+                  type: integer
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      menu_id:
+                        type: integer
+                        format: uint64
+                      parent_id:
+                        type: integer
+                        format: uint64
+                      menu_key:
+                        type: string
+                      menu_name:
+                        type: string
+                      route_path:
+                        type: string
+                      component_name:
+                        type: string
+                      icon_name:
+                        type: string
+                      menu_type:
+                        type: string
+                      permission_key:
+                        type: string
+                      sort_no:
+                        type: integer
+                      hidden:
+                        type: boolean
+                      status:
+                        type: integer
+                      children:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+
+  /v1/admin/system/menu/delete:
+    post:
+      summary: 删除菜单
+      tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [menu_id]
+              properties:
+                menu_id:
+                  type: integer
+                  format: uint64
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+
+  /v1/admin/system/role-menu/assign:
+    post:
+      summary: 覆盖分配角色菜单
+      tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_id]
+              properties:
+                role_id:
+                  type: integer
+                  format: uint64
+                menu_ids:
+                  type: array
+                  items:
+                    type: integer
+                    format: uint64
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      role_id:
+                        type: integer
+                        format: uint64
+                      menu_ids:
+                        type: array
+                        items:
+                          type: integer
+                          format: uint64
 
   /v1/admin/system/role/upsert:
     post:
       summary: 创建或更新角色
       tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role_key:
+                  type: string
+                role_name:
+                  type: string
+                role_desc:
+                  type: string
+                status:
+                  type: integer
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      role_id:
+                        type: integer
+                        format: uint64
+                      role_key:
+                        type: string
+                      role_name:
+                        type: string
+                      role_desc:
+                        type: string
+                      status:
+                        type: integer
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
 
   /v1/admin/system/permission/upsert:
     post:
       summary: 创建或更新权限
       tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                perm_key:
+                  type: string
+                perm_name:
+                  type: string
+                perm_desc:
+                  type: string
+                module:
+                  type: string
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      perm_id:
+                        type: integer
+                        format: uint64
+                      perm_key:
+                        type: string
+                      perm_name:
+                        type: string
+                      perm_desc:
+                        type: string
+                      module:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
 
   /v1/admin/system/user/upsert:
     post:
       summary: 创建或更新用户
       tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password_hash:
+                  type: string
+                display_name:
+                  type: string
+                status:
+                  type: integer
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      admin_user_id:
+                        type: integer
+                        format: uint64
+                      username:
+                        type: string
+                      display_name:
+                        type: string
+                      status:
+                        type: integer
+                      last_login_at:
+                        type: string
+                        format: date-time
+                      last_login_ip:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
 
   /v1/admin/system/user/status:
     post:
       summary: 启用/禁用用户
       tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [admin_user_id, status]
+              properties:
+                admin_user_id:
+                  type: integer
+                  format: uint64
+                status:
+                  type: integer
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/system/user-role/bind:
     post:
       summary: 绑定用户角色
       tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, role_id]
+              properties:
+                user_id:
+                  type: integer
+                  format: uint64
+                role_id:
+                  type: integer
+                  format: uint64
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/system/role-permission/bind:
     post:
       summary: 绑定角色权限
       tags: [RBAC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_id, perm_id]
+              properties:
+                role_id:
+                  type: integer
+                  format: uint64
+                perm_id:
+                  type: integer
+                  format: uint64
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/audit/list:
     get:
@@ -431,18 +1811,301 @@ paths:
           schema:
             type: integer
             format: uint64
+        - name: start_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            audit_log_id:
+                              type: integer
+                              format: uint64
+                            admin_user_id:
+                              type: integer
+                              format: uint64
+                            username:
+                              type: string
+                            action_name:
+                              type: string
+                            target_type:
+                              type: string
+                            target_id:
+                              type: string
+                            request_id:
+                              type: string
+                            request_ip:
+                              type: string
+                            request_user_agent:
+                              type: string
+                            result_code:
+                              type: integer
+                            result_message:
+                              type: string
+                            created_at:
+                              type: string
+                              format: date-time
+
+  /v1/admin/system/log/list:
+    get:
+      summary: 查询系统运行日志
+      tags: [System]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: level
+          in: query
+          schema:
+            type: string
+        - name: action_name
+          in: query
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            log_id:
+                              type: integer
+                              format: uint64
+                            service_name:
+                              type: string
+                            log_level:
+                              type: string
+                            action_name:
+                              type: string
+                            fields:
+                              type: object
+                            logged_at:
+                              type: string
+                              format: date-time
+                            created_at:
+                              type: string
+                              format: date-time
 
   /v1/admin/cluster/node/list:
     get:
       summary: 查询集群节点列表
       description: 查询所有注册节点的状态、指标和 GPU 能力。
       tags: [Cluster]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+        - name: quarantined
+          in: query
+          schema:
+            type: boolean
+        - name: draining
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            node_id:
+                              type: integer
+                              format: uint64
+                            node_name:
+                              type: string
+                            host_ip:
+                              type: string
+                            grpc_host:
+                              type: string
+                            http_host:
+                              type: string
+                            enabled:
+                              type: boolean
+                            quarantined:
+                              type: boolean
+                            quarantine_reason:
+                              type: string
+                            draining:
+                              type: boolean
+                            drain_reason:
+                              type: string
+                            last_state_change_at:
+                              type: string
+                              format: date-time
+                            capacity_generation:
+                              type: integer
+                              format: uint64
+                            support_nvenc:
+                              type: boolean
+                            support_qsv:
+                              type: boolean
+                            support_amf:
+                              type: boolean
+                            support_vaapi:
+                              type: boolean
+                            support_videotoolbox:
+                              type: boolean
+                            cpu_cores:
+                              type: integer
+                            memory_total_mb:
+                              type: integer
+                            disk_total_gb:
+                              type: integer
+                            net_up_mbps:
+                              type: integer
+                            net_down_mbps:
+                              type: integer
+                            max_transcode_sessions:
+                              type: integer
+                            max_upload_concurrency:
+                              type: integer
+                            node_tags:
+                              type: string
+                            last_heartbeat_at:
+                              type: string
+                              format: date-time
+                            metrics_available:
+                              type: boolean
+                            metrics_fresh:
+                              type: boolean
+                            online_estimate:
+                              type: boolean
+                            scheduler_ready:
+                              type: boolean
+                            state_reason:
+                              type: string
+                            last_metrics_at:
+                              type: string
+                              format: date-time
+                            metrics:
+                              type: object
+                              properties:
+                                cpu_usage_percent:
+                                  type: integer
+                                memory_usage_percent:
+                                  type: integer
+                                gpu_memory_usage_percent:
+                                  type: integer
+                                upload_queue_depth:
+                                  type: integer
+                                active_transcode_sessions:
+                                  type: integer
+                            gpu_summary:
+                              type: object
+                              properties:
+                                total:
+                                  type: integer
+                                healthy_total:
+                                  type: integer
+                                schedulable_total:
+                                  type: integer
+                                max_transcode_sessions:
+                                  type: integer
 
   /v1/admin/cluster/node/detail:
     get:
@@ -458,12 +2121,198 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      node_id:
+                        type: integer
+                        format: uint64
+                      node_name:
+                        type: string
+                      host_ip:
+                        type: string
+                      grpc_host:
+                        type: string
+                      http_host:
+                        type: string
+                      enabled:
+                        type: boolean
+                      quarantined:
+                        type: boolean
+                      quarantine_reason:
+                        type: string
+                      draining:
+                        type: boolean
+                      drain_reason:
+                        type: string
+                      last_state_change_at:
+                        type: string
+                        format: date-time
+                      capacity_generation:
+                        type: integer
+                        format: uint64
+                      support_nvenc:
+                        type: boolean
+                      support_qsv:
+                        type: boolean
+                      support_amf:
+                        type: boolean
+                      support_vaapi:
+                        type: boolean
+                      support_videotoolbox:
+                        type: boolean
+                      cpu_cores:
+                        type: integer
+                      memory_total_mb:
+                        type: integer
+                      disk_total_gb:
+                        type: integer
+                      net_up_mbps:
+                        type: integer
+                      net_down_mbps:
+                        type: integer
+                      max_transcode_sessions:
+                        type: integer
+                      max_upload_concurrency:
+                        type: integer
+                      node_tags:
+                        type: string
+                      last_heartbeat_at:
+                        type: string
+                        format: date-time
+                      metrics_available:
+                        type: boolean
+                      metrics_fresh:
+                        type: boolean
+                      online_estimate:
+                        type: boolean
+                      scheduler_ready:
+                        type: boolean
+                      state_reason:
+                        type: string
+                      last_metrics_at:
+                        type: string
+                        format: date-time
+                      metrics:
+                        type: object
+                        properties:
+                          cpu_usage_percent:
+                            type: integer
+                          memory_usage_percent:
+                            type: integer
+                          gpu_memory_usage_percent:
+                            type: integer
+                          upload_queue_depth:
+                            type: integer
+                          active_transcode_sessions:
+                            type: integer
+                      gpu_summary:
+                        type: object
+                        properties:
+                          total:
+                            type: integer
+                          healthy_total:
+                            type: integer
+                          schedulable_total:
+                            type: integer
+                          max_transcode_sessions:
+                            type: integer
+                      gpu_devices:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            gpu_device_id:
+                              type: integer
+                              format: uint64
+                            gpu_index:
+                              type: integer
+                            gpu_uuid:
+                              type: string
+                            vendor:
+                              type: string
+                            model:
+                              type: string
+                            driver_version:
+                              type: string
+                            memory_total_mb:
+                              type: integer
+                            max_transcode_sessions:
+                              type: integer
+                            healthy:
+                              type: boolean
+                            schedulable:
+                              type: boolean
+                            last_seen_at:
+                              type: string
+                              format: date-time
+                            runtime_capability:
+                              type: object
+                              properties:
+                                gpu_device_id:
+                                  type: integer
+                                  format: uint64
+                                gpu_uuid:
+                                  type: string
+                                gpu_index:
+                                  type: integer
+                                vendor:
+                                  type: string
+                                model:
+                                  type: string
+                                driver_version:
+                                  type: string
+                                memory_total_mb:
+                                  type: integer
+                                gpu_memory_used_mb:
+                                  type: integer
+                                gpu_memory_usage_percent:
+                                  type: integer
+                                gpu_utilization_percent:
+                                  type: integer
+                                active_sessions:
+                                  type: integer
+                                encode_codecs:
+                                  type: array
+                                  items:
+                                    type: string
+                                decode_codecs:
+                                  type: array
+                                  items:
+                                    type: string
+                                execution_hw_types:
+                                  type: array
+                                  items:
+                                    type: string
+                                max_sessions:
+                                  type: integer
+                                supports_filter:
+                                  type: boolean
 
   /v1/admin/cluster/node/metrics:
     get:
       summary: 查询节点指标
       tags: [Cluster]
       parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
         - name: node_id
           in: query
           required: false
@@ -473,6 +2322,90 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            node_id:
+                              type: integer
+                              format: uint64
+                            cpu_usage_percent:
+                              type: integer
+                            memory_usage_percent:
+                              type: integer
+                            gpu_memory_usage_percent:
+                              type: integer
+                            upload_queue_depth:
+                              type: integer
+                            active_transcode_sessions:
+                              type: integer
+                            gpu_capabilities:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  gpu_device_id:
+                                    type: integer
+                                    format: uint64
+                                  gpu_uuid:
+                                    type: string
+                                  gpu_index:
+                                    type: integer
+                                  vendor:
+                                    type: string
+                                  model:
+                                    type: string
+                                  driver_version:
+                                    type: string
+                                  memory_total_mb:
+                                    type: integer
+                                  gpu_memory_used_mb:
+                                    type: integer
+                                  gpu_memory_usage_percent:
+                                    type: integer
+                                  gpu_utilization_percent:
+                                    type: integer
+                                  active_sessions:
+                                    type: integer
+                                  encode_codecs:
+                                    type: array
+                                    items:
+                                      type: string
+                                  decode_codecs:
+                                    type: array
+                                    items:
+                                      type: string
+                                  execution_hw_types:
+                                    type: array
+                                    items:
+                                      type: string
+                                  max_sessions:
+                                    type: integer
+                                  supports_filter:
+                                    type: boolean
+                            timestamp:
+                              type: string
+                              format: date-time
 
   /v1/admin/cluster/overview:
     get:
@@ -482,6 +2415,174 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      mode:
+                        type: string
+                        example: cluster-allinone
+                      topology:
+                        type: object
+                        properties:
+                          current_node_id:
+                            type: integer
+                            format: uint64
+                          current_node_role:
+                            type: string
+                          current_is_control_plane:
+                            type: boolean
+                          current_admin_accessible:
+                            type: boolean
+                          current_http_address:
+                            type: string
+                          control_plane_total:
+                            type: integer
+                          admin_accessible_total:
+                            type: integer
+                          worker_only_total:
+                            type: integer
+                          control_plane_nodes:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                node_id:
+                                  type: integer
+                                  format: uint64
+                                node_name:
+                                  type: string
+                                node_role:
+                                  type: string
+                                http_host:
+                                  type: string
+                                online_estimate:
+                                  type: boolean
+                                admin_accessible:
+                                  type: boolean
+                      module_status:
+                        type: object
+                        properties:
+                          http_enabled:
+                            type: boolean
+                          public_grpc_enabled:
+                            type: boolean
+                          internal_grpc_enabled:
+                            type: boolean
+                          mq_consumer_enabled:
+                            type: boolean
+                          scheduler_enabled:
+                            type: boolean
+                          worker_enabled:
+                            type: boolean
+                          callback_enabled:
+                            type: boolean
+                      scheduler:
+                        type: object
+                        properties:
+                          dynamic_concurrency_control:
+                            type: boolean
+                          max_global_transcode_sessions:
+                            type: integer
+                          max_node_transcode_sessions:
+                            type: integer
+                          worker_heartbeat_timeout_sec:
+                            type: integer
+                          active_execution_total:
+                            type: integer
+                            format: int64
+                          remaining_execution_capacity:
+                            type: integer
+                            format: int64
+                          require_hardware_encode:
+                            type: boolean
+                          allow_software_decode_fallback:
+                            type: boolean
+                      internal_grpc:
+                        type: object
+                        properties:
+                          listen_address:
+                            type: string
+                      cluster:
+                        type: object
+                        properties:
+                          node_total:
+                            type: integer
+                          node_enabled_total:
+                            type: integer
+                          node_quarantined_total:
+                            type: integer
+                          node_draining_total:
+                            type: integer
+                          node_online_total:
+                            type: integer
+                          member_total:
+                            type: integer
+                          gpu_total:
+                            type: integer
+                          gpu_healthy_total:
+                            type: integer
+                          gpu_schedulable_total:
+                            type: integer
+                          active_sessions:
+                            type: integer
+                          upload_queue_depth:
+                            type: integer
+                          max_transcode_sessions:
+                            type: integer
+                          nodes:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                node_id:
+                                  type: integer
+                                  format: uint64
+                                node_name:
+                                  type: string
+                                enabled:
+                                  type: boolean
+                                quarantined:
+                                  type: boolean
+                                draining:
+                                  type: boolean
+                                online_estimate:
+                                  type: boolean
+                                gpu_total:
+                                  type: integer
+                                gpu_schedulable_total:
+                                  type: integer
+                                active_transcode_sessions:
+                                  type: integer
+                                upload_queue_depth:
+                                  type: integer
+                      version:
+                        type: object
+                        properties:
+                          mysql_server_version:
+                            type: string
+                          redis_server_version:
+                            type: string
+                          redis_mode:
+                            type: string
+                          runtime_config_db_version:
+                            type: integer
+                            format: uint64
+                          runtime_config_cache_version:
+                            type: integer
+                            format: uint64
+                          runtime_config_cache_exists:
+                            type: boolean
+                          runtime_config_cache_ttl_sec:
+                            type: integer
 
   /v1/admin/cluster/realtime:
     get:
@@ -491,31 +2592,810 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      mode:
+                        type: string
+                      topology:
+                        type: object
+                      module_status:
+                        type: object
+                      scheduler:
+                        type: object
+                        properties:
+                          dynamic_concurrency_control:
+                            type: boolean
+                          max_global_transcode_sessions:
+                            type: integer
+                          max_node_transcode_sessions:
+                            type: integer
+                          worker_heartbeat_timeout_sec:
+                            type: integer
+                          active_execution_total:
+                            type: integer
+                            format: int64
+                          remaining_execution_capacity:
+                            type: integer
+                            format: int64
+                          require_hardware_encode:
+                            type: boolean
+                          allow_software_decode_fallback:
+                            type: boolean
+                      internal_grpc:
+                        type: object
+                        properties:
+                          listen_address:
+                            type: string
+                      version:
+                        type: object
+                      queue:
+                        type: object
+                        properties:
+                          queued_jobs:
+                            type: integer
+                          assigned_jobs:
+                            type: integer
+                          running_jobs:
+                            type: integer
+                          uploading_jobs:
+                            type: integer
+                          completed_jobs:
+                            type: integer
+                          failed_jobs:
+                            type: integer
+                          canceled_jobs:
+                            type: integer
+                      cluster:
+                        type: object
+                        properties:
+                          node_total:
+                            type: integer
+                          node_enabled_total:
+                            type: integer
+                          node_quarantined_total:
+                            type: integer
+                          node_draining_total:
+                            type: integer
+                          node_online_total:
+                            type: integer
+                          member_total:
+                            type: integer
+                          worker_total:
+                            type: integer
+                          worker_online_total:
+                            type: integer
+                          gpu_total:
+                            type: integer
+                          gpu_healthy_total:
+                            type: integer
+                          gpu_schedulable_total:
+                            type: integer
+                          active_sessions:
+                            type: integer
+                          upload_queue_depth:
+                            type: integer
+                          max_transcode_sessions:
+                            type: integer
+                      nodes:
+                        type: array
+                        items:
+                          type: object
+
+  /v1/admin/cluster/topology:
+    get:
+      summary: 查询集群拓扑与控制面摘要
+      description: 返回当前节点角色、控制面节点列表、后台可访问节点统计，以及成员列表，便于后台确定当前连接节点和集群拓扑关系。
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      mode:
+                        type: string
+                      topology:
+                        type: object
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            node_id:
+                              type: integer
+                              format: uint64
+                            node_name:
+                              type: string
+                            node_role:
+                              type: string
+                            host:
+                              type: string
+                            host_ip:
+                              type: string
+                            grpc_host:
+                              type: string
+                            http_host:
+                              type: string
+                            enabled:
+                              type: boolean
+                            quarantined:
+                              type: boolean
+                            draining:
+                              type: boolean
+                            control_plane:
+                              type: boolean
+                            admin_accessible:
+                              type: boolean
+                            online_estimate:
+                              type: boolean
+                            source:
+                              type: string
+
+  /v1/admin/cluster/resource/distribution:
+    get:
+      summary: 查询节点资源承载分布
+      description: 返回每台节点的活跃执行数、当前转码会话、上传队列、剩余容量和每张 GPU 的实时承载情况，用于后台容量分析与摘流决策。
+      tags: [Cluster]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      mode:
+                        type: string
+                      generated_at:
+                        type: string
+                        format: date-time
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            node_id:
+                              type: integer
+                              format: uint64
+                            node_name:
+                              type: string
+                            node_role:
+                              type: string
+                            enabled:
+                              type: boolean
+                            quarantined:
+                              type: boolean
+                            draining:
+                              type: boolean
+                            online_estimate:
+                              type: boolean
+                            scheduler_ready:
+                              type: boolean
+                            state_reason:
+                              type: string
+                            metrics_available:
+                              type: boolean
+                            metrics_fresh:
+                              type: boolean
+                            active_execution_total:
+                              type: integer
+                            active_transcode_sessions:
+                              type: integer
+                            upload_queue_depth:
+                              type: integer
+                            max_transcode_sessions:
+                              type: integer
+                            max_upload_concurrency:
+                              type: integer
+                            remaining_transcode_capacity:
+                              type: integer
+                            remaining_upload_capacity:
+                              type: integer
+                            cpu_usage_percent:
+                              type: integer
+                            memory_usage_percent:
+                              type: integer
+                            gpu_memory_usage_percent:
+                              type: integer
+                            gpu_active_session_total:
+                              type: integer
+                            gpus:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  gpu_index:
+                                    type: integer
+                                  gpu_uuid:
+                                    type: string
+                                  model:
+                                    type: string
+                                  vendor:
+                                    type: string
+                                  memory_total_mb:
+                                    type: integer
+                                  gpu_memory_usage_percent:
+                                    type: integer
+                                  gpu_utilization_percent:
+                                    type: integer
+                                  active_sessions:
+                                    type: integer
+                                  max_sessions:
+                                    type: integer
+                                  schedulable:
+                                    type: boolean
+                                  healthy:
+                                    type: boolean
+
+  /v1/admin/cluster/worker/list:
+    get:
+      summary: 查询 Worker 实例分页列表
+      description: 返回当前集群中 Worker 进程实例的分页列表，用于排障“哪台节点上的哪个 Worker 在线、最后一次心跳是什么时候”。
+      tags: [Cluster]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: node_id
+          in: query
+          schema:
+            type: integer
+            format: uint64
+        - name: worker_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: integer
+        - name: online_only
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                              format: uint64
+                            node_id:
+                              type: integer
+                              format: uint64
+                            worker_id:
+                              type: string
+                            logical_worker_id:
+                              type: string
+                            physical_worker_id:
+                              type: string
+                            machine_fingerprint:
+                              type: string
+                            startup_instance_id:
+                              type: string
+                            boot_id:
+                              type: string
+                            pid:
+                              type: integer
+                            version:
+                              type: string
+                            status:
+                              type: integer
+                            status_name:
+                              type: string
+                            online_estimate:
+                              type: boolean
+                            start_at:
+                              type: string
+                              format: date-time
+                            exited_at:
+                              type: string
+                              format: date-time
+                            exit_reason:
+                              type: string
+                            last_heartbeat_at:
+                              type: string
+                              format: date-time
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
+
+  /v1/admin/cluster/worker/offline:
+    post:
+      summary: 手动下线 Worker
+      description: 仅更新控制面状态，不直接远程终止进程；用于运维先收口异常在线状态。
+      tags: [Cluster]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worker_id]
+              properties:
+                worker_id:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+
+  /v1/admin/cluster/worker/exit:
+    post:
+      summary: 手动标记 Worker 退出
+      tags: [Cluster]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worker_id]
+              properties:
+                worker_id:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+
+  /v1/admin/cluster/job/takeover:
+    post:
+      summary: 强制接管节点或 Worker 上的活跃任务
+      description: 将 active 的 assigned/running/uploading 任务重新置回 queued，并把旧执行实例标记为 abandoned，适用于节点或 Worker 异常后的人工快速收口。
+      tags: [Cluster]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                node_id:
+                  type: integer
+                  format: uint64
+                worker_id:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      matched_job_total:
+                        type: integer
+                      reset_job_total:
+                        type: integer
+                      abandoned_execution_total:
+                        type: integer
+
+  /v1/admin/cluster/scheduler/insight:
+    get:
+      summary: 查询调度洞察
+      description: 返回调度器当前快照下的候选节点、过滤原因、Top-K 池以及推荐调度结果，用于后台容量分析和故障排查。
+      tags: [Cluster]
+      parameters:
+        - name: preferred_hw_accel
+          in: query
+          schema:
+            type: string
+        - name: video_codec
+          in: query
+          schema:
+            type: string
+        - name: enable_watermark
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      generated_at:
+                        type: string
+                        format: date-time
+                      top_k:
+                        type: integer
+                      dispatch_policy:
+                        type: string
+                      max_global_transcode_sessions:
+                        type: integer
+                      active_execution_count:
+                        type: integer
+                        format: int64
+                      queued_job_count:
+                        type: integer
+                        format: int64
+                      candidate_total:
+                        type: integer
+                      passed_candidate_total:
+                        type: integer
+                      recommended_node_id:
+                        type: integer
+                        format: uint64
+                      recommended_decision:
+                        type: object
+                        properties:
+                          node_id:
+                            type: integer
+                            format: uint64
+                          selected_gpu_index:
+                            type: integer
+                          selected_gpu_device_id:
+                            type: integer
+                            format: uint64
+                          selected_execution_hw:
+                            type: string
+                          lease_generation:
+                            type: integer
+                            format: uint64
+                          attempt_no:
+                            type: integer
+                      candidates:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            node_id:
+                              type: integer
+                              format: uint64
+                            node_name:
+                              type: string
+                            enabled:
+                              type: boolean
+                            quarantined:
+                              type: boolean
+                            draining:
+                              type: boolean
+                            shielded:
+                              type: boolean
+                            supports_hardware_watermark:
+                              type: boolean
+                            max_transcode_sessions:
+                              type: integer
+                            max_upload_concurrency:
+                              type: integer
+                            metrics_available:
+                              type: boolean
+                            metrics_fresh:
+                              type: boolean
+                            online:
+                              type: boolean
+                            last_metrics_at:
+                              type: string
+                              format: date-time
+                            last_heartbeat_at:
+                              type: string
+                              format: date-time
+                            score:
+                              type: integer
+                            score_rank:
+                              type: integer
+                            filter_passed:
+                              type: boolean
+                            filter_reasons:
+                              type: array
+                              items:
+                                type: string
+                            in_top_k_pool:
+                              type: boolean
+                            decision_preview:
+                              type: object
+                              properties:
+                                node_id:
+                                  type: integer
+                                  format: uint64
+                                selected_gpu_index:
+                                  type: integer
+                                selected_gpu_device_id:
+                                  type: integer
+                                  format: uint64
+                                selected_execution_hw:
+                                  type: string
+                                lease_generation:
+                                  type: integer
+                                  format: uint64
+                                attempt_no:
+                                  type: integer
+                            metrics:
+                              type: object
+                              properties:
+                                cpu_usage_percent:
+                                  type: integer
+                                memory_usage_percent:
+                                  type: integer
+                                gpu_memory_usage_percent:
+                                  type: integer
+                                upload_queue_depth:
+                                  type: integer
+                                active_transcode_sessions:
+                                  type: integer
+                                gpu_capabilities:
+                                  type: array
+                                  items:
+                                    type: object
 
   /v1/admin/cluster/member/list:
     get:
       summary: 查询集群成员列表
       tags: [Cluster]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            node_id:
+                              type: integer
+                              format: uint64
+                            node_name:
+                              type: string
+                            node_role:
+                              type: string
+                            host:
+                              type: string
+                            host_ip:
+                              type: string
+                            grpc_host:
+                              type: string
+                            http_host:
+                              type: string
+                            online_estimate:
+                              type: boolean
+                            source:
+                              type: string
+                            last_heartbeat_at:
+                              type: string
+                              format: date-time
+                            registry_heartbeat_at:
+                              type: string
+                              format: date-time
+                            last_metrics_at:
+                              type: string
+                              format: date-time
+                            enabled:
+                              type: boolean
+                            quarantined:
+                              type: boolean
+                            draining:
+                              type: boolean
+                            control_plane:
+                              type: boolean
+                            admin_accessible:
+                              type: boolean
+                            worker_total:
+                              type: integer
+                            worker_online_total:
+                              type: integer
 
   /v1/admin/cluster/node/enabled:
     post:
       summary: 启用/禁用节点
       tags: [Cluster]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [node_id, enabled]
+              properties:
+                node_id:
+                  type: integer
+                  format: uint64
+                enabled:
+                  type: boolean
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/cluster/node/quarantined:
     post:
       summary: 隔离/取消隔离节点
       description: 隔离后节点不再分配新任务，已有任务继续执行。
       tags: [Cluster]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [node_id, quarantined]
+              properties:
+                node_id:
+                  type: integer
+                  format: uint64
+                quarantined:
+                  type: boolean
+                reason:
+                  type: string
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+
+  /v1/admin/cluster/node/draining:
+    post:
+      summary: 排空/恢复节点
+      description: 排空后节点不再承接新任务，但允许已在执行中的任务自然完成。
+      tags: [Cluster]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [node_id, draining]
+              properties:
+                node_id:
+                  type: integer
+                  format: uint64
+                draining:
+                  type: boolean
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/transcode/job/list:
     get:
@@ -547,6 +3427,58 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            job_id:
+                              type: integer
+                              format: uint64
+                            request_id:
+                              type: string
+                            biz_key:
+                              type: string
+                            source_url:
+                              type: string
+                            status:
+                              type: integer
+                            status_name:
+                              type: string
+                            progress_permille:
+                              type: integer
+                            stage:
+                              type: string
+                            assigned_node_id:
+                              type: integer
+                              format: uint64
+                            assigned_worker_id:
+                              type: string
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
 
   /v1/admin/transcode/job/detail:
     get:
@@ -562,6 +3494,77 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      job_id:
+                        type: integer
+                        format: uint64
+                      request_id:
+                        type: string
+                      biz_key:
+                        type: string
+                      source_url:
+                        type: string
+                      status:
+                        type: integer
+                      status_name:
+                        type: string
+                      progress_permille:
+                        type: integer
+                      stage:
+                        type: string
+                      profile_id:
+                        type: integer
+                        format: uint64
+                      enable_watermark:
+                        type: boolean
+                      segment_duration_sec:
+                        type: integer
+                      support_dash:
+                        type: boolean
+                      support_hls:
+                        type: boolean
+                      selected_execution_hw:
+                        type: string
+                      assigned_node_id:
+                        type: integer
+                        format: uint64
+                      assigned_worker_id:
+                        type: string
+                      lease_generation:
+                        type: integer
+                        format: uint64
+                      realtime_progress:
+                        type: object
+                        properties:
+                          current_fps:
+                            type: number
+                          current_bitrate_kbps:
+                            type: number
+                          current_speed:
+                            type: number
+                          elapsed_ms:
+                            type: integer
+                            format: int64
+                          estimated_remaining_ms:
+                            type: integer
+                            format: int64
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
 
   /v1/admin/transcode/job/retry:
     post:
@@ -581,6 +3584,15 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/transcode/job/cancel:
     post:
@@ -600,6 +3612,15 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/transcode/job/progress:
     get:
@@ -615,6 +3636,42 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      job_id:
+                        type: integer
+                        format: uint64
+                      status:
+                        type: integer
+                      stage:
+                        type: string
+                      progress_permille:
+                        type: integer
+                      current_fps:
+                        type: number
+                      current_bitrate_kbps:
+                        type: number
+                      current_speed:
+                        type: number
+                      elapsed_ms:
+                        type: integer
+                        format: int64
+                      estimated_remaining_ms:
+                        type: integer
+                        format: int64
+                      updated_at:
+                        type: string
+                        format: date-time
 
   /v1/admin/transcode/monitor/snapshot:
     get:
@@ -689,6 +3746,49 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      channel_id:
+                        type: integer
+                        format: uint64
+                      channel_key:
+                        type: string
+                      channel_name:
+                        type: string
+                      profile_id:
+                        type: integer
+                        format: uint64
+                      status:
+                        type: string
+                      enable_source_rendition:
+                        type: boolean
+                      enable_watermark:
+                        type: boolean
+                      play_domain:
+                        type: string
+                      push_domain:
+                        type: string
+                      assigned_node_id:
+                        type: integer
+                        format: uint64
+                      assigned_worker_id:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
 
   /v1/admin/live/channel/list:
     get:
@@ -715,6 +3815,61 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            channel_id:
+                              type: integer
+                              format: uint64
+                            channel_key:
+                              type: string
+                            channel_name:
+                              type: string
+                            profile_id:
+                              type: integer
+                              format: uint64
+                            status:
+                              type: string
+                            enable_source_rendition:
+                              type: boolean
+                            enable_watermark:
+                              type: boolean
+                            play_domain:
+                              type: string
+                            push_domain:
+                              type: string
+                            assigned_node_id:
+                              type: integer
+                              format: uint64
+                            assigned_worker_id:
+                              type: string
+                            created_at:
+                              type: string
+                              format: date-time
+                            updated_at:
+                              type: string
+                              format: date-time
 
   /v1/admin/live/channel/detail:
     get:
@@ -734,6 +3889,119 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      channel:
+                        type: object
+                        properties:
+                          channel_id:
+                            type: integer
+                            format: uint64
+                          channel_key:
+                            type: string
+                          channel_name:
+                            type: string
+                          profile_id:
+                            type: integer
+                            format: uint64
+                          status:
+                            type: string
+                          enable_source_rendition:
+                            type: boolean
+                          enable_watermark:
+                            type: boolean
+                          play_domain:
+                            type: string
+                          push_domain:
+                            type: string
+                          assigned_node_id:
+                            type: integer
+                            format: uint64
+                          assigned_worker_id:
+                            type: string
+                          created_at:
+                            type: string
+                            format: date-time
+                          updated_at:
+                            type: string
+                            format: date-time
+                      playback:
+                        type: object
+                        properties:
+                          channel_key:
+                            type: string
+                          status:
+                            type: string
+                          play_token:
+                            type: string
+                          expire_at:
+                            type: integer
+                            format: int64
+                          master_hls_url:
+                            type: string
+                          http_flv_url:
+                            type: string
+                          rendition_names:
+                            type: array
+                            items:
+                              type: string
+                          renditions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                rendition_name:
+                                  type: string
+                                is_source:
+                                  type: boolean
+                                hls_url:
+                                  type: string
+                                http_flv_url:
+                                  type: string
+                      active_session:
+                        type: object
+                        properties:
+                          session_id:
+                            type: integer
+                            format: uint64
+                          channel_id:
+                            type: integer
+                            format: uint64
+                          channel_key:
+                            type: string
+                          session_key:
+                            type: string
+                          status:
+                            type: string
+                          ingest_url:
+                            type: string
+                          playback_hls_url:
+                            type: string
+                          push_protocol:
+                            type: string
+                          assigned_node_id:
+                            type: integer
+                            format: uint64
+                          assigned_worker_id:
+                            type: string
+                          started_at:
+                            type: string
+                            format: date-time
+                          stopped_at:
+                            type: string
+                            format: date-time
+                          resume_count:
+                            type: integer
 
   /v1/admin/live/channel/update:
     post:
@@ -767,6 +4035,49 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      channel_id:
+                        type: integer
+                        format: uint64
+                      channel_key:
+                        type: string
+                      channel_name:
+                        type: string
+                      profile_id:
+                        type: integer
+                        format: uint64
+                      status:
+                        type: string
+                      enable_source_rendition:
+                        type: boolean
+                      enable_watermark:
+                        type: boolean
+                      play_domain:
+                        type: string
+                      push_domain:
+                        type: string
+                      assigned_node_id:
+                        type: integer
+                        format: uint64
+                      assigned_worker_id:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
+                      updated_at:
+                        type: string
+                        format: date-time
 
   /v1/admin/live/channel/start:
     post:
@@ -791,6 +4102,15 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/live/channel/stop:
     post:
@@ -810,6 +4130,15 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/live/channel/delete:
     post:
@@ -830,6 +4159,15 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
 
   /v1/admin/live/session/list:
     get:
@@ -861,3 +4199,58 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      page_size:
+                        type: integer
+                      total:
+                        type: integer
+                        format: int64
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            session_id:
+                              type: integer
+                              format: uint64
+                            channel_id:
+                              type: integer
+                              format: uint64
+                            channel_key:
+                              type: string
+                            session_key:
+                              type: string
+                            status:
+                              type: string
+                            ingest_url:
+                              type: string
+                            playback_hls_url:
+                              type: string
+                            push_protocol:
+                              type: string
+                            assigned_node_id:
+                              type: integer
+                              format: uint64
+                            assigned_worker_id:
+                              type: string
+                            started_at:
+                              type: string
+                              format: date-time
+                            stopped_at:
+                              type: string
+                              format: date-time
+                            resume_count:
+                              type: integer

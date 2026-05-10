@@ -10,6 +10,8 @@ import (
 	"hvc/pkg/netutil"
 )
 
+const defaultRuntimeConfigPath = "configs/config.yaml"
+
 // RuntimeConfig 表示服务启动时必须加载的基础配置。
 //
 // 约定：
@@ -212,7 +214,7 @@ type StorageConfig struct {
 
 // LoadRuntimeConfig 加载启动配置。
 func LoadRuntimeConfig() (RuntimeConfig, error) {
-	cfg, err := LoadRuntimeConfigFromYAML("configs/config.yaml")
+	cfg, err := LoadRuntimeConfigFromYAML(ResolveRuntimeConfigPath(os.Args[1:]))
 	if err != nil {
 		return RuntimeConfig{}, err
 	}
@@ -220,6 +222,31 @@ func LoadRuntimeConfig() (RuntimeConfig, error) {
 		return RuntimeConfig{}, err
 	}
 	return cfg, nil
+}
+
+// ResolveRuntimeConfigPath 按“命令行参数 > 环境变量 > 默认路径”的优先级解析启动配置文件路径。
+//
+// 这样可以保证 systemd、Docker、开发脚本都能复用同一套入口约定，
+// 避免部署清单里写了 `--config` 或 `HVC_CONFIG_PATH`，但主程序实际上没有消费。
+func ResolveRuntimeConfigPath(args []string) string {
+	for idx := 0; idx < len(args); idx++ {
+		arg := strings.TrimSpace(args[idx])
+		if arg == "--config" && idx+1 < len(args) {
+			if value := strings.TrimSpace(args[idx+1]); value != "" {
+				return value
+			}
+			continue
+		}
+		if value, ok := strings.CutPrefix(arg, "--config="); ok {
+			if value = strings.TrimSpace(value); value != "" {
+				return value
+			}
+		}
+	}
+	if envPath := strings.TrimSpace(os.Getenv("HVC_CONFIG_PATH")); envPath != "" {
+		return envPath
+	}
+	return defaultRuntimeConfigPath
 }
 
 // LoadRuntimeConfigFromYAML 从 YAML 文件加载启动配置。

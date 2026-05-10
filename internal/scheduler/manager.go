@@ -40,6 +40,8 @@ type Manager struct {
 	topK                   int
 }
 
+const schedulerNodeOnlineGraceMultiplier = 2
+
 // NewManager 创建调度模块。
 func NewManager(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeID uint64, workerID string, clusterCache *cluster.StateCache, jobRepository *mysql.JobRepository, jobRequestOverrideRepo *mysql.JobRequestOverrideRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Manager {
 	return &Manager{
@@ -111,7 +113,17 @@ func (m *Manager) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeCon
 	if len(candidates) == 0 {
 		return
 	}
+	if m.reachedGlobalCapacity(ctx, cfg) {
+		logx.Info("scheduler.dispatch.skipped", logx.Fields{
+			"reason": "max_global_transcode_sessions_reached",
+			"limit":  cfg.Scheduler.MaxGlobalTranscodeSessions,
+		})
+		return
+	}
 	for _, job := range jobs {
+		if m.reachedGlobalCapacity(ctx, cfg) {
+			return
+		}
 		req := m.buildJobRequest(ctx, job)
 		passed := filterpkg.NewFilter(cfg).Apply(req, candidates)
 		if len(passed) == 0 {
@@ -183,6 +195,10 @@ func (m *Manager) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeCon
 func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandidate {
 	candidates := make([]model.DispatchCandidate, 0)
 	activeGPUUsageByNode := make(map[uint64]map[int]int)
+	now := time.Now()
+	currentCfg := m.currentConfig()
+	metricsFreshAfter := now.Add(-currentCfg.Scheduler.WorkerHeartbeatTimeout)
+	onlineGrace := resolveNodeOnlineGracePeriod(currentCfg)
 
 	if m.clusterNodeRepository != nil {
 		nodes := m.clusterNodeRepository.List(ctx)
@@ -191,7 +207,7 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 			for _, node := range nodes {
 				nodeIDs = append(nodeIDs, node.NodeID)
 			}
-			activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, nodeIDs, time.Now().Add(-m.currentConfig().Scheduler.WorkerHeartbeatTimeout))
+			activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, nodeIDs, metricsFreshAfter)
 		}
 		for _, node := range nodes {
 			if !node.Enabled {
@@ -205,11 +221,21 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 				metrics = model.NodeMetrics{NodeID: node.NodeID}
 			}
 			metrics = mergeGPUActiveSessions(metrics, activeGPUUsageByNode[node.NodeID])
+			lastMetricsAt := metrics.Timestamp
 			candidates = append(candidates, model.DispatchCandidate{
 				NodeID:                    node.NodeID,
+				NodeName:                  node.NodeName,
 				Enabled:                   node.Enabled,
 				Quarantined:               node.Quarantined,
+				Draining:                  node.Draining,
 				SupportsHardwareWatermark: node.SupportNVENC || node.SupportQSV || node.SupportAMF,
+				MaxTranscodeSessions:      node.MaxTranscodeSessions,
+				MaxUploadConcurrency:      node.MaxUploadConcurrency,
+				MetricsAvailable:          ok,
+				MetricsFresh:              ok && !lastMetricsAt.IsZero() && !lastMetricsAt.Before(metricsFreshAfter),
+				Online:                    isNodeOnlineCandidate(node.LastHeartbeatAt, lastMetricsAt, now, onlineGrace),
+				LastMetricsAt:             lastMetricsAt,
+				LastHeartbeatAt:           node.LastHeartbeatAt,
 				Metrics:                   metrics,
 			})
 		}
@@ -221,14 +247,23 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 			metrics = model.NodeMetrics{NodeID: m.nodeID}
 		}
 		if m.jobExecutionRepository != nil {
-			activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, []uint64{m.nodeID}, time.Now().Add(-m.currentConfig().Scheduler.WorkerHeartbeatTimeout))
+			activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, []uint64{m.nodeID}, metricsFreshAfter)
 		}
 		metrics = mergeGPUActiveSessions(metrics, activeGPUUsageByNode[m.nodeID])
 		candidates = append(candidates, model.DispatchCandidate{
 			NodeID:                    m.nodeID,
+			NodeName:                  m.workerID,
 			Enabled:                   true,
 			Quarantined:               false,
+			Draining:                  false,
 			SupportsHardwareWatermark: true,
+			MaxTranscodeSessions:      currentCfg.Scheduler.MaxNodeTranscodeSessions,
+			MaxUploadConcurrency:      currentCfg.Scheduler.MaxNodeUploadConcurrency,
+			MetricsAvailable:          ok,
+			MetricsFresh:              ok && !metrics.Timestamp.IsZero() && !metrics.Timestamp.Before(metricsFreshAfter),
+			Online:                    true,
+			LastMetricsAt:             metrics.Timestamp,
+			LastHeartbeatAt:           now,
 			Metrics:                   metrics,
 		})
 	}
@@ -301,4 +336,30 @@ func (m *Manager) currentConfig() config.DynamicRuntimeConfig {
 		return m.cfg
 	}
 	return m.effectiveConfig.Snapshot()
+}
+
+func (m *Manager) reachedGlobalCapacity(ctx context.Context, cfg config.DynamicRuntimeConfig) bool {
+	if m.jobExecutionRepository == nil || cfg.Scheduler.MaxGlobalTranscodeSessions <= 0 {
+		return false
+	}
+	activeAfter := time.Now().Add(-cfg.Scheduler.WorkerHeartbeatTimeout)
+	activeExecutions := m.jobExecutionRepository.CountActiveExecutions(ctx, activeAfter)
+	return activeExecutions >= int64(cfg.Scheduler.MaxGlobalTranscodeSessions)
+}
+
+func resolveNodeOnlineGracePeriod(cfg config.DynamicRuntimeConfig) time.Duration {
+	if cfg.Scheduler.WorkerHeartbeatTimeout > 0 {
+		return cfg.Scheduler.WorkerHeartbeatTimeout * schedulerNodeOnlineGraceMultiplier
+	}
+	return 2 * time.Minute
+}
+
+func isNodeOnlineCandidate(lastHeartbeatAt time.Time, lastMetricsAt time.Time, now time.Time, grace time.Duration) bool {
+	if !lastMetricsAt.IsZero() && now.Sub(lastMetricsAt) <= grace {
+		return true
+	}
+	if !lastHeartbeatAt.IsZero() && now.Sub(lastHeartbeatAt) <= grace {
+		return true
+	}
+	return false
 }

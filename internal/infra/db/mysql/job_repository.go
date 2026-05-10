@@ -132,6 +132,18 @@ type JobListFilter struct {
 	RequestID string
 }
 
+// ForceTakeoverResult 表示人工强制接管的收口结果。
+//
+// 后台集群治理动作不是“杀掉远端进程”，而是把控制面占用状态先收回来：
+// 1. 任务主表重新回到 queued，供调度器重新分配；
+// 2. 旧执行实例标记为 abandoned，方便后续审计与排障；
+// 3. 返回影响条数，便于后台明确知道本次接管到底收口了多少任务。
+type ForceTakeoverResult struct {
+	MatchedJobTotal         int `json:"matched_job_total"`
+	ResetJobTotal           int `json:"reset_job_total"`
+	AbandonedExecutionTotal int `json:"abandoned_execution_total"`
+}
+
 // NewJobRepository 创建任务仓储。
 func NewJobRepository(db *DB) *JobRepository {
 	return &JobRepository{db: db}
@@ -203,12 +215,20 @@ func (r *JobRepository) ListQueued(ctx context.Context) []model.TranscodeJob {
 	return items
 }
 
-// ListAssigned 返回已分配给当前 Worker 的任务。
+// ListAssigned 返回已分配任务列表。
+//
+// 过滤语义约定：
+// 1. nodeID > 0 时按节点过滤；
+// 2. workerID 非空时按 Worker 过滤；
+// 3. 两者都为空时返回全部活跃任务，供失联接管与后台治理复用。
 func (r *JobRepository) ListAssigned(ctx context.Context, nodeID uint64, workerID string) []model.TranscodeJob {
+	query := applyAssignedJobFilter(
+		r.db.WithContext(ctx).Where("status IN ?", []int{model.JobStatusAssigned, model.JobStatusRunning, model.JobStatusUploading}),
+		nodeID,
+		workerID,
+	)
 	var records []JobRecord
-	if err := r.db.WithContext(ctx).
-		Where("assigned_node_id = ? AND assigned_worker_id = ? AND status IN ?", nodeID, workerID, []int{model.JobStatusAssigned, model.JobStatusRunning, model.JobStatusUploading}).
-		Find(&records).Error; err != nil {
+	if err := query.Find(&records).Error; err != nil {
 		return nil
 	}
 	items := make([]model.TranscodeJob, 0, len(records))
@@ -327,14 +347,105 @@ func (r *JobRepository) ListPage(ctx context.Context, filter JobListFilter) ([]m
 // ResetToQueued 将任务重置为排队状态（用于重试）。
 func (r *JobRepository) ResetToQueued(ctx context.Context, jobID uint64) error {
 	return r.db.WithContext(ctx).Model(&JobRecord{}).Where("job_id = ?", jobID).Updates(map[string]any{
-		"status":             model.JobStatusQueued,
-		"progress_permille":  0,
-		"progress_stage":     model.StageQueued,
-		"assigned_node_id":   0,
-		"assigned_worker_id": "",
-		"lease_generation":   0,
-		"updated_at":         time.Now(),
+		"status":                      model.JobStatusQueued,
+		"progress_permille":           0,
+		"progress_stage":              model.StageQueued,
+		"assigned_node_id":            0,
+		"assigned_worker_id":          "",
+		"executor_worker_instance_id": 0,
+		"selected_execution_hwaccel":  "",
+		"selected_gpu_index":          0,
+		"selected_gpu_device_id":      0,
+		"lease_owner":                 "",
+		"lease_generation":            0,
+		"lease_expire_at":             nil,
+		"last_worker_heartbeat_at":    nil,
+		"updated_at":                  time.Now(),
 	}).Error
+}
+
+// ForceTakeover 按节点或 Worker 维度强制接管当前活跃任务。
+//
+// 注意这里的语义是“回收控制面所有权”，不是宣称旧进程已被停止：
+// - 任务会被重新置回 queued，等待后续重新调度；
+// - 当前执行实例会被标记为 abandoned，便于审计；
+// - 若调用方只提供 nodeID 或 workerID，则按该单一维度收口。
+func (r *JobRepository) ForceTakeover(ctx context.Context, nodeID uint64, workerID string, reason string) (ForceTakeoverResult, error) {
+	result := ForceTakeoverResult{}
+	workerID = strings.TrimSpace(workerID)
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "manual_takeover"
+	}
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		jobQuery := applyAssignedJobFilter(
+			tx.Model(&JobRecord{}).Where("status IN ?", []int{model.JobStatusAssigned, model.JobStatusRunning, model.JobStatusUploading}),
+			nodeID,
+			workerID,
+		)
+
+		var jobIDs []uint64
+		if err := jobQuery.Pluck("job_id", &jobIDs).Error; err != nil {
+			return err
+		}
+		result.MatchedJobTotal = len(jobIDs)
+		if len(jobIDs) == 0 {
+			return nil
+		}
+
+		now := time.Now()
+		update := map[string]any{
+			"status":                      model.JobStatusQueued,
+			"progress_permille":           0,
+			"progress_stage":              model.StageQueued,
+			"assigned_node_id":            0,
+			"assigned_worker_id":          "",
+			"executor_worker_instance_id": 0,
+			"selected_execution_hwaccel":  "",
+			"selected_gpu_index":          0,
+			"selected_gpu_device_id":      0,
+			"lease_owner":                 "",
+			"lease_generation":            0,
+			"lease_expire_at":             nil,
+			"last_worker_heartbeat_at":    nil,
+			"updated_at":                  now,
+		}
+		jobUpdate := tx.Model(&JobRecord{}).
+			Where("job_id IN ? AND status IN ?", jobIDs, []int{model.JobStatusAssigned, model.JobStatusRunning, model.JobStatusUploading}).
+			Updates(update)
+		if jobUpdate.Error != nil {
+			return jobUpdate.Error
+		}
+		result.ResetJobTotal = int(jobUpdate.RowsAffected)
+
+		executionUpdate := tx.Model(&JobExecutionRecord{}).
+			Where("job_id IN ? AND status IN ?", jobIDs, []int{1, 2, 3}).
+			Updates(map[string]any{
+				"status":            6,
+				"failure_reason":    reason,
+				"recoverable_flag":  true,
+				"finished_at":       now,
+				"last_heartbeat_at": now,
+				"updated_at":        now,
+			})
+		if executionUpdate.Error != nil {
+			return executionUpdate.Error
+		}
+		result.AbandonedExecutionTotal = int(executionUpdate.RowsAffected)
+		return nil
+	})
+	return result, err
+}
+
+func applyAssignedJobFilter(query *gorm.DB, nodeID uint64, workerID string) *gorm.DB {
+	if nodeID > 0 {
+		query = query.Where("assigned_node_id = ?", nodeID)
+	}
+	if workerID = strings.TrimSpace(workerID); workerID != "" {
+		query = query.Where("assigned_worker_id = ?", workerID)
+	}
+	return query
 }
 
 // EnsureSegmentTemplateSnapshot 为任务锁定首次执行时使用的分片命名模板。
@@ -409,6 +520,18 @@ func (r *JobRepository) ListByStatus(ctx context.Context, status int, limit int)
 func (r *JobRepository) CountByStatus(ctx context.Context, status int) int64 {
 	var count int64
 	r.db.WithContext(ctx).Model(&JobRecord{}).Where("status = ?", status).Count(&count)
+	return count
+}
+
+// CountActive 统计当前仍占用调度/执行资源的任务数。
+//
+// 口径统一为 Assigned / Running / Uploading，
+// 供全局并发上限控制和后台观测复用。
+func (r *JobRepository) CountActive(ctx context.Context) int64 {
+	var count int64
+	r.db.WithContext(ctx).Model(&JobRecord{}).
+		Where("status IN ?", []int{model.JobStatusAssigned, model.JobStatusRunning, model.JobStatusUploading}).
+		Count(&count)
 	return count
 }
 

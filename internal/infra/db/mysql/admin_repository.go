@@ -35,6 +35,16 @@ func (r *AdminRepository) FindUserByUsername(ctx context.Context, username strin
 	return record, true
 }
 
+// FindUserByID 根据主键查询管理员用户。
+func (r *AdminRepository) FindUserByID(ctx context.Context, adminUserID uint64) (AdminUserRecord, bool) {
+	var record AdminUserRecord
+	result := r.db.WithContext(ctx).Where("admin_user_id = ?", adminUserID).Limit(1).Find(&record)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return AdminUserRecord{}, false
+	}
+	return record, true
+}
+
 // CreateSession 创建管理员会话。
 func (r *AdminRepository) CreateSession(ctx context.Context, adminUserID uint64, token, loginIP, userAgent string, expireAt time.Time) (AdminSessionRecord, error) {
 	now := time.Now()

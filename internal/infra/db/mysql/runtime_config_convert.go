@@ -204,7 +204,7 @@ func NewBootstrapRuntimeConfigRecord(cfg config.DynamicRuntimeConfig, source str
 		ConfigSource:                  source,
 		SourceRevision:                "",
 		PublishedBy:                   "bootstrap",
-		PublishedAt:                   now,
+		PublishedAt:                   &now,
 		EffectiveConfigHash:           "",
 		CreatedAt:                     now,
 		UpdatedAt:                     now,

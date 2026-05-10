@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"hvc/internal/configcenter"
+	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
 	"hvc/pkg/idgen"
@@ -27,19 +28,21 @@ import (
 type NamingTemplateHandler struct {
 	namingTemplateRepo *mysql.NamingTemplateRepository
 	runtimeConfigRepo  *mysql.RuntimeConfigRepository
+	runtimeConfigCache *rediscache.RuntimeConfigCache
 	effectiveConfig    *configcenter.EffectiveConfig
 }
 
 // NewNamingTemplateHandler 创建命名模板管理处理器。
-func NewNamingTemplateHandler(namingTemplateRepo *mysql.NamingTemplateRepository, runtimeConfigRepo *mysql.RuntimeConfigRepository, effectiveConfig *configcenter.EffectiveConfig) *NamingTemplateHandler {
+func NewNamingTemplateHandler(namingTemplateRepo *mysql.NamingTemplateRepository, runtimeConfigRepo *mysql.RuntimeConfigRepository, runtimeConfigCache *rediscache.RuntimeConfigCache, effectiveConfig *configcenter.EffectiveConfig) *NamingTemplateHandler {
 	return &NamingTemplateHandler{
 		namingTemplateRepo: namingTemplateRepo,
 		runtimeConfigRepo:  runtimeConfigRepo,
+		runtimeConfigCache: runtimeConfigCache,
 		effectiveConfig:    effectiveConfig,
 	}
 }
 
-// ListTemplates 返回全部命名模板方案列表。
+// ListTemplates 返回命名模板方案分页列表。
 //
 // GET /v1/admin/config/naming-template/list
 //
@@ -51,10 +54,19 @@ func (h *NamingTemplateHandler) ListTemplates(w http.ResponseWriter, r *http.Req
 		cfg := h.effectiveConfig.Snapshot()
 		currentTemplate = cfg.Worker.SegmentTemplate
 	}
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
-		"templates":        templates,
+	page, pageSize := parsePageParams(r)
+	total := int64(len(templates))
+	start := (page - 1) * pageSize
+	if start > len(templates) {
+		start = len(templates)
+	}
+	end := start + pageSize
+	if end > len(templates) {
+		end = len(templates)
+	}
+	writePageResponseWithMeta(w, page, pageSize, total, templates[start:end], map[string]any{
 		"current_template": currentTemplate,
-	}})
+	})
 }
 
 // ConfigureTemplate 配置命名模板。
@@ -101,6 +113,7 @@ func (h *NamingTemplateHandler) ConfigureTemplate(w http.ResponseWriter, r *http
 	record := mysql.NamingTemplateRecord{
 		ID:              idgen.Next(),
 		ConfigVersion:   idgen.Next(),
+		OutputBaseTpl:   "{job_id}",
 		InitSegNameTpl:  selectedTemplate,
 		MediaSegNameTpl: selectedTemplate,
 		CreatedAt:       now,
@@ -143,14 +156,67 @@ func (h *NamingTemplateHandler) ActivateTemplate(w http.ResponseWriter, r *http.
 		return
 	}
 
+	now := time.Now()
+	record := mysql.NamingTemplateRecord{
+		ID:              idgen.Next(),
+		ConfigVersion:   idgen.Next(),
+		OutputBaseTpl:   "{job_id}",
+		InitSegNameTpl:  req.Template,
+		MediaSegNameTpl: req.Template,
+		CreatedAt:       now,
+	}
+	if h.namingTemplateRepo != nil {
+		if err := h.namingTemplateRepo.Save(r.Context(), record); err != nil {
+			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save naming template failed"})
+			return
+		}
+	}
+
+	var publishedConfigVersion uint64
 	if h.effectiveConfig != nil {
-		cfg := h.effectiveConfig.Snapshot()
-		cfg.Worker.SegmentTemplate = req.Template
-		h.effectiveConfig.Replace(cfg)
+		base, ok := h.runtimeConfigRepo.LatestPublished(r.Context())
+		if !ok {
+			logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "no base runtime config"})
+			return
+		}
+		base.ConfigVersion = idgen.Next()
+		base.Published = false
+		base.PublishedBy = ""
+		base.PublishedAt = nil
+		base.EffectiveConfigHash = ""
+		base.ChangeSummary = "activate naming template"
+		base.CreatedAt = now
+		base.UpdatedAt = now
+		if err := h.runtimeConfigRepo.Save(r.Context(), base); err != nil {
+			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save runtime config failed"})
+			return
+		}
+		if err := h.runtimeConfigRepo.MarkPublished(r.Context(), base.ConfigVersion, "admin"); err != nil {
+			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "publish runtime config failed"})
+			return
+		}
+		publishedConfigVersion = base.ConfigVersion
+
+		cfg := mysql.ApplyLatestNamingTemplate(r.Context(), h.namingTemplateRepo, mysql.ToDynamicRuntimeConfig(base))
+		if h.runtimeConfigCache != nil {
+			if err := h.runtimeConfigCache.InvalidatePublished(r.Context()); err != nil {
+				logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "invalidate runtime config cache failed"})
+				return
+			}
+			if err := h.runtimeConfigCache.SavePublished(r.Context(), rediscache.RuntimeConfigSnapshot{
+				ConfigVersion: base.ConfigVersion,
+				Config:        cfg,
+			}); err != nil {
+				logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save runtime config cache failed"})
+				return
+			}
+		}
+		h.effectiveConfig.ReplaceWithVersion(cfg, base.ConfigVersion)
 	}
 
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
 		"template":        req.Template,
+		"config_version":  publishedConfigVersion,
 		"published":       true,
 		"effective_scope": "新提交的转码任务",
 		"running_jobs":    "不受影响，继续使用原模板",

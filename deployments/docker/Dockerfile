@@ -29,7 +29,7 @@ RUN go mod download
 # CGO_ENABLED=0 禁用 CGO，生成纯静态二进制
 # -s -w 去除调试信息，减小二进制体积
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /hvc-server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /hvc-server ./cmd
 
 # ---- 运行阶段 ----
 FROM debian:bookworm-slim
@@ -40,6 +40,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
+    curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -51,8 +52,10 @@ COPY configs/config.yaml /etc/hvc/config.yaml
 
 # HTTP 服务端口（公共 API + 管理后台）
 EXPOSE 8080
-# gRPC 服务端口（集群内部通信）
+# 对外 public gRPC 端口（运行期可热启停）
 EXPOSE 9090
+# 集群内部 gRPC 端口（bootstrap 固定初始化）
+EXPOSE 19090
 
 # 启动命令
 ENTRYPOINT ["hvc-server"]

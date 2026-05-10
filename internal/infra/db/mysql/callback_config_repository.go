@@ -1,6 +1,9 @@
 package mysql
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // CallbackConfigRepository 表示回调配置仓储。
 type CallbackConfigRepository struct {
@@ -28,6 +31,27 @@ func (r *CallbackConfigRepository) ListAll(ctx context.Context) []CallbackConfig
 		return nil
 	}
 	return records
+}
+
+// ListPage 返回回调配置分页列表。
+func (r *CallbackConfigRepository) ListPage(ctx context.Context, page, pageSize int, callbackName string, enabled *bool) ([]CallbackConfigRecord, int64, error) {
+	page, pageSize = normalizeAdminPage(page, pageSize)
+	query := r.db.WithContext(ctx).Model(&CallbackConfigRecord{})
+	if callbackName = strings.TrimSpace(callbackName); callbackName != "" {
+		query = query.Where("callback_name LIKE ?", "%"+callbackName+"%")
+	}
+	if enabled != nil {
+		query = query.Where("enabled = ?", *enabled)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var records []CallbackConfigRecord
+	if err := query.Order("priority desc, updated_at desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
 }
 
 // Save 保存回调配置。

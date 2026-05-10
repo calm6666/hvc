@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -85,5 +87,24 @@ func TestValidateRuntimeConfigRejectsDeprecatedDynamicSections(t *testing.T) {
 
 	if err := ValidateRuntimeConfig(cfg); err == nil {
 		t.Fatal("expected deprecated dynamic bootstrap section to be rejected")
+	}
+}
+
+func TestResolveRuntimeConfigPath(t *testing.T) {
+	t.Setenv("HVC_CONFIG_PATH", filepath.Join("testdata", "env-config.yaml"))
+
+	if got := ResolveRuntimeConfigPath([]string{"--config", "custom.yaml"}); got != "custom.yaml" {
+		t.Fatalf("expected cli path, got %q", got)
+	}
+	if got := ResolveRuntimeConfigPath([]string{"--config=inline.yaml"}); got != "inline.yaml" {
+		t.Fatalf("expected inline cli path, got %q", got)
+	}
+	if got := ResolveRuntimeConfigPath(nil); got != filepath.Join("testdata", "env-config.yaml") {
+		t.Fatalf("expected env path, got %q", got)
+	}
+
+	_ = os.Unsetenv("HVC_CONFIG_PATH")
+	if got := ResolveRuntimeConfigPath(nil); got != defaultRuntimeConfigPath {
+		t.Fatalf("expected default path, got %q", got)
 	}
 }

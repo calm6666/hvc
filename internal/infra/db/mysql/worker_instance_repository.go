@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"hvc/pkg/idgen"
@@ -13,6 +14,16 @@ import (
 // 让 startup_instance_id、machine_fingerprint、最后心跳时间和退出原因都有稳定落点。
 type WorkerInstanceRepository struct {
 	db *DB
+}
+
+// WorkerInstanceListFilter 表示 Worker 实例列表筛选条件。
+type WorkerInstanceListFilter struct {
+	Page       int
+	PageSize   int
+	NodeID     uint64
+	WorkerID   string
+	Status     int
+	OnlineOnly *bool
 }
 
 // NewWorkerInstanceRepository 创建 Worker 实例仓储。
@@ -77,4 +88,102 @@ func (r *WorkerInstanceRepository) TouchHeartbeat(ctx context.Context, workerID 
 			"last_heartbeat_at": now,
 			"updated_at":        now,
 		}).Error
+}
+
+// MarkOfflineByHeartbeatTimeout 按心跳超时将仍标记为在线的 Worker 实例收敛为离线。
+//
+// 这样后台看到的 worker 状态不会长期停留在“在线假象”，
+// 也为后续集群治理接口提供稳定的状态基线。
+func (r *WorkerInstanceRepository) MarkOfflineByHeartbeatTimeout(ctx context.Context, timeout time.Duration) (int64, error) {
+	if timeout <= 0 {
+		timeout = 2 * time.Minute
+	}
+	cutoff := time.Now().Add(-timeout)
+	result := r.db.WithContext(ctx).Model(&WorkerInstanceRecord{}).
+		Where("status = ? AND last_heartbeat_at < ?", 1, cutoff).
+		Updates(map[string]any{
+			"status":      2,
+			"exit_reason": "heartbeat_timeout",
+			"updated_at":  time.Now(),
+		})
+	return result.RowsAffected, result.Error
+}
+
+// MarkOffline 把指定 Worker 实例手动标记为离线。
+//
+// 该动作属于控制面治理操作：
+// 1. 立即把状态从 online 收口为 offline；
+// 2. 不伪造 exited_at，因为这不代表进程真的退出；
+// 3. reason 用于后台审计与后续排障。
+func (r *WorkerInstanceRepository) MarkOffline(ctx context.Context, workerID string, reason string) error {
+	now := time.Now()
+	if strings.TrimSpace(reason) == "" {
+		reason = "manual_offline"
+	}
+	return r.db.WithContext(ctx).Model(&WorkerInstanceRecord{}).
+		Where("worker_id = ?", workerID).
+		Updates(map[string]any{
+			"status":      2,
+			"exit_reason": reason,
+			"updated_at":  now,
+		}).Error
+}
+
+// MarkExited 把指定 Worker 实例标记为已退出。
+func (r *WorkerInstanceRepository) MarkExited(ctx context.Context, workerID string, reason string) error {
+	now := time.Now()
+	if strings.TrimSpace(reason) == "" {
+		reason = "manual_exit"
+	}
+	return r.db.WithContext(ctx).Model(&WorkerInstanceRecord{}).
+		Where("worker_id = ?", workerID).
+		Updates(map[string]any{
+			"status":      3,
+			"exited_at":   &now,
+			"exit_reason": reason,
+			"updated_at":  now,
+		}).Error
+}
+
+// ListPage 分页查询 Worker 实例列表。
+func (r *WorkerInstanceRepository) ListPage(ctx context.Context, filter WorkerInstanceListFilter) ([]WorkerInstanceRecord, int64, error) {
+	page, pageSize := normalizeAdminPage(filter.Page, filter.PageSize)
+	query := r.db.WithContext(ctx).Model(&WorkerInstanceRecord{})
+	if filter.NodeID > 0 {
+		query = query.Where("node_id = ?", filter.NodeID)
+	}
+	if filter.Status > 0 {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if workerID := strings.TrimSpace(filter.WorkerID); workerID != "" {
+		query = query.Where("worker_id LIKE ? OR logical_worker_id LIKE ? OR physical_worker_id LIKE ?", "%"+workerID+"%", "%"+workerID+"%", "%"+workerID+"%")
+	}
+	if filter.OnlineOnly != nil {
+		grace := time.Now().Add(-2 * time.Minute)
+		if *filter.OnlineOnly {
+			query = query.Where("status = ? AND last_heartbeat_at >= ?", 1, grace)
+		} else {
+			query = query.Where("status <> ? OR last_heartbeat_at < ?", 1, grace)
+		}
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var records []WorkerInstanceRecord
+	if err := query.Order("last_heartbeat_at desc, id desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
+}
+
+// ListAll 返回全部 Worker 实例记录。
+func (r *WorkerInstanceRepository) ListAll(ctx context.Context) []WorkerInstanceRecord {
+	var records []WorkerInstanceRecord
+	if err := r.db.WithContext(ctx).Order("last_heartbeat_at desc, id desc").Find(&records).Error; err != nil {
+		return nil
+	}
+	return records
 }

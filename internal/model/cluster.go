@@ -86,9 +86,18 @@ type NodeMetrics struct {
 // DispatchCandidate 表示调度候选节点。
 type DispatchCandidate struct {
 	NodeID                    uint64
+	NodeName                  string
 	Enabled                   bool
 	Quarantined               bool
+	Draining                  bool
 	SupportsHardwareWatermark bool
+	MaxTranscodeSessions      int
+	MaxUploadConcurrency      int
+	MetricsAvailable          bool
+	MetricsFresh              bool
+	Online                    bool
+	LastMetricsAt             time.Time
+	LastHeartbeatAt           time.Time
 	Metrics                   NodeMetrics
 }
 

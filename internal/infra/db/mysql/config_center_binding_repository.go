@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"hvc/pkg/idgen"
@@ -24,6 +25,27 @@ func (r *ConfigCenterBindingRepository) ListAll(ctx context.Context) []ConfigCen
 		return nil
 	}
 	return records
+}
+
+// ListPage 返回 bootstrap 配置源绑定分页列表。
+func (r *ConfigCenterBindingRepository) ListPage(ctx context.Context, page, pageSize int, providerType string, enabled *bool) ([]ConfigCenterBindingRecord, int64, error) {
+	page, pageSize = normalizeAdminPage(page, pageSize)
+	query := r.db.WithContext(ctx).Model(&ConfigCenterBindingRecord{})
+	if providerType = strings.TrimSpace(providerType); providerType != "" {
+		query = query.Where("provider_type = ?", providerType)
+	}
+	if enabled != nil {
+		query = query.Where("enabled = ?", *enabled)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var records []ConfigCenterBindingRecord
+	if err := query.Order("priority desc, updated_at desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
 }
 
 // Save 保存 bootstrap 配置源绑定。

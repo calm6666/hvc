@@ -2,6 +2,7 @@ package failover
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"hvc/internal/cluster"
@@ -48,6 +49,7 @@ type NodeShield struct {
 
 // ShieldTracker 跟踪节点故障屏蔽状态。
 type ShieldTracker struct {
+	mu      sync.RWMutex
 	cfg     ShieldConfig
 	shields map[uint64]*NodeShield
 }
@@ -64,6 +66,8 @@ func NewShieldTracker(cfg ShieldConfig) *ShieldTracker {
 //
 // 当连续失败次数达到阈值时，自动将节点加入隔离列表。
 func (t *ShieldTracker) RecordFailure(nodeID uint64, reason string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	shield, ok := t.shields[nodeID]
 	if !ok {
 		shield = &NodeShield{
@@ -88,11 +92,19 @@ func (t *ShieldTracker) RecordFailure(nodeID uint64, reason string) {
 
 // RecordSuccess 记录节点成功事件，重置连续失败计数。
 func (t *ShieldTracker) RecordSuccess(nodeID uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	delete(t.shields, nodeID)
 }
 
 // IsShielded 判断节点是否处于隔离状态。
 func (t *ShieldTracker) IsShielded(nodeID uint64) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.isShieldedLocked(nodeID, time.Now())
+}
+
+func (t *ShieldTracker) isShieldedLocked(nodeID uint64, now time.Time) bool {
 	shield, ok := t.shields[nodeID]
 	if !ok {
 		return false
@@ -100,7 +112,7 @@ func (t *ShieldTracker) IsShielded(nodeID uint64) bool {
 	if shield.ShieldedAt.IsZero() {
 		return false
 	}
-	if time.Since(shield.ShieldedAt) > shield.ShieldDuration {
+	if now.Sub(shield.ShieldedAt) > shield.ShieldDuration {
 		delete(t.shields, nodeID)
 		logx.Info("failover.shield.node_recovered", logx.Fields{
 			"node_id": nodeID,
@@ -114,6 +126,8 @@ func (t *ShieldTracker) IsShielded(nodeID uint64) bool {
 //
 // 返回本次恢复的节点 ID 列表。
 func (t *ShieldTracker) RecoverShieldedNodes() []uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	recovered := make([]uint64, 0)
 	now := time.Now()
 	for nodeID, shield := range t.shields {
@@ -131,6 +145,27 @@ func (t *ShieldTracker) RecoverShieldedNodes() []uint64 {
 		}
 	}
 	return recovered
+}
+
+// Snapshot 返回当前节点屏蔽状态快照。
+//
+// 该方法主要供后台洞察接口读取，
+// 返回值已经做了深拷贝，不会把内部 map 暴露给调用方。
+func (t *ShieldTracker) Snapshot() map[uint64]NodeShield {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := time.Now()
+	result := make(map[uint64]NodeShield, len(t.shields))
+	for nodeID, shield := range t.shields {
+		if shield == nil {
+			continue
+		}
+		if t.isShieldedLocked(nodeID, now) {
+			result[nodeID] = *shield
+		}
+	}
+	return result
 }
 
 // TakeoverExpiredLeases 扫描所有已过期的租约任务，将其重置为排队状态以便重新调度。

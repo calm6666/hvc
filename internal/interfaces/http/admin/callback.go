@@ -21,10 +21,19 @@ func NewCallbackHandler(repository *mysql.CallbackConfigRepository) *CallbackHan
 	return &CallbackHandler{repository: repository}
 }
 
-// List 返回全部回调配置。
+// List 返回回调配置分页列表。
 func (h *CallbackHandler) List(w http.ResponseWriter, r *http.Request) {
-	items := h.repository.ListAll(r.Context())
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"items": items}})
+	page, pageSize := parsePageParams(r)
+	items, total, err := h.repository.ListPage(r.Context(), page, pageSize, r.URL.Query().Get("callback_name"), parseOptionalBool(r.URL.Query().Get("enabled")))
+	if err != nil {
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "query callback configs failed"})
+		return
+	}
+	views := make([]callbackConfigView, 0, len(items))
+	for _, item := range items {
+		views = append(views, toCallbackConfigView(item))
+	}
+	writePageResponse(w, page, pageSize, total, views)
 }
 
 // Upsert 保存回调配置。

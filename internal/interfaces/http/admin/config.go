@@ -25,26 +25,33 @@ import (
 type ConfigHandler struct {
 	runtimeConfigRepository *mysql.RuntimeConfigRepository
 	runtimeConfigCache      *rediscache.RuntimeConfigCache
+	namingTemplateRepo      *mysql.NamingTemplateRepository
 	effectiveConfig         *configcenter.EffectiveConfig
 }
 
 // NewConfigHandler 创建运行时配置处理器。
-func NewConfigHandler(runtimeConfigRepository *mysql.RuntimeConfigRepository, runtimeConfigCache *rediscache.RuntimeConfigCache, effectiveConfig *configcenter.EffectiveConfig) *ConfigHandler {
+func NewConfigHandler(runtimeConfigRepository *mysql.RuntimeConfigRepository, runtimeConfigCache *rediscache.RuntimeConfigCache, namingTemplateRepo *mysql.NamingTemplateRepository, effectiveConfig *configcenter.EffectiveConfig) *ConfigHandler {
 	return &ConfigHandler{
 		runtimeConfigRepository: runtimeConfigRepository,
 		runtimeConfigCache:      runtimeConfigCache,
+		namingTemplateRepo:      namingTemplateRepo,
 		effectiveConfig:         effectiveConfig,
 	}
 }
 
 // ListRuntimeVersions 返回全部运行时配置版本。
 func (h *ConfigHandler) ListRuntimeVersions(w http.ResponseWriter, r *http.Request) {
-	rawItems := h.runtimeConfigRepository.ListVersions(r.Context())
-	items := make([]mysql.RuntimeConfigRecord, 0, len(rawItems))
-	for _, item := range rawItems {
-		items = append(items, sanitizeRuntimeConfigRecord(item))
+	page, pageSize := parsePageParams(r)
+	items, total, err := h.runtimeConfigRepository.ListVersionsPage(r.Context(), page, pageSize, parseOptionalBool(r.URL.Query().Get("published")))
+	if err != nil {
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "query runtime config versions failed"})
+		return
 	}
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"items": items}})
+	views := make([]runtimeConfigVersionView, 0, len(items))
+	for _, item := range items {
+		views = append(views, toRuntimeConfigVersionView(sanitizeRuntimeConfigRecord(item)))
+	}
+	writePageResponse(w, page, pageSize, total, views)
 }
 
 // UpdateRuntime 基于当前已发布版本生成一个新的待发布版本。
@@ -266,6 +273,9 @@ func (h *ConfigHandler) UpdateRuntime(w http.ResponseWriter, r *http.Request) {
 
 	record.ChangeSummary = req.ChangeSummary
 	record.Published = false
+	record.PublishedBy = ""
+	record.PublishedAt = nil
+	record.EffectiveConfigHash = ""
 	record.CreatedAt = now
 	record.UpdatedAt = now
 
@@ -345,7 +355,7 @@ func (h *ConfigHandler) PublishRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	latestConfig := mysql.ToDynamicRuntimeConfig(record)
+	latestConfig := mysql.ApplyLatestNamingTemplate(r.Context(), h.namingTemplateRepo, mysql.ToDynamicRuntimeConfig(record))
 	if h.runtimeConfigCache != nil {
 		// 发布顺序固定为：先删缓存，再回填最新版本，最后替换进程内快照。
 		// 这样其它实例即使在切换窗口命中 Redis，也不会继续读到旧版本。

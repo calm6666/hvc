@@ -11,11 +11,16 @@ import (
 type ReloadUseCase struct {
 	effective               *configcenter.EffectiveConfig
 	runtimeConfigRepository *mysql.RuntimeConfigRepository
+	namingTemplateRepo      *mysql.NamingTemplateRepository
 }
 
 // NewReloadUseCase 创建配置重载用例。
-func NewReloadUseCase(effective *configcenter.EffectiveConfig, runtimeConfigRepository *mysql.RuntimeConfigRepository) *ReloadUseCase {
-	return &ReloadUseCase{effective: effective, runtimeConfigRepository: runtimeConfigRepository}
+func NewReloadUseCase(effective *configcenter.EffectiveConfig, runtimeConfigRepository *mysql.RuntimeConfigRepository, namingTemplateRepo *mysql.NamingTemplateRepository) *ReloadUseCase {
+	return &ReloadUseCase{
+		effective:               effective,
+		runtimeConfigRepository: runtimeConfigRepository,
+		namingTemplateRepo:      namingTemplateRepo,
+	}
 }
 
 // Execute 执行配置重载。
@@ -30,5 +35,6 @@ func (u *ReloadUseCase) Execute(ctx context.Context) {
 	if !ok {
 		return
 	}
-	u.effective.ReplaceWithVersion(mysql.ToDynamicRuntimeConfig(record), record.ConfigVersion)
+	cfg := mysql.ApplyLatestNamingTemplate(ctx, u.namingTemplateRepo, mysql.ToDynamicRuntimeConfig(record))
+	u.effective.ReplaceWithVersion(cfg, record.ConfigVersion)
 }

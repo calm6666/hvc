@@ -46,7 +46,7 @@ while getopts "h:P:u:p:d:" opt; do
 done
 
 # MySQL 连接命令
-MYSQL_CMD="mysql -h ${MYSQL_HOST} -P ${MYSQL_PORT} -u ${MYSQL_USER} -p${MYSQL_PASSWORD}"
+MYSQL_CMD="mysql --default-character-set=utf8mb4 -h ${MYSQL_HOST} -P ${MYSQL_PORT} -u ${MYSQL_USER} -p${MYSQL_PASSWORD}"
 
 echo "=========================================="
 echo "  HVC 数据库迁移"
@@ -73,8 +73,9 @@ echo "  数据库 ${MYSQL_DATABASE} 已就绪"
 # ---- 执行迁移 ----
 echo "[3/4] 执行数据库迁移..."
 
-# 迁移文件目录
-MIGRATE_DIR="${PROJECT_ROOT}/scripts/migrate"
+# 迁移文件目录。
+# 项目统一以 sql/ 作为显式建表/增量迁移源，避免 scripts 目录里再维护一套影子 SQL。
+MIGRATE_DIR="${PROJECT_ROOT}/sql"
 
 # 按文件名排序执行所有 .sql 文件
 SQL_FILES=$(find "${MIGRATE_DIR}" -name "*.sql" -type f | sort)

@@ -20,6 +20,7 @@ import (
 	wsmonitor "hvc/internal/interfaces/ws/monitor"
 	"hvc/internal/live"
 	"hvc/internal/manifest"
+	"hvc/internal/opslog"
 	"hvc/internal/scheduler"
 	"hvc/internal/server"
 	"hvc/internal/service"
@@ -28,6 +29,7 @@ import (
 	authusecase "hvc/internal/usecase/auth"
 	transcodeusecase "hvc/internal/usecase/transcode"
 	"hvc/internal/worker"
+	"hvc/pkg/logx"
 	"time"
 )
 
@@ -79,10 +81,19 @@ func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
 	}
 	effectiveConfig := configcenter.NewEffectiveConfig(dynamicConfigSnapshot.Config)
 	effectiveConfig.ReplaceWithVersion(dynamicConfigSnapshot.Config, dynamicConfigSnapshot.ConfigVersion)
-	coordinator := cluster.NewCoordinator(dynamicConfigSnapshot.Config, baseConfig.Server.NodeID, baseConfig.Server.ListenAddress)
+	coordinator := cluster.NewCoordinator(
+		dynamicConfigSnapshot.Config,
+		baseConfig.Server.NodeID,
+		baseConfig.Server.ServiceName,
+		baseConfig.ResolveAdvertiseIP(),
+		baseConfig.Server.ListenAddress,
+		baseConfig.InternalGRPC.ListenAddress,
+	)
 	systemService := service.NewSystemService(baseConfig.Server.ServiceName, resolveModeName(dynamicConfigSnapshot.Config))
 	systemHandler := handler.NewSystemHandler(systemService)
 	auditRepository := audit.NewRepository(db)
+	opsLogRepository := opslog.NewRepository(db)
+	logx.RegisterPersistenceSink(opslog.NewSink(opsLogRepository))
 	jobRepository := mysql.NewJobRepository(db)
 	jobRequestOverrideRepository := mysql.NewJobRequestOverrideRepository(db)
 	renditionRepository := mysql.NewTranscodeRenditionRepository(db)
@@ -125,39 +136,39 @@ func NewApplication(baseConfig config.RuntimeConfig) (*Application, error) {
 	transcodeHandler := publichttp.NewTranscodeHandler(transcodeService)
 	manifestBuilder := manifest.NewBuilder(segmentRepository, jobRepository, effectiveConfig)
 	manifestHandler := publichttp.NewManifestHandler(manifestBuilder)
-	clusterHandler := publichttp.NewClusterHandler(clusterCache, leaseCache, jobRepository, segmentRepository, workerInstanceRepository)
+	clusterHandler := publichttp.NewClusterHandler(clusterCache, leaseCache, jobRepository, segmentRepository, workerInstanceRepository, clusterNodeRepository)
 	liveManager := live.NewManager(live.NewRepositoryChannelStore(liveChannelRepository), live.NewRepositorySessionStore(liveSessionRepository))
 	liveHandler := publichttp.NewLiveHandler(liveManager, channelService)
 	authHandler := adminhttp.NewAuthHandler(loginUseCase, adminRepository)
-	configHandler := adminhttp.NewConfigHandler(runtimeConfigRepository, runtimeConfigCache, effectiveConfig)
+	namingTemplateRepository := mysql.NewNamingTemplateRepository(db)
+	configHandler := adminhttp.NewConfigHandler(runtimeConfigRepository, runtimeConfigCache, namingTemplateRepository, effectiveConfig)
 	callbackHandler := adminhttp.NewCallbackHandler(callbackConfigRepository)
-	rbacHandler := adminhttp.NewRBACHandler(adminRepository, adminRBACRepository, auditRepository)
+	rbacHandler := adminhttp.NewRBACHandler(adminRepository, adminRBACRepository, auditRepository, opsLogRepository)
 	writeRBACHandler := adminhttp.NewWriteRBAC(adminRBACRepository, adminRepository)
 	configCenterHandler := adminhttp.NewConfigCenterHandler(configCenterBindingRepository)
-	adminClusterHandler := adminhttp.NewClusterHandler(clusterNodeRepository, gpuDeviceRepository, clusterCache, coordinator.Registry(), effectiveConfig, runtimeConfigRepository, runtimeConfigCache, jobRepository, db, baseConfig.InternalGRPC)
+	schedulerManager := scheduler.NewManager(dynamicConfigSnapshot.Config, effectiveConfig, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, clusterCache, jobRepository, jobRequestOverrideRepository, jobExecutionRepository)
+	schedulerManager.SetLeaseCache(leaseCache)
+	schedulerManager.SetClusterNodeRepository(clusterNodeRepository)
+	adminClusterHandler := adminhttp.NewClusterHandler(clusterNodeRepository, gpuDeviceRepository, clusterCache, coordinator.Registry(), effectiveConfig, runtimeConfigRepository, runtimeConfigCache, jobRepository, jobExecutionRepository, workerInstanceRepository, schedulerManager, db, baseConfig.InternalGRPC, baseConfig.Server.NodeID, baseConfig.Server.ListenAddress)
 	adminTranscodeHandler := adminhttp.NewTranscodeHandler(jobRepository, progressStore)
-	namingTemplateRepository := mysql.NewNamingTemplateRepository(db)
-	namingTemplateHandler := adminhttp.NewNamingTemplateHandler(namingTemplateRepository, runtimeConfigRepository, effectiveConfig)
+	namingTemplateHandler := adminhttp.NewNamingTemplateHandler(namingTemplateRepository, runtimeConfigRepository, runtimeConfigCache, effectiveConfig)
 	liveManager.SetSessionEventWriter(liveSessionEventRepository)
 	liveManager.SetPublishSessionWriter(livePublishSessionRepository)
 	adminLiveHandler := adminhttp.NewLiveHandler(liveManager, channelService)
 	monitorHandler := wsmonitor.NewSnapshotHandler(clusterCache, hotpathBus, progressStore, jobRepository, clusterNodeRepository, resolveModeName(dynamicConfigSnapshot.Config))
 	grpcPublicServer := grpcpublic.NewTranscodePublicServer(transcodeService)
 	mqCreateJobConsumer := mqconsumer.NewCreateJobConsumer(transcodeService)
-	schedulerManager := scheduler.NewManager(dynamicConfigSnapshot.Config, effectiveConfig, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, clusterCache, jobRepository, jobRequestOverrideRepository, jobExecutionRepository)
-	schedulerManager.SetLeaseCache(leaseCache)
-	schedulerManager.SetClusterNodeRepository(clusterNodeRepository)
 	return &Application{
 		baseConfig:    baseConfig,
 		dynamicConfig: effectiveConfig,
 		httpServer:    server.NewHTTPServer(baseConfig.Server, baseConfig.InternalGRPC.SharedToken, systemHandler, transcodeHandler, clusterHandler, liveHandler, manifestHandler, authHandler, configHandler, callbackHandler, rbacHandler, writeRBACHandler, configCenterHandler, adminClusterHandler, adminTranscodeHandler, adminLiveHandler, namingTemplateHandler, monitorHandler),
-		internalGRPC:  server.NewInternalGRPCServer(baseConfig.InternalGRPC, clusterCache, progressStore, segmentRepository, jobRepository),
+		internalGRPC:  server.NewInternalGRPCServer(baseConfig.InternalGRPC, clusterCache, progressStore, segmentRepository, jobRepository, clusterNodeRepository),
 		coordinator:   coordinator,
 		clusterCache:  clusterCache,
 		leaseCache:    leaseCache,
 		hotpathBus:    hotpathBus,
 		scheduler:     schedulerManager,
-		worker:        worker.NewModule(dynamicConfigSnapshot.Config, effectiveConfig, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, jobRepository, renditionRepository, segmentRepository, progressStore, outboxRepository, hotpathBus, clusterCache, workerInstanceRepository, gpuDeviceRepository, gpuCapabilityRepository, jobExecutionRepository),
+		worker:        worker.NewModule(dynamicConfigSnapshot.Config, effectiveConfig, baseConfig.Server.NodeID, baseConfig.Server.WorkerID, jobRepository, renditionRepository, segmentRepository, progressStore, outboxRepository, hotpathBus, clusterCache, workerInstanceRepository, clusterNodeRepository, gpuDeviceRepository, gpuCapabilityRepository, jobExecutionRepository),
 		callback:      callback.NewDispatcher(effectiveConfig, outboxRepository, callbackConfigRepository, jobRequestOverrideRepository, deliveryFailureQueueRepository),
 		grpcServer:    server.NewGRPCServer(dynamicConfigSnapshot.Config, effectiveConfig, grpcPublicServer),
 		mqConsumer:    server.NewMQConsumer(dynamicConfigSnapshot.Config, effectiveConfig, mqCreateJobConsumer),

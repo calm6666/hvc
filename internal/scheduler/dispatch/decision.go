@@ -9,20 +9,39 @@ import (
 // ScoreCandidate 返回候选节点分值。
 //
 // 分值越低表示节点负载越轻，越应该被优先选中。
-// 权重分配：
-//   - 活跃转码会话数 × 30：最关键的资源指标
-//   - GPU 显存使用率 × 20：GPU 是转码核心资源
-//   - CPU 使用率 × 15：软解或混合场景的重要指标
-//   - 内存使用率 × 10：辅助指标
-//   - 上传队列深度 × 10：I/O 压力指标
+// 当前实现不再只看“绝对会话数”，而是优先看“当前负载 / 可承载容量”。
+// 这样多 GPU / 大容量节点不会因为绝对会话数更高就被过早打压，
+// 能更合理地利用单机多卡与集群多机的整体吞吐能力。
 func ScoreCandidate(candidate model.DispatchCandidate) int {
 	score := 0
-	score += candidate.Metrics.ActiveTranscodeSessions * 30
+	if !candidate.MetricsFresh {
+		score += 1_000_000
+	}
+	if !candidate.MetricsAvailable {
+		score += 1_000_000
+	}
+	if !candidate.Online {
+		score += 1_000_000
+	}
+	score += normalizedLoadScore(candidate.Metrics.ActiveTranscodeSessions, candidate.MaxTranscodeSessions) * 35
+	score += candidate.Metrics.GPUMemoryUsagePercent * 25
 	score += candidate.Metrics.CPUUsagePercent * 15
 	score += candidate.Metrics.MemoryUsagePercent * 10
-	score += candidate.Metrics.GPUMemoryUsagePercent * 20
-	score += candidate.Metrics.UploadQueueDepth * 10
+	score += normalizedLoadScore(candidate.Metrics.UploadQueueDepth, candidate.MaxUploadConcurrency) * 10
+	score += residualCapacityPenalty(candidate.Metrics.ActiveTranscodeSessions, candidate.MaxTranscodeSessions) * 10
+	score += uploadResidualCapacityPenalty(candidate.Metrics.UploadQueueDepth, candidate.MaxUploadConcurrency) * 5
+	score += gpuScarcityPenalty(candidate.Metrics.GPUCapabilities)
 	return score
+}
+
+func normalizedLoadScore(current, capacity int) int {
+	if current <= 0 {
+		return 0
+	}
+	if capacity <= 0 {
+		return current * 10
+	}
+	return current * 100 / capacity
 }
 
 // scoredCandidate 内部结构，用于排序和 Top-K 选择。
@@ -153,6 +172,69 @@ func scoreGPU(capability model.GPUCapability) int {
 	score += capability.GPUUtilizationPercent * 10
 	score += capability.GPUIndex
 	return score
+}
+
+func gpuScarcityPenalty(capabilities []model.GPUCapability) int {
+	if len(capabilities) == 0 {
+		return 500
+	}
+	schedulable := 0
+	totalFreeSlots := 0
+	for _, capability := range capabilities {
+		if capability.MaxSessions > 0 && capability.ActiveSessions >= capability.MaxSessions {
+			continue
+		}
+		schedulable++
+		if capability.MaxSessions > 0 {
+			totalFreeSlots += capability.MaxSessions - capability.ActiveSessions
+			continue
+		}
+		totalFreeSlots += 1
+	}
+	if schedulable == 0 {
+		return 50_000
+	}
+	penalty := 0
+	penalty += (len(capabilities) - schedulable) * 300
+	if totalFreeSlots > 0 {
+		penalty += 1000 / totalFreeSlots
+	}
+	if schedulable == 1 {
+		penalty += 250
+	}
+	return penalty
+}
+
+func residualCapacityPenalty(current, capacity int) int {
+	if capacity <= 0 {
+		return 0
+	}
+	remaining := capacity - current
+	switch {
+	case remaining <= 0:
+		return 1000
+	case remaining == 1:
+		return 300
+	case remaining == 2:
+		return 120
+	default:
+		return 0
+	}
+}
+
+func uploadResidualCapacityPenalty(current, capacity int) int {
+	if capacity <= 0 {
+		return 0
+	}
+	remaining := capacity - current
+	switch {
+	case remaining <= 0:
+		return 500
+	case remaining == 1:
+		return 150
+	default:
+		return 0
+	}
 }
 
 func supportsExecutionHW(capability model.GPUCapability, preferredHWAccel string) bool {

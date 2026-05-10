@@ -1,6 +1,6 @@
 # HVC 视频转码服务 - 完整接口文档
 
-> 版本：2.0.0 | 更新日期：2026-05-07
+> 版本：2.0.0 | 更新日期：2026-05-09
 
 ---
 
@@ -44,7 +44,7 @@ HVC（High-performance Video Cloud）是一个分布式视频转码平台，支�
 | 回调通知 | 转码完成/失败回调（HTTP/gRPC/MQ） | 后台配置驱动 |
 | 命名模板 | 6种预置方案 + 自定义模板 | 后台管理 |
 | 存储管理 | S3 对象存储 + 本地存储动态切换 | 后台配置 |
-| 集群管理 | 节点注册/心跳/隔离/启用 | 后台管理 + gRPC |
+| 集群管理 | 节点注册/心跳/隔离/排空/启用 | 后台管理 + gRPC |
 | 直播管理 | 频道创建/推流鉴权/播放令牌 | HTTP |
 | RBAC 权限 | 角色/权限/用户管理 | 后台管理 |
 | 配置中心 | Bootstrap 基础配置源绑定（MySQL/集群/ID 等） | 后台管理 |
@@ -340,7 +340,36 @@ username=admin&password=admin123&otp_code=
   "message": "ok",
   "data": {
     "authenticated": true,
-    "admin_user_id": 1
+    "admin_user_id": 1,
+    "user": {
+      "admin_user_id": 1,
+      "username": "admin",
+      "display_name": "系统管理员",
+      "status": 1,
+      "created_at": "2026-05-09T09:00:00+08:00",
+      "updated_at": "2026-05-09T09:00:00+08:00"
+    },
+    "permission_keys": [
+      "system.user.read",
+      "system.menu.read"
+    ],
+    "menu_tree": [
+      {
+        "menu_id": 100,
+        "parent_id": 0,
+        "menu_key": "system",
+        "menu_name": "系统管理",
+        "route_path": "/system",
+        "component_name": "Layout",
+        "icon_name": "settings",
+        "menu_type": "catalog",
+        "permission_key": "",
+        "sort_no": 10,
+        "hidden": false,
+        "status": 1,
+        "children": []
+      }
+    ]
   }
 }
 ```
@@ -359,6 +388,13 @@ username=admin&password=admin123&otp_code=
 | `/v1/admin/config/runtime/versions` | GET | config.version.read | 查询配置版本列表 |
 | `/v1/admin/config/runtime/update` | POST | config.runtime.update | 更新运行配置（创建待发布版本） |
 | `/v1/admin/config/publish` | POST | config.version.publish | 发布配置版本 |
+
+**配置版本列表查询参数：** `page`, `page_size`, `published`
+
+**配置版本列表返回字段：**
+- 分页统一为：`page`, `page_size`, `total`, `items`
+- `items[*]` 关键字段包括：`config_version`, `published`, `enable_http_server`, `enable_grpc_server`, `enable_mq_consumer`, `storage_type`, `change_summary`, `config_source`, `published_by`, `published_at`
+- 出于安全考虑，`callback_rpc_endpoint`、`mq_password`、`storage_access_key_id`、`storage_secret_access_key` 在列表接口里返回的是脱敏值，不会回传明文
 
 **更新运行配置请求：**
 
@@ -448,6 +484,19 @@ username=admin&password=admin123&otp_code=
 }
 ```
 
+**更新运行配置成功响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "pending_config_version": 1893456789012345679,
+    "published": false
+  }
+}
+```
+
 ### 4.3 回调配置管理
 
 | 接口 | 方法 | 权限 | 说明 |
@@ -455,6 +504,12 @@ username=admin&password=admin123&otp_code=
 | `/v1/admin/config/callback/list` | GET | config.callback.read | 查询回调配置列表 |
 | `/v1/admin/config/callback/upsert` | POST | config.callback.update | 创建/更新回调配置 |
 | `/v1/admin/config/callback/enabled` | POST | config.callback.update | 启用/禁用回调 |
+
+**回调配置列表查询参数：** `page`, `page_size`, `callback_name`, `enabled`
+
+**回调配置列表返回字段：**
+- 分页统一为：`page`, `page_size`, `total`, `items`
+- `items[*]` 关键字段包括：`callback_config_id`, `callback_name`, `callback_type`, `target_url`, `rpc_endpoint`, `rpc_service_name`, `mq_exchange`, `mq_routing_key`, `enabled`, `priority`
 
 **回调配置请求：**
 
@@ -489,13 +544,30 @@ username=admin&password=admin123&otp_code=
 - runtime config 里的 `callback_http_url` / `callback_mq_topic` 仅保留兼容兜底语义；主配置入口仍然是 `callback_config` 表。
 - 单次投递失败会写入补偿记录，记录中会落具体的 `callback_url` 实际目标值（字段名为 `callback_target`），便于排障和审计。
 
+**回调配置写入成功响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "callback_config_id": 1001
+  }
+}
+```
+
 ### 4.4 命名模板管理
 
 | 接口 | 方法 | 权限 | 说明 |
 |------|------|------|------|
-| `/v1/admin/config/naming-template/list` | GET | config.naming_template.read | 查询6种预置模板+当前生效模板 |
+| `/v1/admin/config/naming-template/list` | GET | config.naming_template.read | 分页查询6种预置模板+当前生效模板 |
 | `/v1/admin/config/naming-template/configure` | POST | config.naming_template.update | 配置模板（待发布） |
-| `/v1/admin/config/naming-template/activate` | POST | config.naming_template.update | 立即生效模板 |
+| `/v1/admin/config/naming-template/activate` | POST | config.naming_template.update | 立即生效模板，并发布新的 runtime config 版本 |
+
+说明：
+
+- 该接口虽然总共只有 6 条预置方案，但返回结构已统一为分页格式：`page/page_size/total/items`
+- `current_template` 单独返回当前运行时生效模板
 
 **配置模板请求：**
 
@@ -531,12 +603,19 @@ username=admin&password=admin123&otp_code=
   "message": "ok",
   "data": {
     "template": "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s",
+    "config_version": 1893456789012345678,
     "published": true,
     "effective_scope": "新提交的转码任务",
     "running_jobs": "不受影响，继续使用原模板"
   }
 }
 ```
+
+说明：
+
+- `activate` 不再只是修改当前节点内存；现在会生成并发布新的 runtime config 版本
+- 已发布版本会先写 MySQL，再刷新 Redis，最后由各节点通过版本同步自动收敛
+- 已经开始执行的任务仍沿用各自首次锁定的 `segment_template`，避免重试和清单生成漂移
 
 ### 4.5 配置中心绑定（Bootstrap 基础配置源）
 
@@ -546,6 +625,13 @@ username=admin&password=admin123&otp_code=
 | `/v1/admin/config-center/upsert` | POST | config.version.publish | 创建/更新 bootstrap 配置源绑定 |
 | `/v1/admin/config-center/enabled` | POST | config.version.publish | 启用/禁用 bootstrap 配置源绑定 |
 
+**配置中心绑定列表查询参数：** `page`, `page_size`, `provider_type`, `enabled`
+
+**配置中心绑定列表返回字段：**
+- 顶层除分页字段外，还会返回：`config_scope`, `affects_runtime`, `runtime_update_path`, `runtime_publish_path`
+- `items[*]` 关键字段包括：`binding_id`, `binding_name`, `provider_type`, `endpoint`, `namespace`, `auth_mode`, `enabled`, `priority`, `last_sync_status`, `last_sync_at`, `binding_usage`
+- `access_key`、`secret_key`、`token` 在列表接口中同样只返回脱敏值，便于确认是否已配置，但不泄露明文
+
 说明：
 
 - 该组接口用于维护外部 bootstrap 配置源元数据，例如 MySQL/集群注册/节点身份这类启动基础配置来源
@@ -553,6 +639,20 @@ username=admin&password=admin123&otp_code=
 - 本地 `configs/config.yaml` 同样不允许再携带这些业务动态段，误写会导致启动失败
 - 运行期业务配置仍通过 `/v1/admin/config/runtime/update` + `/v1/admin/config/publish` 生效
 - `list`/`upsert`/`enabled` 返回都会显式带上 `config_scope=bootstrap` 与 `affects_runtime=false`
+
+**配置中心绑定写入成功响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "binding_id": 2001,
+    "config_scope": "bootstrap",
+    "affects_runtime": false
+  }
+}
+```
 
 **配置中心绑定请求：**
 
@@ -576,15 +676,42 @@ username=admin&password=admin123&otp_code=
 
 | 接口 | 方法 | 权限 | 说明 |
 |------|------|------|------|
-| `/v1/admin/system/user/list` | GET | system.user.read | 用户列表 |
+| `/v1/admin/system/user/list` | GET | system.user.read | 用户分页列表 |
 | `/v1/admin/system/user/upsert` | POST | system.user.create | 创建/更新用户 |
 | `/v1/admin/system/user/status` | POST | system.user.update | 启用/禁用用户 |
-| `/v1/admin/system/role/list` | GET | system.role.read | 角色列表 |
+| `/v1/admin/system/role/list` | GET | system.role.read | 角色分页列表 |
+| `/v1/admin/system/role/all` | GET | system.role.read | 全部角色列表（不分页） |
 | `/v1/admin/system/role/upsert` | POST | system.role.update | 创建/更新角色 |
-| `/v1/admin/system/permission/list` | GET | system.permission.read | 权限列表 |
+| `/v1/admin/system/permission/list` | GET | system.permission.read | 权限树（兼容别名） |
+| `/v1/admin/system/permission/tree` | GET | system.permission.read | 权限树 |
 | `/v1/admin/system/permission/upsert` | POST | system.role.permission_bind | 创建/更新权限 |
+| `/v1/admin/system/menu/tree` | GET | system.menu.read | 全量菜单树 |
+| `/v1/admin/system/menu/current-tree` | GET | auth.session.read | 当前登录管理员可见菜单树 |
+| `/v1/admin/system/role/menu/tree` | GET | system.menu.read | 角色菜单树与已选菜单 ID |
+| `/v1/admin/system/menu/upsert` | POST | system.menu.update | 创建/更新菜单 |
+| `/v1/admin/system/menu/delete` | POST | system.menu.delete | 删除菜单 |
 | `/v1/admin/system/user-role/bind` | POST | system.user.role_bind | 绑定用户角色 |
 | `/v1/admin/system/role-permission/bind` | POST | system.role.permission_bind | 绑定角色权限 |
+| `/v1/admin/system/role-menu/assign` | POST | system.role.menu_bind | 覆盖分配角色菜单 |
+
+说明：
+
+- `user/list`、`role/list`、`audit/list` 为分页接口
+- 权限和菜单改为树形返回，不分页，统一放在 `data.items`
+- `role/all` 用于下拉选择器，返回全部角色，统一放在 `data.items`
+- 树接口和非分页全量列表接口统一返回 `data.items`；树接口额外返回 `data.tree=true`
+- 用户列表、登录态用户信息、用户写接口响应均已屏蔽 `password_hash` 与 `password_salt`
+- `role/upsert`、`permission/upsert`、`menu/upsert` 不再直接返回数据库结构体，而是统一返回 snake_case 视图对象
+
+**用户列表查询参数：** `page`, `page_size`, `username`, `status`
+
+**角色列表查询参数：** `page`, `page_size`, `role_key`, `status`
+
+**用户列表返回字段：**
+- `items[*]` 关键字段包括：`admin_user_id`, `username`, `display_name`, `status`, `last_login_at`, `last_login_ip`, `created_at`, `updated_at`
+
+**角色列表返回字段：**
+- `items[*]` 关键字段包括：`role_id`, `role_key`, `role_name`, `role_desc`, `status`, `created_at`, `updated_at`
 
 **创建/更新用户请求：**
 
@@ -646,33 +773,237 @@ username=admin&password=admin123&otp_code=
 }
 ```
 
+**菜单创建/更新请求：**
+
+```json
+{
+  "menu_id": 0,
+  "parent_id": 100,
+  "menu_key": "system.user",
+  "menu_name": "用户管理",
+  "route_path": "/system/user",
+  "component_name": "system/user/index",
+  "icon_name": "users",
+  "menu_type": "menu",
+  "permission_key": "system.user.read",
+  "sort_no": 20,
+  "hidden": false,
+  "status": 1
+}
+```
+
+**角色菜单分配请求：**
+
+```json
+{
+  "role_id": 2,
+  "menu_ids": [101, 102, 103]
+}
+```
+
+**用户写入成功响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "admin_user_id": 2,
+    "username": "operator",
+    "display_name": "运维人员",
+    "status": 1,
+    "created_at": "2026-05-09T10:00:00+08:00",
+    "updated_at": "2026-05-09T10:00:00+08:00"
+  }
+}
+```
+
+**角色写入成功响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "role_id": 2,
+    "role_key": "operator",
+    "role_name": "运维人员",
+    "role_desc": "负责日常运维操作",
+    "status": 1,
+    "created_at": "2026-05-09T10:00:00+08:00",
+    "updated_at": "2026-05-09T10:00:00+08:00"
+  }
+}
+```
+
+**权限写入成功响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "perm_id": 3,
+    "perm_key": "transcode.job.read",
+    "perm_name": "查看转码任务",
+    "perm_desc": "允许查看转码任务列表和详情",
+    "module": "transcode",
+    "created_at": "2026-05-09T10:00:00+08:00"
+  }
+}
+```
+
+**菜单写入成功响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "menu_id": 101,
+    "parent_id": 100,
+    "menu_key": "system.user",
+    "menu_name": "用户管理",
+    "route_path": "/system/user",
+    "component_name": "system/user/index",
+    "icon_name": "users",
+    "menu_type": "menu",
+    "permission_key": "system.user.read",
+    "sort_no": 20,
+    "hidden": false,
+    "status": 1
+  }
+}
+```
+
+**角色菜单分配成功响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "role_id": 2,
+    "menu_ids": [101, 102, 103]
+  }
+}
+```
+
 ### 4.7 集群节点管理
 
 | 接口 | 方法 | 权限 | 说明 |
 |------|------|------|------|
-| `/v1/admin/cluster/node/list` | GET | cluster.node.read | 节点列表 |
+| `/v1/admin/cluster/node/list` | GET | cluster.node.read | 节点分页列表 |
 | `/v1/admin/cluster/node/detail` | GET | cluster.node.read | 节点详情（Query） |
-| `/v1/admin/cluster/node/metrics` | GET | cluster.node.metrics.read | 节点指标 |
+| `/v1/admin/cluster/node/metrics` | GET | cluster.node.metrics.read | 节点指标分页列表 |
 | `/v1/admin/cluster/overview` | GET | cluster.read | 集群运行总览 |
 | `/v1/admin/cluster/realtime` | GET | cluster.read | 集群实时快照 |
-| `/v1/admin/cluster/member/list` | GET | cluster.read | 集群成员列表 |
+| `/v1/admin/cluster/topology` | GET | cluster.read | 集群拓扑与控制面摘要 |
+| `/v1/admin/cluster/resource/distribution` | GET | cluster.read | 节点资源承载分布 |
+| `/v1/admin/cluster/member/list` | GET | cluster.read | 集群成员分页列表 |
+| `/v1/admin/cluster/worker/list` | GET | cluster.read | Worker 实例分页列表 |
+| `/v1/admin/cluster/scheduler/insight` | GET | cluster.read | 调度洞察 |
+| `/v1/admin/cluster/worker/offline` | POST | cluster.worker.offline | 手动下线 Worker |
+| `/v1/admin/cluster/worker/exit` | POST | cluster.worker.exit | 手动标记 Worker 退出 |
+| `/v1/admin/cluster/job/takeover` | POST | cluster.job.takeover | 强制接管节点/Worker上的活跃任务 |
 | `/v1/admin/cluster/node/enabled` | POST | cluster.node.enable | 启用/禁用节点 |
 | `/v1/admin/cluster/node/quarantined` | POST | cluster.node.quarantine | 隔离/取消隔离节点 |
+| `/v1/admin/cluster/node/draining` | POST | cluster.node.drain | 排空/恢复节点 |
 
 `/v1/admin/cluster/overview` 返回重点包括：
 
 - 当前运行模式：`standalone / cluster-control / cluster-worker / cluster-allinone`
+- 集群拓扑：当前节点角色、当前节点是否控制面、控制面节点总数、可访问后台节点总数、worker-only 节点总数、控制面节点列表
 - 模块状态：HTTP、public gRPC、internal gRPC、MQ consumer、scheduler、worker、callback
-- 集群统计：节点总数、启用节点数、隔离节点数、在线节点数、成员数、GPU 总数、可调度 GPU 数、活动会话数、上传队列深度
+- 调度器状态：`max_global_transcode_sessions`、`active_execution_total`、`remaining_execution_capacity`、`worker_heartbeat_timeout_sec`
+- 集群统计：节点总数、启用节点数、隔离节点数、排空节点数、在线节点数、成员数、GPU 总数、可调度 GPU 数、活动会话数、上传队列深度
+- Worker 统计：`worker_total`、`worker_online_total`
 - 节点摘要：每个节点的启用/隔离/在线状态、GPU 总数、可调度 GPU 数、活动转码会话、上传队列深度
 - 版本信息：MySQL 服务端版本、Redis 服务端版本、Redis 模式、运行时配置数据库版本、运行时配置 Redis 缓存版本、缓存 TTL
 
 `/v1/admin/cluster/realtime` 适合后台轮询，除 `overview` 的聚合字段外，还直接返回：
 
 - 任务队列计数：`queued / assigned / running / uploading / completed / failed / canceled`
-- `nodes` 节点聚合视图：节点主档、`metrics_available`、`online_estimate`、`last_metrics_at`
+- `nodes` 节点聚合视图：节点主档、`metrics_available`、`metrics_fresh`、`scheduler_ready`、`state_reason`、`online_estimate`、`last_metrics_at`
+- `topology`：补充当前节点角色、控制面节点列表与后台可访问节点统计，便于判断后台当前连到的是不是控制面节点
+- `resource/distribution`：返回每台节点的活跃执行数、转码会话数、上传队列深度、剩余转码容量、剩余上传容量，以及每张 GPU 的活跃会话与实时利用率
 - `gpu_summary`：单节点 GPU 数、健康数、可调度数、最大并发会话数
-- `gpu_devices[*].runtime_capability`：实时上报的 `gpu_uuid / gpu_index / 编解码能力 / execution_hw_types / max_sessions`
+
+说明：
+- `cluster/realtime` 面向后台轮询，返回的是节点聚合视图，不返回 `gpu_devices`
+- `gpu_devices[*].runtime_capability` 仅在 `cluster/node/detail` 中返回，适合排障和能力核查
+- 示例中的 `internal_grpc.listen_address` 属于 bootstrap 固定入口，默认示例端口为 `:19090`；对外 `public gRPC` 监听地址由 runtime config 中的 `grpc_listen_address` 决定，默认示例端口为 `:9090`
+
+**集群总览响应关键结构：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "mode": "cluster-allinone",
+    "module_status": {
+      "http_enabled": true,
+      "public_grpc_enabled": true,
+      "internal_grpc_enabled": true,
+      "mq_consumer_enabled": true,
+      "scheduler_enabled": true,
+      "worker_enabled": true,
+      "callback_enabled": true
+    },
+    "scheduler": {
+      "dynamic_concurrency_control": true,
+      "max_global_transcode_sessions": 24,
+      "max_node_transcode_sessions": 12,
+      "worker_heartbeat_timeout_sec": 30,
+      "active_execution_total": 6,
+      "remaining_execution_capacity": 18,
+      "require_hardware_encode": false,
+      "allow_software_decode_fallback": true
+    },
+    "internal_grpc": {
+      "listen_address": ":19090"
+    },
+    "cluster": {
+      "node_total": 2,
+      "node_enabled_total": 2,
+      "node_quarantined_total": 0,
+      "node_draining_total": 0,
+      "node_online_total": 2,
+      "member_total": 2,
+      "gpu_total": 4,
+      "gpu_healthy_total": 4,
+      "gpu_schedulable_total": 4,
+      "active_sessions": 6,
+      "upload_queue_depth": 3,
+      "max_transcode_sessions": 24,
+      "nodes": [
+        {
+          "node_id": 1,
+          "node_name": "node-a",
+          "enabled": true,
+          "quarantined": false,
+          "draining": false,
+          "online_estimate": true,
+          "gpu_total": 2,
+          "gpu_schedulable_total": 2,
+          "active_transcode_sessions": 3,
+          "upload_queue_depth": 1
+        }
+      ]
+    },
+    "version": {
+      "mysql_server_version": "8.0.36",
+      "redis_server_version": "7.2.5",
+      "redis_mode": "standalone",
+      "runtime_config_db_version": 1893456789012345678,
+      "runtime_config_cache_version": 1893456789012345678,
+      "runtime_config_cache_exists": true,
+      "runtime_config_cache_ttl_sec": 286
+    }
+  }
+}
+```
 
 **节点详情请求（GET Query）：**
 
@@ -688,14 +1019,56 @@ GET /v1/admin/cluster/node/metrics?node_id=1
 ```
 
 说明：
+- `node.list` 查询参数：`page`, `page_size`, `keyword`, `enabled`, `quarantined`, `draining`
 - `node.detail` 统一从 query string 读取 `node_id`
+- `node.metrics` 查询参数：`page`, `page_size`, `node_id`
+- `member.list` 查询参数：`page`, `page_size`
 - `node.metrics` 支持全量查询；传 `node_id` 时仅返回指定节点指标
 - `node.list` 与 `node.detail` 返回聚合视图，而不是单纯数据库原始行；后台不需要再自行拼装 GPU 与实时指标
+- `node.list.items[*]` 关键字段包括：`node_id`, `node_name`, `host_ip`, `grpc_host`, `http_host`, `enabled`, `quarantined`, `draining`, `drain_reason`, `metrics_fresh`, `scheduler_ready`, `state_reason`, `last_metrics_at`, `metrics`, `gpu_summary`
+- `member.list.items[*]` 关键字段包括：`node_role`, `control_plane`, `admin_accessible`
+- `member.list.items[*]` 关键字段包括：`node_id`, `node_name`, `host`, `host_ip`, `grpc_host`, `http_host`, `online_estimate`, `source`, `last_heartbeat_at`, `registry_heartbeat_at`, `last_metrics_at`, `worker_total`, `worker_online_total`, `draining`
+- `worker.list` 查询参数：`page`, `page_size`, `node_id`, `worker_id`, `status`, `online_only`
+- `worker.list.items[*]` 关键字段包括：`worker_id`, `logical_worker_id`, `physical_worker_id`, `startup_instance_id`, `online_estimate`, `last_heartbeat_at`
+- `worker.list.items[*].status_name` 当前取值：`online`、`offline`、`exited`；其中 `offline` 由心跳超时自动收口
+- `draining=true` 表示节点处于排空维护模式，只阻止新任务调度，不会中断已在执行的任务
+- `scheduler.insight` 查询参数：`preferred_hw_accel`, `video_codec`, `enable_watermark`
+- `scheduler.insight` 会返回当前调度器快照、候选节点列表、过滤原因、Top-K 池和推荐结果，主要用于后台排障与容量分析
 
 **集群实时快照请求（GET）：**
 
 ```
 GET /v1/admin/cluster/realtime
+```
+
+**Worker 实例列表请求（GET）：**
+
+```
+GET /v1/admin/cluster/worker/list?page=1&page_size=20&node_id=1&worker_id=&status=1&online_only=true
+```
+
+**Worker 手动下线请求：**
+
+```json
+{
+  "worker_id": "worker-node1-001",
+  "reason": "manual isolate"
+}
+```
+
+**Worker 手动标记退出请求：**
+
+```json
+{
+  "worker_id": "worker-node1-001",
+  "reason": "process terminated by operator"
+}
+```
+
+**调度洞察请求（GET）：**
+
+```
+GET /v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h264&enable_watermark=false
 ```
 
 **启用/禁用节点请求：**
@@ -717,6 +1090,16 @@ GET /v1/admin/cluster/realtime
 }
 ```
 
+**排空/恢复节点请求：**
+
+```json
+{
+  "node_id": 1,
+  "draining": true,
+  "reason": "rolling upgrade"
+}
+```
+
 ### 4.8 转码任务管理
 
 | 接口 | 方法 | 权限 | 说明 |
@@ -728,6 +1111,9 @@ GET /v1/admin/cluster/realtime
 | `/v1/admin/transcode/job/cancel` | POST | transcode.job.cancel | 取消任务 |
 
 **任务列表查询参数：** `page`, `page_size`, `status`, `biz_key`, `request_id`
+
+**任务列表返回字段：**
+- `items[*]` 关键字段包括：`job_id`, `request_id`, `biz_key`, `source_url`, `status`, `status_name`, `progress_permille`, `stage`, `assigned_node_id`, `assigned_worker_id`, `created_at`, `updated_at`
 
 **任务详情查询参数：** `job_id`
 
@@ -750,6 +1136,47 @@ GET /v1/admin/cluster/realtime
     "elapsed_ms": 3600000,
     "estimated_remaining_ms": 4400000,
     "updated_at": "2026-05-07T10:30:00Z"
+  }
+}
+```
+
+说明：
+- Redis 中存在实时进度快照时，会返回 `current_fps/current_bitrate_kbps/current_speed/elapsed_ms/estimated_remaining_ms/updated_at`
+- Redis 中不存在实时快照时，会退化为数据库摘要，仅返回 `job_id/status/stage/progress_permille`
+
+**任务详情响应关键结构：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "job_id": 1893456789012345678,
+    "request_id": "req-001",
+    "biz_key": "video-001",
+    "source_url": "https://example.com/source.mp4",
+    "status": 4,
+    "status_name": "转码中",
+    "progress_permille": 450,
+    "stage": "TRANSCODING",
+    "profile_id": 2,
+    "enable_watermark": false,
+    "segment_duration_sec": 6,
+    "support_dash": true,
+    "support_hls": true,
+    "selected_execution_hw": "nvenc",
+    "assigned_node_id": 1,
+    "assigned_worker_id": "worker-a-01",
+    "lease_generation": 8,
+    "realtime_progress": {
+      "current_fps": 120.5,
+      "current_bitrate_kbps": 4800.0,
+      "current_speed": 4.02,
+      "elapsed_ms": 3600000,
+      "estimated_remaining_ms": 4400000
+    },
+    "created_at": "2026-05-09T10:00:00+08:00",
+    "updated_at": "2026-05-09T10:30:00+08:00"
   }
 }
 ```
@@ -787,11 +1214,76 @@ GET /v1/admin/cluster/realtime
 
 **频道列表查询参数：** `page`, `page_size`, `status`, `channel_key`
 
+**直播会话列表查询参数：** `page`, `page_size`, `channel_id`, `channel_key`, `status`
+
+**频道列表返回字段：**
+- `items[*]` 关键字段包括：`channel_id`, `channel_key`, `channel_name`, `profile_id`, `status`, `enable_source_rendition`, `enable_watermark`, `play_domain`, `push_domain`, `assigned_node_id`, `assigned_worker_id`, `created_at`, `updated_at`
+
+**直播会话列表返回字段：**
+- `items[*]` 关键字段包括：`session_id`, `channel_id`, `channel_key`, `session_key`, `status`, `ingest_url`, `playback_hls_url`, `push_protocol`, `assigned_node_id`, `assigned_worker_id`, `started_at`, `stopped_at`, `resume_count`
+
 **频道详情查询参数：** `channel_id` 或 `channel_key`
 
 说明：
 - 频道详情响应会同时返回 `channel`、`playback`，以及存在时的 `active_session`。
 - 当使用 `channel_key` 查询详情时，返回的仍然是完整频道详情，而不是仅播放地址快照。
+
+**频道详情响应关键结构：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "channel": {
+      "channel_id": 1,
+      "channel_key": "live-001",
+      "channel_name": "测试频道",
+      "profile_id": 2,
+      "status": "LIVE",
+      "enable_source_rendition": true,
+      "enable_watermark": false,
+      "play_domain": "https://play.example.com/live",
+      "push_domain": "rtmp://push.example.com/live",
+      "assigned_node_id": 1,
+      "assigned_worker_id": "worker-a-01",
+      "created_at": "2026-05-09T10:00:00+08:00",
+      "updated_at": "2026-05-09T10:10:00+08:00"
+    },
+    "playback": {
+      "channel_key": "live-001",
+      "status": "LIVE",
+      "play_token": "token-abc",
+      "expire_at": 1894000000,
+      "master_hls_url": "https://play.example.com/live/live-001/index.m3u8",
+      "http_flv_url": "https://play.example.com/live/live-001.flv",
+      "rendition_names": ["source", "1080p"],
+      "renditions": [
+        {
+          "rendition_name": "1080p",
+          "is_source": false,
+          "hls_url": "https://play.example.com/live/live-001/1080p.m3u8",
+          "http_flv_url": "https://play.example.com/live/live-001-1080p.flv"
+        }
+      ]
+    },
+    "active_session": {
+      "session_id": 1001,
+      "channel_id": 1,
+      "channel_key": "live-001",
+      "session_key": "sess-001",
+      "status": "PUBLISHING",
+      "ingest_url": "rtmp://push.example.com/live/live-001",
+      "playback_hls_url": "https://play.example.com/live/live-001/index.m3u8",
+      "push_protocol": "rtmp",
+      "assigned_node_id": 1,
+      "assigned_worker_id": "worker-a-01",
+      "started_at": "2026-05-09T10:20:00+08:00",
+      "resume_count": 0
+    }
+  }
+}
+```
 
 **更新频道请求：**
 
@@ -847,7 +1339,152 @@ GET /v1/admin/cluster/realtime
 |------|------|------|------|
 | `/v1/admin/audit/list` | GET | audit.read | 查询审计日志 |
 
-### 4.11 WebSocket 实时监控
+**审计日志查询参数：** `page`, `page_size`, `action_name`, `admin_user_id`, `start_time`, `end_time`
+
+**审计日志返回字段：**
+- `items[*]` 关键字段包括：`audit_log_id`, `admin_user_id`, `username`, `action_name`, `target_type`, `target_id`, `request_id`, `request_ip`, `result_code`, `result_message`, `created_at`
+
+**回调配置列表示例响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "page": 1,
+    "page_size": 20,
+    "total": 1,
+    "items": [
+      {
+        "callback_config_id": 1001,
+        "callback_name": "biz-http-callback",
+        "callback_type": 1,
+        "target_url": "https://callback.example.com/transcode",
+        "rpc_endpoint": "",
+        "rpc_service_name": "",
+        "mq_exchange": "",
+        "mq_routing_key": "",
+        "timeout_ms": 5000,
+        "retry_times": 3,
+        "enabled": true,
+        "priority": 10,
+        "registry_id": 0,
+        "created_at": "2026-05-09T10:00:00+08:00",
+        "updated_at": "2026-05-09T10:00:00+08:00"
+      }
+    ]
+  }
+}
+```
+
+**配置中心绑定列表示例响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "config_scope": "bootstrap",
+    "affects_runtime": false,
+    "runtime_update_path": "/v1/admin/config/runtime/update",
+    "runtime_publish_path": "/v1/admin/config/publish",
+    "page": 1,
+    "page_size": 20,
+    "total": 1,
+    "items": [
+      {
+        "binding_id": 2001,
+        "binding_name": "prod-bootstrap-source",
+        "provider_type": "nacos",
+        "endpoint": "http://nacos:8848",
+        "namespace": "production",
+        "auth_mode": "token",
+        "access_key": "",
+        "secret_key": "",
+        "token": "",
+        "enabled": true,
+        "priority": 10,
+        "last_sync_status": "ok",
+        "last_sync_message": "",
+        "created_at": "2026-05-09T10:00:00+08:00",
+        "updated_at": "2026-05-09T10:00:00+08:00",
+        "config_scope": "bootstrap",
+        "affects_runtime": false,
+        "binding_usage": ["mysql", "redis", "cluster_registry", "node_identity"]
+      }
+    ]
+  }
+}
+```
+
+**审计日志列表示例响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "page": 1,
+    "page_size": 20,
+    "total": 1,
+    "items": [
+      {
+        "audit_log_id": 3001,
+        "admin_user_id": 1,
+        "username": "admin",
+        "action_name": "cluster.node.enable",
+        "target_type": "cluster_node",
+        "target_id": "1",
+        "request_id": "req-audit-001",
+        "request_ip": "127.0.0.1",
+        "request_user_agent": "PostmanRuntime/7.44.0",
+        "result_code": 0,
+        "result_message": "ok",
+        "created_at": "2026-05-09T10:00:00+08:00"
+      }
+    ]
+  }
+}
+```
+
+### 4.11 运行日志
+
+| 接口 | 方法 | 权限 | 说明 |
+|------|------|------|------|
+| `/v1/admin/system/log/list` | GET | system.log.read | 查询系统运行日志 |
+
+**运行日志查询参数：** `page`, `page_size`, `level`, `action_name`, `start_time`, `end_time`
+
+**运行日志返回字段：**
+- `items[*]` 关键字段包括：`log_id`, `service_name`, `log_level`, `action_name`, `fields`, `logged_at`
+
+**运行日志示例响应：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "page": 1,
+    "page_size": 20,
+    "total": 1,
+    "items": [
+      {
+        "log_id": 3001,
+        "service_name": "hili-video-cloud",
+        "log_level": "info",
+        "action_name": "http.server.listening",
+        "fields": {
+          "address": ":8080"
+        },
+        "logged_at": "2026-05-09T12:00:00+08:00"
+      }
+    ]
+  }
+}
+```
+
+### 4.12 WebSocket 实时监控
 
 ```
 GET /v1/admin/transcode/monitor/ws
@@ -857,7 +1494,7 @@ Authorization: Bearer {session_token}
 
 连接后接收实时转码进度快照推送。
 
-### 4.12 HTTP 快照接口
+### 4.13 HTTP 快照接口
 
 ```
 GET /v1/admin/transcode/monitor/snapshot
@@ -866,6 +1503,28 @@ Authorization: Bearer {session_token}
 
 一次性拉取完整监控快照。
 注意：该接口直接返回原始 snapshot JSON，不包裹 `code/message/data` 通用响应结构。
+
+**示例响应：**
+
+```json
+{
+  "timestamp": 1746756000000,
+  "mode": "cluster",
+  "pending_jobs": 2,
+  "active_jobs": 5,
+  "node_count": 3,
+  "system_metrics": {
+    "total_active_sessions": 5,
+    "total_pending_jobs": 2
+  },
+  "nodes": [
+    {
+      "node_id": 1,
+      "online": true
+    }
+  ]
+}
+```
 
 ---
 
@@ -1560,14 +2219,22 @@ Created(1) → Queued(2) → Assigned(3) → Running(4) → Uploading(5) → Com
 | system.user.update | 修改用户状态 |
 | system.role.read | 查看角色列表 |
 | system.role.update | 创建/更新角色 |
-| system.permission.read | 查看权限列表 |
+| system.permission.read | 查看权限树 |
+| system.log.read | 查看运行日志 |
 | system.role.permission_bind | 创建/更新权限、绑定角色权限 |
+| system.menu.read | 查看菜单树 |
+| system.menu.update | 创建/更新菜单 |
+| system.menu.delete | 删除菜单 |
+| system.role.menu_bind | 绑定角色菜单 |
 | system.user.role_bind | 绑定用户角色 |
 | cluster.node.read | 查看节点列表/详情 |
 | cluster.node.metrics.read | 查看节点指标 |
 | cluster.read | 查看集群成员 |
 | cluster.node.enable | 启用/禁用节点 |
 | cluster.node.quarantine | 隔离/取消隔离节点 |
+| cluster.node.drain | 排空/恢复节点 |
+| cluster.worker.offline | 下线 Worker |
+| cluster.worker.exit | 标记 Worker 退出 |
 | transcode.job.read | 查看任务列表/进度 |
 | transcode.job.detail.read | 查看任务详情 |
 | transcode.job.retry | 重试任务 |

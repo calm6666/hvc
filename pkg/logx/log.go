@@ -26,20 +26,41 @@ type entry struct {
 	level  zapcore.Level
 	msg    string
 	fields []zap.Field
+	raw    Fields
+	at     time.Time
 }
 
 var (
-	logger  *zap.Logger
-	queue   chan entry
-	once    sync.Once
-	dropped atomic.Uint64
-	stdlog  = log.New(os.Stderr, "", 0)
-	outlog  = log.New(os.Stdout, "", 0)
+	logger         *zap.Logger
+	queue          chan entry
+	persistQueue   chan PersistedEntry
+	persistSink    PersistenceSink
+	serviceLabel   string
+	once           sync.Once
+	dropped        atomic.Uint64
+	persistDropped atomic.Uint64
+	stdlog         = log.New(os.Stderr, "", 0)
+	outlog         = log.New(os.Stdout, "", 0)
 )
+
+// PersistedEntry 表示用于异步持久化的结构化日志实体。
+type PersistedEntry struct {
+	Service  string
+	Level    string
+	Action   string
+	Fields   map[string]any
+	LoggedAt time.Time
+}
+
+// PersistenceSink 表示日志持久化落点。
+type PersistenceSink interface {
+	SavePersistedEntry(item PersistedEntry) error
+}
 
 // Init 初始化日志组件。
 func Init(serviceName string) {
 	once.Do(func() {
+		serviceLabel = strings.TrimSpace(serviceName)
 		encoderConfig := zap.NewProductionEncoderConfig()
 		encoderConfig.TimeKey = "time"
 		encoderConfig.MessageKey = "message"
@@ -65,7 +86,9 @@ func Init(serviceName string) {
 		core := zapcore.NewTee(cores...)
 		logger = zap.New(core, zap.AddCaller(), zap.Fields(zap.String("service", serviceName)))
 		queue = make(chan entry, 8192)
+		persistQueue = make(chan PersistedEntry, 8192)
 		go consume()
+		go consumePersistence()
 	})
 }
 
@@ -78,7 +101,7 @@ func Sync() {
 
 // Info 输出信息日志。
 func Info(action string, fields Fields) {
-	enqueue(zapcore.InfoLevel, action, toZapFields(fields))
+	enqueue(zapcore.InfoLevel, action, fields)
 	if shouldMirrorInfoToConsole(action) {
 		outlog.Println(formatConsoleInfo(action, fields))
 	}
@@ -86,11 +109,14 @@ func Info(action string, fields Fields) {
 
 // Error 输出错误日志。
 func Error(action string, err error, fields Fields) {
-	zapFields := toZapFields(fields)
+	raw := cloneFields(fields)
 	if err != nil {
-		zapFields = append(zapFields, zap.String("error", err.Error()))
+		if raw == nil {
+			raw = Fields{}
+		}
+		raw["error"] = err.Error()
 	}
-	enqueue(zapcore.ErrorLevel, action, zapFields)
+	enqueue(zapcore.ErrorLevel, action, raw)
 }
 
 // Middleware 返回标准 net/http 日志中间件。
@@ -155,18 +181,27 @@ func consume() {
 		default:
 			logger.Info(item.msg, item.fields...)
 		}
+		enqueuePersistence(item)
 	}
 }
 
-func enqueue(level zapcore.Level, msg string, fields []zap.Field) {
+func enqueue(level zapcore.Level, msg string, raw Fields) {
 	if logger == nil || queue == nil {
 		return
 	}
+	now := time.Now()
+	cloned := cloneFields(raw)
+	fields := toZapFields(cloned)
 	select {
-	case queue <- entry{level: level, msg: msg, fields: fields}:
+	case queue <- entry{level: level, msg: msg, fields: fields, raw: cloned, at: now}:
 	default:
 		dropped.Add(1)
 	}
+}
+
+// RegisterPersistenceSink 注册异步日志持久化 sink。
+func RegisterPersistenceSink(sink PersistenceSink) {
+	persistSink = sink
 }
 
 func toZapFields(fields Fields) []zap.Field {
@@ -279,6 +314,54 @@ func sanitizeHTTPLogBody(path string, body []byte) []byte {
 		return []byte("<redacted>")
 	}
 	return body
+}
+
+func consumePersistence() {
+	for item := range persistQueue {
+		sink := persistSink
+		if sink == nil {
+			continue
+		}
+		if err := sink.SavePersistedEntry(item); err != nil {
+			stdlog.Println("log_persist_failed", err)
+		}
+	}
+}
+
+func enqueuePersistence(item entry) {
+	if persistQueue == nil {
+		return
+	}
+	fields := make(map[string]any, len(item.raw))
+	for key, value := range item.raw {
+		fields[key] = value
+	}
+	select {
+	case persistQueue <- PersistedEntry{
+		Service:  serviceLabel,
+		Level:    strings.ToLower(item.level.String()),
+		Action:   item.msg,
+		Fields:   fields,
+		LoggedAt: item.at,
+	}:
+	default:
+		persistDropped.Add(1)
+		if droppedValue := persistDropped.Load(); droppedValue > 0 {
+			stdlog.Println("log_persist_queue_dropped", droppedValue)
+			persistDropped.Store(0)
+		}
+	}
+}
+
+func cloneFields(fields Fields) Fields {
+	if len(fields) == 0 {
+		return nil
+	}
+	cloned := make(Fields, len(fields))
+	for key, value := range fields {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func sanitizeJSONPayload(payload []byte) ([]byte, bool) {

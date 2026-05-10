@@ -56,7 +56,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // WhoAmI 返回当前管理员会话概要。
 func (h *AuthHandler) WhoAmI(w http.ResponseWriter, r *http.Request) {
 	userID := internalauth.CurrentAdminUserID(r.Context(), r)
-	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"authenticated": userID != 0, "admin_user_id": userID}})
+	data := map[string]any{
+		"authenticated": userID != 0,
+		"admin_user_id": userID,
+	}
+	if userID != 0 && h.adminRepository != nil {
+		if user, ok := h.adminRepository.FindUserByID(r.Context(), userID); ok {
+			data["user"] = toAdminUserView(user)
+		}
+		data["permission_keys"] = h.adminRepository.ListPermissionKeysByUserID(r.Context(), userID)
+		data["menu_tree"] = buildMenuTree(h.adminRepository.ListMenusByUserID(r.Context(), userID))
+	}
+	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: data})
 }
 
 // Logout 处理管理员登出。

@@ -33,6 +33,9 @@ BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # 二进制名称
 BINARY_NAME="hvc-server"
+if [ "${TARGET_OS}" = "windows" ]; then
+  BINARY_NAME="hvc-server.exe"
+fi
 # 输出目录
 OUTPUT_DIR="${PROJECT_ROOT}/build"
 
@@ -67,7 +70,7 @@ CGO_ENABLED=0 GOOS="${TARGET_OS}" GOARCH="${TARGET_ARCH}" \
   go build \
   -ldflags "${LDFLAGS}" \
   -o "${OUTPUT_DIR}/${BINARY_NAME}" \
-  ./cmd/server
+  ./cmd
 
 echo "[2/3] 编译完成: ${OUTPUT_DIR}/${BINARY_NAME}"
 

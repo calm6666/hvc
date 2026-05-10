@@ -2,7 +2,10 @@ package mysql
 
 import (
 	"context"
+	"strings"
 	"time"
+
+	"hvc/internal/config"
 )
 
 // NamingTemplateRecord 分片命名模板配置记录。
@@ -56,4 +59,27 @@ func (r *NamingTemplateRepository) Latest(ctx context.Context) (NamingTemplateRe
 		return NamingTemplateRecord{}, false
 	}
 	return record, true
+}
+
+// ApplyLatestNamingTemplate 用数据库中最新保存的命名模板覆盖运行时配置里的默认模板。
+//
+// 命名模板在当前项目里采用“独立模板表 + 发布或立即生效控制”的方式管理，
+// 因此这里需要在装配动态配置快照时做一次显式合并，
+// 避免模板只停留在后台表里却没有真正进入执行链。
+func ApplyLatestNamingTemplate(ctx context.Context, repo *NamingTemplateRepository, cfg config.DynamicRuntimeConfig) config.DynamicRuntimeConfig {
+	if repo == nil {
+		return config.NormalizeDynamicRuntimeConfig(cfg)
+	}
+	record, ok := repo.Latest(ctx)
+	if !ok {
+		return config.NormalizeDynamicRuntimeConfig(cfg)
+	}
+	template := strings.TrimSpace(record.MediaSegNameTpl)
+	if template == "" {
+		template = strings.TrimSpace(record.InitSegNameTpl)
+	}
+	if template != "" {
+		cfg.Worker.SegmentTemplate = template
+	}
+	return config.NormalizeDynamicRuntimeConfig(cfg)
 }

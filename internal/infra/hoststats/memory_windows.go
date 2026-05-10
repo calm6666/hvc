@@ -27,3 +27,13 @@ func memoryUsagePercent() int {
 	}
 	return int(status.memoryLoad)
 }
+
+func totalMemoryMB() int {
+	status := memoryStatusEx{}
+	status.length = uint32(unsafe.Sizeof(status))
+	ret, _, _ := globalMemoryStatusExProc.Call(uintptr(unsafe.Pointer(&status)))
+	if ret == 0 || status.totalPhys == 0 {
+		return 0
+	}
+	return int(status.totalPhys / 1024 / 1024)
+}

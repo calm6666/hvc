@@ -55,6 +55,14 @@ func (c *Collector) Collect() Snapshot {
 	return snapshot
 }
 
+// TotalMemoryMB 返回宿主机物理内存总量，单位 MB。
+//
+// 这个值主要用于把节点主档补齐成可读的静态容量信息；
+// 读取失败时返回 0，由上层按“未知容量”处理。
+func TotalMemoryMB() int {
+	return totalMemoryMB()
+}
+
 func clampPercent(value int) int {
 	if value < 0 {
 		return 0

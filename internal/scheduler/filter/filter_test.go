@@ -2,6 +2,7 @@ package filter
 
 import (
 	"testing"
+	"time"
 
 	"hvc/internal/config"
 	"hvc/internal/model"
@@ -21,6 +22,10 @@ func TestApply_MatchPreferredExecutionHW(t *testing.T) {
 		NodeID:                    1,
 		Enabled:                   true,
 		SupportsHardwareWatermark: true,
+		MetricsAvailable:          true,
+		MetricsFresh:              true,
+		Online:                    true,
+		LastHeartbeatAt:           time.Now(),
 		Metrics: model.NodeMetrics{
 			GPUCapabilities: []model.GPUCapability{{
 				GPUUUID:          "gpu-1",
@@ -49,8 +54,12 @@ func TestApply_RejectMismatchedPreferredExecutionHW(t *testing.T) {
 		},
 	})
 	candidate := model.DispatchCandidate{
-		NodeID:  1,
-		Enabled: true,
+		NodeID:           1,
+		Enabled:          true,
+		MetricsAvailable: true,
+		MetricsFresh:     true,
+		Online:           true,
+		LastHeartbeatAt:  time.Now(),
 		Metrics: model.NodeMetrics{
 			GPUCapabilities: []model.GPUCapability{{
 				GPUUUID:          "gpu-1",
@@ -79,8 +88,12 @@ func TestApply_RejectWhenPreferredGPUAllSessionsFull(t *testing.T) {
 		},
 	})
 	candidate := model.DispatchCandidate{
-		NodeID:  1,
-		Enabled: true,
+		NodeID:           1,
+		Enabled:          true,
+		MetricsAvailable: true,
+		MetricsFresh:     true,
+		Online:           true,
+		LastHeartbeatAt:  time.Now(),
 		Metrics: model.NodeMetrics{
 			GPUCapabilities: []model.GPUCapability{{
 				GPUUUID:          "gpu-1",
@@ -112,8 +125,12 @@ func TestApply_RejectWhenHardwareRequiredButAllGPUsFull(t *testing.T) {
 		},
 	})
 	candidate := model.DispatchCandidate{
-		NodeID:  1,
-		Enabled: true,
+		NodeID:           1,
+		Enabled:          true,
+		MetricsAvailable: true,
+		MetricsFresh:     true,
+		Online:           true,
+		LastHeartbeatAt:  time.Now(),
 		Metrics: model.NodeMetrics{
 			GPUCapabilities: []model.GPUCapability{
 				{
@@ -136,5 +153,53 @@ func TestApply_RejectWhenHardwareRequiredButAllGPUsFull(t *testing.T) {
 	passed := filter.Apply(model.CreateJobRequest{}, []model.DispatchCandidate{candidate})
 	if len(passed) != 0 {
 		t.Fatalf("expected candidate to be filtered out when all gpus are full under hardware-required mode, got %d", len(passed))
+	}
+}
+
+func TestApply_RejectStaleOrMissingMetrics(t *testing.T) {
+	filter := NewFilter(config.DynamicRuntimeConfig{
+		Scheduler: config.SchedulerConfig{
+			NodeCPUSafetyLimitPercent:    100,
+			NodeMemorySafetyLimitPercent: 100,
+			NodeGPUSafetyLimitPercent:    100,
+			MaxNodeTranscodeSessions:     100,
+			MaxNodeUploadConcurrency:     100,
+			WorkerHeartbeatTimeout:       30 * time.Second,
+		},
+	})
+	passed := filter.Apply(model.CreateJobRequest{}, []model.DispatchCandidate{{
+		NodeID:           1,
+		Enabled:          true,
+		MetricsAvailable: true,
+		MetricsFresh:     false,
+		Online:           true,
+		LastHeartbeatAt:  time.Now(),
+	}})
+	if len(passed) != 0 {
+		t.Fatalf("expected stale metrics candidate to be filtered out, got %d", len(passed))
+	}
+}
+
+func TestApply_RejectDrainingNode(t *testing.T) {
+	filter := NewFilter(config.DynamicRuntimeConfig{
+		Scheduler: config.SchedulerConfig{
+			NodeCPUSafetyLimitPercent:    100,
+			NodeMemorySafetyLimitPercent: 100,
+			NodeGPUSafetyLimitPercent:    100,
+			MaxNodeTranscodeSessions:     100,
+			MaxNodeUploadConcurrency:     100,
+		},
+	})
+	passed := filter.Apply(model.CreateJobRequest{}, []model.DispatchCandidate{{
+		NodeID:           1,
+		Enabled:          true,
+		Draining:         true,
+		MetricsAvailable: true,
+		MetricsFresh:     true,
+		Online:           true,
+		LastHeartbeatAt:  time.Now(),
+	}})
+	if len(passed) != 0 {
+		t.Fatalf("expected draining candidate to be filtered out, got %d", len(passed))
 	}
 }

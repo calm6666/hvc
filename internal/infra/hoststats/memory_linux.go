@@ -30,6 +30,23 @@ func memoryUsagePercent() int {
 	return int((usedKB * 100) / totalKB)
 }
 
+func totalMemoryMB() int {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0
+	}
+	for _, line := range splitNonEmptyLines(data) {
+		if strings.HasPrefix(line, "MemTotal:") {
+			totalKB := parseMeminfoValue(line)
+			if totalKB == 0 {
+				return 0
+			}
+			return int(totalKB / 1024)
+		}
+	}
+	return 0
+}
+
 func parseMeminfoValue(line string) uint64 {
 	fields := strings.Fields(line)
 	if len(fields) < 2 {

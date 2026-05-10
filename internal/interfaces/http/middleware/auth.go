@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"hvc/internal/auth"
+	"hvc/internal/model"
 	"hvc/pkg/logx"
 )
 
@@ -11,7 +12,7 @@ import (
 func RequireAdminSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !auth.RequireAdminSession(r) {
-			logx.WriteJSON(w, http.StatusUnauthorized, map[string]any{"code": 401, "message": "unauthorized"})
+			logx.WriteJSON(w, http.StatusUnauthorized, model.Response{Code: 401, Message: "unauthorized"})
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -26,7 +27,7 @@ func RequirePermission(permissionKey string, next http.Handler) http.Handler {
 				"path":       r.URL.Path,
 				"permission": permissionKey,
 			})
-			logx.WriteJSON(w, http.StatusUnauthorized, map[string]any{"code": 401, "message": "unauthorized"})
+			logx.WriteJSON(w, http.StatusUnauthorized, model.Response{Code: 401, Message: "unauthorized"})
 			return
 		}
 		next.ServeHTTP(w, r)

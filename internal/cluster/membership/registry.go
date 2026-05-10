@@ -9,7 +9,12 @@ import (
 // Node 表示集群成员节点。
 type Node struct {
 	NodeID          uint64
+	NodeName        string
 	Host            string
+	HostIP          string
+	GRPCHost        string
+	HTTPHost        string
+	NodeRole        string
 	LastHeartbeatAt time.Time
 	Enabled         bool
 	Quarantined     bool

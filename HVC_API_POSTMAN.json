@@ -397,7 +397,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/config/runtime/versions",
+              "raw": "{{base_url}}/v1/admin/config/runtime/versions?page=1&page_size=20&published=true",
               "host": [
                 "{{base_url}}"
               ],
@@ -407,6 +407,20 @@
                 "config",
                 "runtime",
                 "versions"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "published",
+                  "value": "true"
+                }
               ]
             }
           }
@@ -492,7 +506,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/config/callback/list",
+              "raw": "{{base_url}}/v1/admin/config/callback/list?page=1&page_size=20&callback_name=&enabled=",
               "host": [
                 "{{base_url}}"
               ],
@@ -502,6 +516,24 @@
                 "config",
                 "callback",
                 "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "callback_name",
+                  "value": ""
+                },
+                {
+                  "key": "enabled",
+                  "value": ""
+                }
               ]
             }
           }
@@ -588,7 +620,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/config/naming-template/list",
+              "raw": "{{base_url}}/v1/admin/config/naming-template/list?page=1&page_size=20",
               "host": [
                 "{{base_url}}"
               ],
@@ -598,6 +630,16 @@
                 "config",
                 "naming-template",
                 "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
               ]
             }
           }
@@ -666,7 +708,8 @@
                 "activate"
               ]
             }
-          }
+          },
+          "description": "Immediately persists the naming template and publishes a new runtime config version so all nodes converge through Redis + version sync."
         }
       ]
     },
@@ -684,7 +727,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/config-center/list",
+              "raw": "{{base_url}}/v1/admin/config-center/list?page=1&page_size=20&provider_type=&enabled=",
               "host": [
                 "{{base_url}}"
               ],
@@ -693,6 +736,24 @@
                 "admin",
                 "config-center",
                 "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "provider_type",
+                  "value": ""
+                },
+                {
+                  "key": "enabled",
+                  "value": ""
+                }
               ]
             }
           }
@@ -777,7 +838,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/system/user/list",
+              "raw": "{{base_url}}/v1/admin/system/user/list?page=1&page_size=20&username=&status=0",
               "host": [
                 "{{base_url}}"
               ],
@@ -787,6 +848,24 @@
                 "system",
                 "user",
                 "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "username",
+                  "value": ""
+                },
+                {
+                  "key": "status",
+                  "value": "0"
+                }
               ]
             }
           }
@@ -868,7 +947,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/system/role/list",
+              "raw": "{{base_url}}/v1/admin/system/role/list?page=1&page_size=20&role_key=&status=0",
               "host": [
                 "{{base_url}}"
               ],
@@ -878,12 +957,57 @@
                 "system",
                 "role",
                 "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "role_key",
+                  "value": ""
+                },
+                {
+                  "key": "status",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List All Roles",
+          "description": "返回非分页角色列表，统一放在 data.items。",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/role/all",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "role",
+                "all"
               ]
             }
           }
         },
         {
           "name": "Upsert Role",
+          "description": "返回 snake_case 角色视图对象，不直接回传数据库结构体。",
           "request": {
             "method": "POST",
             "header": [
@@ -917,6 +1041,7 @@
         },
         {
           "name": "List Permissions",
+          "description": "兼容旧 list 路径，实际返回权限树；树数据位于 data.items，且 data.tree=true。",
           "request": {
             "method": "GET",
             "header": [
@@ -941,7 +1066,34 @@
           }
         },
         {
+          "name": "Permission Tree",
+          "description": "返回权限树；树数据位于 data.items，且 data.tree=true。",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/permission/tree",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "permission",
+                "tree"
+              ]
+            }
+          }
+        },
+        {
           "name": "Upsert Permission",
+          "description": "返回 snake_case 权限视图对象，不直接回传数据库结构体。",
           "request": {
             "method": "POST",
             "header": [
@@ -969,6 +1121,158 @@
                 "system",
                 "permission",
                 "upsert"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Menu Tree",
+          "description": "返回完整菜单树；树数据位于 data.items，且 data.tree=true。",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/menu/tree",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "menu",
+                "tree"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Current Menu Tree",
+          "description": "返回当前管理员可见菜单树；树数据位于 data.items，且 data.tree=true。",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/menu/current-tree",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "menu",
+                "current-tree"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Role Menu Tree",
+          "description": "返回 role_id、menu_ids 和完整 menu_tree。",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/role/menu/tree?role_id=2",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "role",
+                "menu",
+                "tree"
+              ],
+              "query": [
+                {
+                  "key": "role_id",
+                  "value": "2"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upsert Menu",
+          "description": "返回单个 snake_case 菜单节点对象，不再返回仅包含自身的一棵树。",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"menu_id\": 0,\n  \"parent_id\": 100,\n  \"menu_key\": \"system.user\",\n  \"menu_name\": \"用户管理\",\n  \"route_path\": \"/system/user\",\n  \"component_name\": \"system/user/index\",\n  \"icon_name\": \"users\",\n  \"menu_type\": \"menu\",\n  \"permission_key\": \"system.user.read\",\n  \"sort_no\": 20,\n  \"hidden\": false,\n  \"status\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/menu/upsert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "menu",
+                "upsert"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Menu",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"menu_id\": 101\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/menu/delete",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "menu",
+                "delete"
               ]
             }
           }
@@ -1038,6 +1342,39 @@
               ]
             }
           }
+        },
+        {
+          "name": "Assign Role Menus",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_id\": 2,\n  \"menu_ids\": [101, 102, 103]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/role-menu/assign",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "role-menu",
+                "assign"
+              ]
+            }
+          }
         }
       ]
     },
@@ -1055,7 +1392,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/cluster/node/list",
+              "raw": "{{base_url}}/v1/admin/cluster/node/list?page=1&page_size=20&keyword=&enabled=&quarantined=&draining=",
               "host": [
                 "{{base_url}}"
               ],
@@ -1065,6 +1402,32 @@
                 "cluster",
                 "node",
                 "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "keyword",
+                  "value": ""
+                },
+                {
+                  "key": "enabled",
+                  "value": ""
+                },
+                {
+                  "key": "quarantined",
+                  "value": ""
+                },
+                {
+                  "key": "draining",
+                  "value": ""
+                }
               ]
             }
           }
@@ -1111,7 +1474,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/cluster/node/metrics?node_id=1",
+              "raw": "{{base_url}}/v1/admin/cluster/node/metrics?page=1&page_size=20&node_id=1",
               "host": [
                 "{{base_url}}"
               ],
@@ -1123,6 +1486,14 @@
                 "metrics"
               ],
               "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
                 {
                   "key": "node_id",
                   "value": "1"
@@ -1180,6 +1551,55 @@
           }
         },
         {
+          "name": "Cluster Topology",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/topology",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "topology"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cluster Resource Distribution",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/resource/distribution",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "resource",
+                "distribution"
+              ]
+            }
+          }
+        },
+        {
           "name": "List Members",
           "request": {
             "method": "GET",
@@ -1190,7 +1610,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/cluster/member/list",
+              "raw": "{{base_url}}/v1/admin/cluster/member/list?page=1&page_size=20",
               "host": [
                 "{{base_url}}"
               ],
@@ -1200,6 +1620,207 @@
                 "cluster",
                 "member",
                 "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Workers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "分页查询 Worker 实例，排查当前哪些执行进程在线、归属哪台节点、最近一次心跳时间。",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/worker/list?page=1&page_size=20&node_id=1&worker_id=&status=1&online_only=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "worker",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "node_id",
+                  "value": "1"
+                },
+                {
+                  "key": "worker_id",
+                  "value": ""
+                },
+                {
+                  "key": "status",
+                  "value": "1"
+                },
+                {
+                  "key": "online_only",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Scheduler Insight",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "查看调度器当前快照下的候选节点、过滤原因、Top-K 候选池和推荐调度结果。",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h264&enable_watermark=false",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "scheduler",
+                "insight"
+              ],
+              "query": [
+                {
+                  "key": "preferred_hw_accel",
+                  "value": "nvidia"
+                },
+                {
+                  "key": "video_codec",
+                  "value": "h264"
+                },
+                {
+                  "key": "enable_watermark",
+                  "value": "false"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Worker Offline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"worker_id\": \"worker-node1-001\",\n  \"reason\": \"manual isolate\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/worker/offline",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "worker",
+                "offline"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Worker Exit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"worker_id\": \"worker-node1-001\",\n  \"reason\": \"process terminated by operator\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/worker/exit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "worker",
+                "exit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Force Job Takeover",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"node_id\": 1,\n  \"worker_id\": \"worker-node1-001\",\n  \"reason\": \"manual takeover after node fault\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/job/takeover",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "job",
+                "takeover"
               ]
             }
           }
@@ -1266,6 +1887,39 @@
                 "cluster",
                 "node",
                 "quarantined"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Node Draining",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"node_id\": 1,\n  \"draining\": true,\n  \"reason\": \"rolling upgrade\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cluster/node/draining",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "cluster",
+                "node",
+                "draining"
               ]
             }
           }
@@ -1479,6 +2133,34 @@
               ]
             },
             "description": "Returns raw monitor snapshot JSON. WebSocket endpoint /v1/admin/transcode/monitor/ws is documented in API_DOC.md."
+          }
+        },
+        {
+          "name": "WebSocket",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "ws://localhost:8080/v1/admin/transcode/monitor/ws",
+              "protocol": "ws",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "v1",
+                "admin",
+                "transcode",
+                "monitor",
+                "ws"
+              ]
+            },
+            "description": "Upgrade to WebSocket and receive snapshot frames every 3s plus ping frames every 30s. Replace host/port with your actual admin address when importing into a WebSocket-capable client."
           }
         }
       ]
@@ -1792,7 +2474,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/audit/list?page=1&page_size=20",
+              "raw": "{{base_url}}/v1/admin/audit/list?page=1&page_size=20&action_name=&admin_user_id=&start_time=&end_time=",
               "host": [
                 "{{base_url}}"
               ],
@@ -1810,6 +2492,73 @@
                 {
                   "key": "page_size",
                   "value": "20"
+                },
+                {
+                  "key": "action_name",
+                  "value": ""
+                },
+                {
+                  "key": "admin_user_id",
+                  "value": ""
+                },
+                {
+                  "key": "start_time",
+                  "value": ""
+                },
+                {
+                  "key": "end_time",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Runtime Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/system/log/list?page=1&page_size=20&level=&action_name=&start_time=&end_time=",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "system",
+                "log",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "level",
+                  "value": ""
+                },
+                {
+                  "key": "action_name",
+                  "value": ""
+                },
+                {
+                  "key": "start_time",
+                  "value": ""
+                },
+                {
+                  "key": "end_time",
+                  "value": ""
                 }
               ]
             }

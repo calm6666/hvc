@@ -41,17 +41,7 @@ func NewTranscodeHandler(jobRepository *mysql.JobRepository, progressStore *redi
 // 支持按状态和业务键筛选，分页返回。
 func (h *TranscodeHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page <= 0 {
-		page = 1
-	}
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	page, pageSize := parsePageParams(r)
 	statusFilter, _ := strconv.Atoi(r.URL.Query().Get("status"))
 	bizKey := r.URL.Query().Get("biz_key")
 	requestID := r.URL.Query().Get("request_id")
@@ -98,16 +88,7 @@ func (h *TranscodeHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	logx.WriteJSON(w, http.StatusOK, model.Response{
-		Code:    0,
-		Message: "ok",
-		Data: map[string]any{
-			"total":     total,
-			"page":      page,
-			"page_size": pageSize,
-			"items":     items,
-		},
-	})
+	writePageResponse(w, page, pageSize, total, items)
 }
 
 // JobDetail 返回任务详情。

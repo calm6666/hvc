@@ -60,10 +60,7 @@ cd "${PROJECT_ROOT}"
 
 # 设置环境变量
 export HVC_CONFIG_PATH="${CONFIG_PATH}"
-export HVC_RUN_MODE=standalone
-export HVC_LOG_LEVEL=debug
 
 # 启动 air 热重载
-# air 会自动检测 .air.toml 配置文件
-# 默认监控 .go 文件变更，自动重新编译和重启
-exec air
+# 仓库根目录已提供 .air.toml，直接指定可避免 air 默认把根目录当作 main 包。
+exec air -c "${PROJECT_ROOT}/.air.toml"

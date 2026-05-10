@@ -33,16 +33,14 @@ services:
     ports:
       # HTTP 公共 API + 管理后台
       - "8080:8080"
-      # gRPC 集群内部通信
+      # 对外 public gRPC（运行期开启后生效）
       - "9090:9090"
+      # 集群内部 gRPC
+      - "19090:19090"
     # 环境变量
     environment:
-      # 运行模式：standalone=单机 / cluster=集群
-      - HVC_RUN_MODE=standalone
-      # 配置文件路径
+      # 启动配置文件路径；主程序已支持按 HVC_CONFIG_PATH 读取。
       - HVC_CONFIG_PATH=/etc/hvc/config.yaml
-      # 日志级别：debug/info/warn/error
-      - HVC_LOG_LEVEL=info
     # 挂载配置文件（只读）
     volumes:
       - ../../configs/config.yaml:/etc/hvc/config.yaml:ro
@@ -68,7 +66,7 @@ services:
           memory: 4G
     # 健康检查
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/system/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -97,8 +95,8 @@ services:
     # 数据持久化
     volumes:
       - mysql-data:/var/lib/mysql
-      # 初始化 SQL 脚本（首次启动时执行）
-      - ../../scripts/migrate/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # 初始化 SQL 脚本目录（首次启动时按文件名字典序自动执行）
+      - ../../sql:/docker-entrypoint-initdb.d:ro
     # MySQL 配置优化
     command: >
       --character-set-server=utf8mb4

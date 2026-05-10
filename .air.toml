@@ -1,0 +1,13 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/hvc-server ./cmd"
+bin = "tmp/hvc-server"
+include_ext = ["go", "yaml"]
+exclude_dir = ["tmp", "build", "release", "log", ".git", ".claude"]
+delay = 500
+stop_on_error = true
+
+[log]
+time = true

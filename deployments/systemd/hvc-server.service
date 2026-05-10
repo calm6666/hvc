@@ -53,10 +53,6 @@ User=hvc
 Group=hvc
 
 # ---- 环境变量 ----
-# 运行模式：standalone=单机 / cluster=集群
-Environment=HVC_RUN_MODE=standalone
-# 日志级别
-Environment=HVC_LOG_LEVEL=info
 # 配置文件路径
 Environment=HVC_CONFIG_PATH=/etc/hvc/config.yaml
 

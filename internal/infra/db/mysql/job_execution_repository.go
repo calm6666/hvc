@@ -52,7 +52,7 @@ func (r *JobExecutionRepository) SaveAssigned(ctx context.Context, jobID uint64,
 		SelectedExecutionHWAcc: decision.SelectedExecutionHW,
 		Status:                 1,
 		LeaseOwner:             workerID,
-		LastHeartbeatAt:        now,
+		LastHeartbeatAt:        &now,
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
@@ -148,4 +148,23 @@ func (r *JobExecutionRepository) CountActiveGPUUsageByNode(ctx context.Context, 
 		result[item.NodeID][item.SelectedGPUIndex] = item.Count
 	}
 	return result
+}
+
+// CountActiveExecutions 返回当前仍处于活跃状态的执行实例数量。
+//
+// 统计口径与调度阶段单卡占用统计保持一致：
+// 1. 只统计已分配 / 执行中 / 上传中的执行实例；
+// 2. 只统计 last_heartbeat_at 仍然新鲜的记录，避免陈旧实例长期占住全局并发配额。
+func (r *JobExecutionRepository) CountActiveExecutions(ctx context.Context, activeAfter time.Time) int64 {
+	if r == nil {
+		return 0
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&JobExecutionRecord{}).
+		Where("status IN ? AND last_heartbeat_at >= ?", []int{1, 2, 3}, activeAfter).
+		Count(&count).Error; err != nil {
+		return 0
+	}
+	return count
 }
