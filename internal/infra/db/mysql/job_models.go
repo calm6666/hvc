@@ -8,6 +8,7 @@ type JobRecord struct {
 	RequestID                  string     `gorm:"column:request_id"`
 	BizKey                     string     `gorm:"column:biz_key"`
 	Mode                       int        `gorm:"column:mode"`
+	CompletionPayload          string     `gorm:"column:completion_payload"` // A1: 完成+回调 payload 暂存（非空=还没传完、尚未发布）
 	Status                     int        `gorm:"column:status"`
 	Priority                   int        `gorm:"column:priority"`
 	SourceURL                  string     `gorm:"column:source_url"`
@@ -50,14 +51,19 @@ type JobRecord struct {
 	LeaseGeneration            uint64     `gorm:"column:lease_generation"`
 	AttemptNo                  int        `gorm:"column:attempt_no"`
 	LeaseExpireAt              *time.Time `gorm:"column:lease_expire_at"`
-	LastWorkerHeartbeatAt      *time.Time `gorm:"column:last_worker_heartbeat_at"`
-	ProgressPermille           int        `gorm:"column:progress_permille"`
-	ProgressStage              string     `gorm:"column:progress_stage"`
-	LastRetryMode              string     `gorm:"column:last_retry_mode"`
-	ErrorCode                  string     `gorm:"column:error_code"`
-	ErrorMessage               string     `gorm:"column:error_message"`
-	CreatedAt                  time.Time  `gorm:"column:created_at"`
-	UpdatedAt                  time.Time  `gorm:"column:updated_at"`
+	// LastWorkerHeartbeatAt 为历史兼容字段。
+	//
+	// 当前任务执行链路的真实心跳权威来源已经切换到
+	// `t_transcode_job_execution.last_heartbeat_at`，这里保留字段只是为了兼容既有表结构
+	// 和旧数据迁移，不应再作为新的失联判定依据。
+	LastWorkerHeartbeatAt *time.Time `gorm:"column:last_worker_heartbeat_at"`
+	ProgressPermille      int        `gorm:"column:progress_permille"`
+	ProgressStage         string     `gorm:"column:progress_stage"`
+	LastRetryMode         string     `gorm:"column:last_retry_mode"`
+	ErrorCode             string     `gorm:"column:error_code"`
+	ErrorMessage          string     `gorm:"column:error_message"`
+	CreatedAt             time.Time  `gorm:"column:created_at"`
+	UpdatedAt             time.Time  `gorm:"column:updated_at"`
 }
 
 func (JobRecord) TableName() string { return "t_transcode_job" }

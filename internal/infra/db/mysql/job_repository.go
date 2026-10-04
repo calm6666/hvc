@@ -204,8 +204,23 @@ func (r *JobRepository) CreateWithOverrideAtomic(ctx context.Context, job model.
 
 // ListQueued 返回待调度任务。
 func (r *JobRepository) ListQueued(ctx context.Context) []model.TranscodeJob {
+	return r.ListQueuedForDispatch(ctx, 0)
+}
+
+// ListQueuedForDispatch 返回待调度任务批次。
+//
+// 调度器每一轮不需要把整条等待队列全部拉回内存。
+// 这里按“优先级倒序 + 创建时间正序 + job_id 正序”稳定取一批，
+// 既保证高优先级任务先被看到，也避免队列堆积时一次性扫全表。
+func (r *JobRepository) ListQueuedForDispatch(ctx context.Context, limit int) []model.TranscodeJob {
 	var records []JobRecord
-	if err := r.db.WithContext(ctx).Where("status = ?", model.JobStatusQueued).Find(&records).Error; err != nil {
+	query := r.db.WithContext(ctx).
+		Where("status = ?", model.JobStatusQueued).
+		Order("priority desc, created_at asc, job_id asc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Find(&records).Error; err != nil {
 		return nil
 	}
 	items := make([]model.TranscodeJob, 0, len(records))
@@ -265,19 +280,72 @@ func (r *JobRepository) Assign(ctx context.Context, jobID uint64, decision model
 
 // UpdateProgress 更新任务进度。
 func (r *JobRepository) UpdateProgress(ctx context.Context, jobID uint64, progressPermille int, stage string) error {
+	return r.UpdateProgressAt(ctx, jobID, progressPermille, stage, time.Time{})
+}
+
+// UpdateProgressAt 按指定时间更新任务进度。
+func (r *JobRepository) UpdateProgressAt(ctx context.Context, jobID uint64, progressPermille int, stage string, updatedAt time.Time) error {
 	status := model.JobStatusRunning
 	if progressPermille >= 900 && progressPermille < 1000 {
 		status = model.JobStatusUploading
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now()
 	}
 	return r.db.WithContext(ctx).Model(&JobRecord{}).Where("job_id = ?", jobID).Updates(map[string]any{
 		"progress_permille": progressPermille,
 		"progress_stage":    stage,
 		"status":            status,
-		"updated_at":        time.Now(),
+		"updated_at":        updatedAt,
 	}).Error
 }
 
 // MarkCompleted 标记任务完成。
+// MarkUploading 把任务推进到"上传中"（A1）。
+//
+// 为什么要有它：转码阶段的产物写完之后，分片还要异步上传，这段时间任务既不是 RUNNING
+// 也不是 COMPLETED。原来的实现直接 MarkCompleted 并立刻写回调事件，于是出现了
+// "回调已发、分片没传完"的窗口（见 docs/TRANSCODE-SERVICE-DESIGN.md §18.4）。
+func (r *JobRepository) MarkUploading(ctx context.Context, jobID uint64) error {
+	result := r.db.WithContext(ctx).Model(&JobRecord{}).Where("job_id = ?", jobID).Updates(map[string]any{
+		"status":     model.JobStatusUploading,
+		"updated_at": time.Now(),
+	})
+	return result.Error
+}
+
+// SavePendingCompletion 暂存"完成 + 回调"要用的 payload（A1）。
+//
+// 存的是任务行上的一列而不是内存：待传队列是**全局**的，别的节点也可能在传这个任务的分片，
+// 所以发布那一刻不一定还在转码的那个进程里（见 §18.6 的方案对比）。
+func (r *JobRepository) SavePendingCompletion(ctx context.Context, jobID uint64, payloadJSON string) error {
+	result := r.db.WithContext(ctx).Model(&JobRecord{}).Where("job_id = ?", jobID).Updates(map[string]any{
+		"completion_payload": payloadJSON,
+		"updated_at":         time.Now(),
+	})
+	return result.Error
+}
+
+// TakePendingCompletion 取出并清空暂存的 payload（A1）。
+//
+// 取 + 清是一件事：这样 publishCompletion() 天然幂等 —— 即使两个节点同时看到
+// "待传数归零"，也只有一个能把 payload 拿走并发出回调，另一个拿到空串直接返回。
+func (r *JobRepository) TakePendingCompletion(ctx context.Context, jobID uint64) (string, bool) {
+	var record JobRecord
+	if err := r.db.WithContext(ctx).Where("job_id = ?", jobID).First(&record).Error; err != nil {
+		return "", false
+	}
+	payload := record.CompletionPayload
+	if payload == "" {
+		return "", false
+	}
+	if err := r.db.WithContext(ctx).Model(&JobRecord{}).
+		Where("job_id = ? AND completion_payload = ?", jobID, payload).
+		Update("completion_payload", "").Error; err != nil {
+		return "", false
+	}
+	return payload, true
+}
 func (r *JobRepository) MarkCompleted(ctx context.Context, jobID uint64) error {
 	return r.db.WithContext(ctx).Model(&JobRecord{}).Where("job_id = ?", jobID).Updates(map[string]any{
 		"status":            model.JobStatusCompleted,
@@ -523,6 +591,33 @@ func (r *JobRepository) CountByStatus(ctx context.Context, status int) int64 {
 	return count
 }
 
+// CountByStatuses 返回多种任务状态的聚合计数，避免后台观测接口逐状态重复扫表。
+func (r *JobRepository) CountByStatuses(ctx context.Context, statuses []int) map[int]int64 {
+	result := make(map[int]int64)
+	if r == nil || len(statuses) == 0 {
+		return result
+	}
+
+	type row struct {
+		Status int   `gorm:"column:status"`
+		Count  int64 `gorm:"column:count"`
+	}
+
+	rows := make([]row, 0, len(statuses))
+	if err := r.db.WithContext(ctx).
+		Model(&JobRecord{}).
+		Select("status, COUNT(*) AS count").
+		Where("status IN ?", statuses).
+		Group("status").
+		Scan(&rows).Error; err != nil {
+		return result
+	}
+	for _, item := range rows {
+		result[item.Status] = item.Count
+	}
+	return result
+}
+
 // CountActive 统计当前仍占用调度/执行资源的任务数。
 //
 // 口径统一为 Assigned / Running / Uploading，
@@ -535,15 +630,54 @@ func (r *JobRepository) CountActive(ctx context.Context) int64 {
 	return count
 }
 
+// CountActiveByNode 返回各节点当前仍占用执行资源的任务数。
+func (r *JobRepository) CountActiveByNode(ctx context.Context) map[uint64]int {
+	result := make(map[uint64]int)
+	if r == nil {
+		return result
+	}
+
+	type row struct {
+		AssignedNodeID uint64 `gorm:"column:assigned_node_id"`
+		Count          int    `gorm:"column:count"`
+	}
+
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Model(&JobRecord{}).
+		Select("assigned_node_id, COUNT(*) AS count").
+		Where("status IN ? AND assigned_node_id > ?", []int{model.JobStatusAssigned, model.JobStatusRunning, model.JobStatusUploading}, 0).
+		Group("assigned_node_id").
+		Scan(&rows).Error; err != nil {
+		return result
+	}
+	for _, item := range rows {
+		result[item.AssignedNodeID] = item.Count
+	}
+	return result
+}
+
 // ListExpiredRunning 查询运行超时的任务。
 //
-// 返回状态为 Assigned 或 Running 且最后心跳超过 timeout 的任务。
+// 注意：
+// 1. 当前真实心跳口径来自 `t_transcode_job_execution.last_heartbeat_at`；
+// 2. 任务主表里的 `last_worker_heartbeat_at` 仅作历史兼容字段保留；
+// 3. 因此这里会按 job_execution 聚合最近一次活跃执行心跳，再反查任务主表。
 func (r *JobRepository) ListExpiredRunning(ctx context.Context, timeout time.Duration) []model.TranscodeJob {
 	cutoff := time.Now().Add(-timeout)
+
+	latestExecutionHeartbeat := r.db.WithContext(ctx).
+		Model(&JobExecutionRecord{}).
+		Select("job_id, MAX(last_heartbeat_at) AS last_heartbeat_at").
+		Where("status IN ? AND last_heartbeat_at IS NOT NULL", []int{1, 2, 3}).
+		Group("job_id")
+
 	var records []JobRecord
 	if err := r.db.WithContext(ctx).
-		Where("status IN ? AND last_worker_heartbeat_at < ? AND last_worker_heartbeat_at > ?",
-			[]int{model.JobStatusAssigned, model.JobStatusRunning}, cutoff, time.Time{}).
+		Model(&JobRecord{}).
+		Joins("JOIN (?) AS exec_heartbeat ON exec_heartbeat.job_id = t_transcode_job.job_id", latestExecutionHeartbeat).
+		Where("t_transcode_job.status IN ? AND exec_heartbeat.last_heartbeat_at < ?",
+			[]int{model.JobStatusAssigned, model.JobStatusRunning}, cutoff).
 		Find(&records).Error; err != nil {
 		return nil
 	}

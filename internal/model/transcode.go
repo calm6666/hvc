@@ -183,6 +183,9 @@ type TranscodeJob struct {
 	OutputStorageID            uint64
 	OutputBasePrefix           string
 	AssignedNodeID             uint64
+	// CompletionPayload（A1）非空 = 转码已结束但分片还没传完：完成事件要用的 payload 先落在这里，
+	// 等本任务待传数归零、真正允许发布时取出来写 outbox（见 worker.publishCompletion）。
+	CompletionPayload string `json:"completionPayload,omitempty"`
 	AssignedWorkerID           string
 	ExecutorWorkerInstanceID   uint64
 	SelectedExecutionHWAccel   string

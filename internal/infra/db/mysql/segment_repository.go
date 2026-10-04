@@ -170,6 +170,50 @@ func (r *SegmentRepository) ListPendingUpload(ctx context.Context, limit int, ma
 	return items
 }
 
+// CountPendingUpload 返回待上传分片数量。
+//
+// Worker 周期性上报 metrics 时只关心“当前上传队列深度”，
+// 不需要把一批分片记录拉回进程再 len()。这里直接走数据库计数。
+// CountPendingUploadByJob 返回**某个任务**还没传完的分片数（A1）。
+//
+// 为什么不能用上面的 CountPendingUpload：那个是**全局**队列深度，用来判断"这个任务传完没有"
+// 一定是错的 —— 队列里还躺着别的任务的分片，它会永远 > 0，任务也就永远发布不出去。
+func (r *SegmentRepository) CountPendingUploadByJob(ctx context.Context, jobID uint64, maxRetry int) int {
+	if maxRetry <= 0 {
+		maxRetry = 1
+	}
+	var total int64
+	if err := r.db.WithContext(ctx).
+		Model(&SegmentRecord{}).
+		Where("job_id = ?", jobID).
+		Where("upload_status = ? OR (upload_status = ? AND upload_retry_count < ?)",
+			model.SegmentUploadPending, model.SegmentUploadFailed, maxRetry).
+		Count(&total).Error; err != nil {
+		// 查不出来时**当成"还没传完"**：宁可暂时不发布，也不能在不确定的情况下发回调。
+		return 1
+	}
+	if total < 0 {
+		return 1
+	}
+	return int(total)
+}
+func (r *SegmentRepository) CountPendingUpload(ctx context.Context, maxRetry int) int {
+	if maxRetry <= 0 {
+		maxRetry = 1
+	}
+	var total int64
+	if err := r.db.WithContext(ctx).
+		Model(&SegmentRecord{}).
+		Where("upload_status = ? OR (upload_status = ? AND upload_retry_count < ?)", model.SegmentUploadPending, model.SegmentUploadFailed, maxRetry).
+		Count(&total).Error; err != nil {
+		return 0
+	}
+	if total < 0 {
+		return 0
+	}
+	return int(total)
+}
+
 // MarkUploading 标记分片上传中。
 func (r *SegmentRepository) MarkUploading(ctx context.Context, segmentID uint64) error {
 	result := r.db.WithContext(ctx).Model(&SegmentRecord{}).Where("segment_id = ?", segmentID).Updates(map[string]any{
