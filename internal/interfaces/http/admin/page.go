@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -60,6 +61,17 @@ func writeItemsResponse(w http.ResponseWriter, items any, meta map[string]any) {
 		Message: "ok",
 		Data:    data,
 	})
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		logx.WriteJSON(w, http.StatusOK, model.Response{
+			Code:    400,
+			Message: "请求体格式无效",
+		})
+		return false
+	}
+	return true
 }
 
 func parseOptionalBool(value string) *bool {

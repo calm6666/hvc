@@ -78,6 +78,7 @@ type RuntimeConfigRecord struct {
 	PublicGRPCEnabled                bool       `gorm:"column:public_grpc_enabled"`
 	PublicGRPCHost                   string     `gorm:"column:public_grpc_host"`
 	PublicGRPCPort                   int        `gorm:"column:public_grpc_port"`
+	PublicGRPCRegistryID             uint64     `gorm:"column:public_grpc_registry_id"`
 	RPCCallbackReceiverEnabled       bool       `gorm:"column:rpc_callback_receiver_enabled"`
 	RPCCallbackReceiverHost          string     `gorm:"column:rpc_callback_receiver_host"`
 	RPCCallbackReceiverPort          int        `gorm:"column:rpc_callback_receiver_port"`

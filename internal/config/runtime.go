@@ -86,6 +86,7 @@ type ServerConfig struct {
 	ServiceName   string `yaml:"service_name"`
 	NodeID        uint64 `yaml:"node_id"`
 	WorkerID      string `yaml:"worker_id"`
+	NodeMode      string `yaml:"node_mode"`
 }
 
 // ModeConfig 表示运行时模块开关配置。
@@ -214,9 +215,17 @@ type StorageConfig struct {
 
 // LoadRuntimeConfig 加载启动配置。
 func LoadRuntimeConfig() (RuntimeConfig, error) {
-	cfg, err := LoadRuntimeConfigFromYAML(ResolveRuntimeConfigPath(os.Args[1:]))
+	configPath := ResolveRuntimeConfigPath(os.Args[1:])
+	cfg, err := LoadRuntimeConfigFromYAML(configPath)
 	if err != nil {
 		return RuntimeConfig{}, err
+	}
+	if cfg.ConfigCenter.Enabled {
+		if resolvedCfg, resolved, err := LoadRuntimeConfigFromConfigCenter(cfg, configPath); err != nil {
+			return RuntimeConfig{}, err
+		} else if resolved {
+			cfg = resolvedCfg
+		}
 	}
 	if err := ValidateRuntimeConfig(cfg); err != nil {
 		return RuntimeConfig{}, err
@@ -266,6 +275,11 @@ func LoadRuntimeConfigFromYAML(path string) (RuntimeConfig, error) {
 func ValidateRuntimeConfig(cfg RuntimeConfig) error {
 	if strings.TrimSpace(cfg.Server.ListenAddress) == "" {
 		return fmt.Errorf("server.listen_address 不能为空")
+	}
+	switch strings.TrimSpace(cfg.Server.NodeMode) {
+	case "", "standalone", "cluster-control", "cluster-worker", "cluster-allinone":
+	default:
+		return fmt.Errorf("server.node_mode 只能是 standalone / cluster-control / cluster-worker / cluster-allinone")
 	}
 	if strings.TrimSpace(cfg.MySQL.DSN) == "" {
 		return fmt.Errorf("mysql.dsn 不能为空")

@@ -104,7 +104,7 @@ type AdminMenuRecord struct {
 	MenuKey       string    `gorm:"column:menu_key"`
 	MenuName      string    `gorm:"column:menu_name"`
 	RoutePath     string    `gorm:"column:route_path"`
-	ComponentName string    `gorm:"column:component_name"`
+	Component     string    `gorm:"column:component"`
 	IconName      string    `gorm:"column:icon_name"`
 	MenuType      string    `gorm:"column:menu_type"`
 	PermissionKey string    `gorm:"column:permission_key"`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"hvc/internal/config"
 	"hvc/internal/configcenter"
 	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/infra/db/mysql"
@@ -22,17 +23,20 @@ type runtimeConfigSyncer struct {
 	cache     *rediscache.RuntimeConfigCache
 	db        *mysql.DB
 	effective *configcenter.EffectiveConfig
+	nodeMode  string
 }
 
 func newRuntimeConfigSyncer(
 	cache *rediscache.RuntimeConfigCache,
 	db *mysql.DB,
 	effective *configcenter.EffectiveConfig,
+	nodeMode string,
 ) *runtimeConfigSyncer {
 	return &runtimeConfigSyncer{
 		cache:     cache,
 		db:        db,
 		effective: effective,
+		nodeMode:  nodeMode,
 	}
 }
 
@@ -63,13 +67,14 @@ func (s *runtimeConfigSyncer) syncOnce(ctx context.Context) {
 				return
 			}
 			if snapshot, ok, loadErr := s.cache.LoadPublished(ctx); loadErr == nil && ok && snapshot.ConfigVersion == cacheVersion {
+				snapshot.Config = config.ApplyNodeModeRuntimeConstraints(s.nodeMode, snapshot.Config)
 				s.effective.ReplaceWithVersion(snapshot.Config, snapshot.ConfigVersion)
 				return
 			}
 		}
 	}
 
-	snapshot, ok := loadPublishedDynamicRuntimeConfig(ctx, s.cache, s.db)
+	snapshot, ok := loadPublishedDynamicRuntimeConfig(ctx, s.cache, s.db, s.nodeMode)
 	if !ok {
 		return
 	}

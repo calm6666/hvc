@@ -21,6 +21,15 @@ type GPUDeviceRepository struct {
 	db *DB
 }
 
+// GPUNodeSummary 表示单节点 GPU 汇总结果。
+type GPUNodeSummary struct {
+	NodeID               uint64
+	Total                int
+	HealthyTotal         int
+	SchedulableTotal     int
+	MaxTranscodeSessions int
+}
+
 // NewGPUDeviceRepository 创建节点 GPU 设备仓储。
 func NewGPUDeviceRepository(db *DB) *GPUDeviceRepository {
 	return &GPUDeviceRepository{db: db}
@@ -45,6 +54,95 @@ func (r *GPUDeviceRepository) ListByNodeID(ctx context.Context, nodeID uint64) [
 		return nil
 	}
 	return records
+}
+
+// ListByNodeIDs 按节点集合批量返回 GPU 设备记录。
+//
+// 后台分页节点列表只需要当前页节点的 GPU 主档，
+// 没必要每次都把整张 t_node_gpu_device 全表拉回来。
+func (r *GPUDeviceRepository) ListByNodeIDs(ctx context.Context, nodeIDs []uint64) []NodeGPUDeviceRecord {
+	if len(nodeIDs) == 0 {
+		return nil
+	}
+	uniqueNodeIDs := make([]uint64, 0, len(nodeIDs))
+	seen := make(map[uint64]struct{}, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		if nodeID == 0 {
+			continue
+		}
+		if _, exists := seen[nodeID]; exists {
+			continue
+		}
+		seen[nodeID] = struct{}{}
+		uniqueNodeIDs = append(uniqueNodeIDs, nodeID)
+	}
+	if len(uniqueNodeIDs) == 0 {
+		return nil
+	}
+
+	var records []NodeGPUDeviceRecord
+	if err := r.db.WithContext(ctx).
+		Where("node_id IN ?", uniqueNodeIDs).
+		Order("node_id asc, gpu_index asc").
+		Find(&records).Error; err != nil {
+		return nil
+	}
+	return records
+}
+
+// SummaryByNodeIDs 返回节点集合的 GPU 汇总信息。
+//
+// overview / realtime 只需要聚合数，不需要每张 GPU 的完整明细。
+// 这里直接下推到数据库做 group by，避免在控制面高频轮询时构造整批 GPU 明细对象。
+func (r *GPUDeviceRepository) SummaryByNodeIDs(ctx context.Context, nodeIDs []uint64) map[uint64]GPUNodeSummary {
+	result := make(map[uint64]GPUNodeSummary)
+	if len(nodeIDs) == 0 {
+		return result
+	}
+
+	uniqueNodeIDs := make([]uint64, 0, len(nodeIDs))
+	seen := make(map[uint64]struct{}, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		if nodeID == 0 {
+			continue
+		}
+		if _, exists := seen[nodeID]; exists {
+			continue
+		}
+		seen[nodeID] = struct{}{}
+		uniqueNodeIDs = append(uniqueNodeIDs, nodeID)
+	}
+	if len(uniqueNodeIDs) == 0 {
+		return result
+	}
+
+	type summaryRow struct {
+		NodeID               uint64 `gorm:"column:node_id"`
+		Total                int64  `gorm:"column:total"`
+		HealthyTotal         int64  `gorm:"column:healthy_total"`
+		SchedulableTotal     int64  `gorm:"column:schedulable_total"`
+		MaxTranscodeSessions int64  `gorm:"column:max_transcode_sessions"`
+	}
+
+	var rows []summaryRow
+	if err := r.db.WithContext(ctx).
+		Model(&NodeGPUDeviceRecord{}).
+		Select("node_id, COUNT(*) AS total, SUM(CASE WHEN healthy THEN 1 ELSE 0 END) AS healthy_total, SUM(CASE WHEN schedulable THEN 1 ELSE 0 END) AS schedulable_total, SUM(max_transcode_sessions) AS max_transcode_sessions").
+		Where("node_id IN ?", uniqueNodeIDs).
+		Group("node_id").
+		Find(&rows).Error; err != nil {
+		return result
+	}
+	for _, row := range rows {
+		result[row.NodeID] = GPUNodeSummary{
+			NodeID:               row.NodeID,
+			Total:                int(row.Total),
+			HealthyTotal:         int(row.HealthyTotal),
+			SchedulableTotal:     int(row.SchedulableTotal),
+			MaxTranscodeSessions: int(row.MaxTranscodeSessions),
+		}
+	}
+	return result
 }
 
 // SaveOrUpdateByCapability 根据能力信息创建或更新稳定 GPU 设备记录。

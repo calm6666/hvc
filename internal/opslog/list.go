@@ -38,7 +38,7 @@ func (r *Repository) ListPaged(ctx context.Context, page, pageSize int, level, a
 		query = query.Where("log_level = ?", level)
 	}
 	if actionName = strings.TrimSpace(actionName); actionName != "" {
-		query = query.Where("action_name = ?", actionName)
+		query = query.Where("action_name LIKE ?", "%"+actionName+"%")
 	}
 	if startTime != nil {
 		query = query.Where("logged_at >= ?", *startTime)

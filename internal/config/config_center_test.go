@@ -69,6 +69,40 @@ func TestLoadBootstrapDynamicRuntimeConfigIgnoresDeprecatedBootstrapDynamicSecti
 	}
 }
 
+func TestApplyNodeModeRuntimeConstraints(t *testing.T) {
+	base := DefaultDynamicRuntimeConfig()
+	base.Mode.EnableHTTPServer = true
+	base.Mode.EnableGRPCServer = true
+	base.Mode.EnableMQConsumer = true
+	base.Mode.EnableCallback = true
+	base.Mode.EnableScheduler = false
+	base.Mode.EnableWorker = false
+
+	control := ApplyNodeModeRuntimeConstraints(NodeModeClusterControl, base)
+	if !control.Mode.EnableScheduler || control.Mode.EnableWorker {
+		t.Fatalf("unexpected control-plane constraints: %+v", control.Mode)
+	}
+	if !control.Mode.EnableHTTPServer || !control.Mode.EnableGRPCServer || !control.Mode.EnableMQConsumer || !control.Mode.EnableCallback {
+		t.Fatalf("control-plane should preserve runtime-managed northbound modules: %+v", control.Mode)
+	}
+
+	worker := ApplyNodeModeRuntimeConstraints(NodeModeClusterWorker, base)
+	if worker.Mode.EnableScheduler || !worker.Mode.EnableWorker {
+		t.Fatalf("unexpected worker-plane constraints: %+v", worker.Mode)
+	}
+	if worker.Mode.EnableHTTPServer || worker.Mode.EnableGRPCServer || worker.Mode.EnableMQConsumer || worker.Mode.EnableCallback {
+		t.Fatalf("worker-plane should hard-disable control-plane modules: %+v", worker.Mode)
+	}
+
+	allInOne := ApplyNodeModeRuntimeConstraints(NodeModeClusterAllInOne, base)
+	if !allInOne.Mode.EnableScheduler || !allInOne.Mode.EnableWorker {
+		t.Fatalf("unexpected all-in-one constraints: %+v", allInOne.Mode)
+	}
+	if !allInOne.Mode.EnableHTTPServer || !allInOne.Mode.EnableGRPCServer || !allInOne.Mode.EnableMQConsumer || !allInOne.Mode.EnableCallback {
+		t.Fatalf("all-in-one should preserve runtime-managed northbound modules: %+v", allInOne.Mode)
+	}
+}
+
 func TestValidateRuntimeConfigRejectsDeprecatedDynamicSections(t *testing.T) {
 	cfg := RuntimeConfig{
 		Server: ServerConfig{

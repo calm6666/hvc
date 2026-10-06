@@ -111,6 +111,38 @@ message SegmentUploadedResponse {
   bool accepted = 1;
 }
 
+// Worker 运维下线请求。
+message SetWorkerOfflineRequest {
+  // Worker 实例标识。
+  string worker_id = 1;
+  // 运维原因。
+  string reason = 2;
+}
+
+// Worker 运维下线响应。
+message SetWorkerOfflineResponse {
+  // 是否已接受控制动作。
+  bool accepted = 1;
+  // 控制结果说明。
+  string message = 2;
+}
+
+// Worker 退出请求。
+message RequestWorkerExitRequest {
+  // Worker 实例标识。
+  string worker_id = 1;
+  // 退出原因。
+  string reason = 2;
+}
+
+// Worker 退出响应。
+message RequestWorkerExitResponse {
+  // 是否已接受控制动作。
+  bool accepted = 1;
+  // 控制结果说明。
+  string message = 2;
+}
+
 // 集群内部通信服务。
 service ClusterInternalService {
   // Worker 心跳上报。
@@ -119,4 +151,8 @@ service ClusterInternalService {
   rpc ReportProgress(ReportProgressRequest) returns (ReportProgressResponse);
   // 分片上传完成通知。
   rpc SegmentUploaded(SegmentUploadedRequest) returns (SegmentUploadedResponse);
+  // 将目标 Worker 切换到运维下线状态。
+  rpc SetWorkerOffline(SetWorkerOfflineRequest) returns (SetWorkerOfflineResponse);
+  // 请求目标 Worker 执行模块退出。
+  rpc RequestWorkerExit(RequestWorkerExitRequest) returns (RequestWorkerExitResponse);
 }

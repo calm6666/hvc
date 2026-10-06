@@ -18,7 +18,7 @@ func (r *AdminRBACRepository) EnsureMenu(ctx context.Context, record AdminMenuRe
 	record.MenuKey = strings.TrimSpace(record.MenuKey)
 	record.MenuName = strings.TrimSpace(record.MenuName)
 	record.RoutePath = strings.TrimSpace(record.RoutePath)
-	record.ComponentName = strings.TrimSpace(record.ComponentName)
+	record.Component = strings.TrimSpace(record.Component)
 	record.IconName = strings.TrimSpace(record.IconName)
 	record.MenuType = strings.TrimSpace(record.MenuType)
 	record.PermissionKey = strings.TrimSpace(record.PermissionKey)
@@ -38,7 +38,7 @@ func (r *AdminRBACRepository) EnsureMenu(ctx context.Context, record AdminMenuRe
 				"parent_id":      record.ParentID,
 				"menu_name":      record.MenuName,
 				"route_path":     record.RoutePath,
-				"component_name": record.ComponentName,
+				"component":      record.Component,
 				"icon_name":      record.IconName,
 				"menu_type":      record.MenuType,
 				"permission_key": record.PermissionKey,
@@ -75,7 +75,7 @@ func (r *AdminRepository) ListMenusByUserID(ctx context.Context, userID uint64) 
 	var records []AdminMenuRecord
 	if err := r.db.WithContext(ctx).Raw(`
 SELECT DISTINCT
-  m.menu_id, m.parent_id, m.menu_key, m.menu_name, m.route_path, m.component_name, m.icon_name,
+  m.menu_id, m.parent_id, m.menu_key, m.menu_name, m.route_path, m.component, m.icon_name,
   m.menu_type, m.permission_key, m.sort_no, m.hidden, m.status, m.created_at, m.updated_at
 FROM t_admin_user_role ur
 JOIN t_admin_role_menu rm ON rm.role_id = ur.role_id

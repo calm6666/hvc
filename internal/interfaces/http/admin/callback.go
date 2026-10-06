@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -26,7 +25,7 @@ func (h *CallbackHandler) List(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePageParams(r)
 	items, total, err := h.repository.ListPage(r.Context(), page, pageSize, r.URL.Query().Get("callback_name"), parseOptionalBool(r.URL.Query().Get("enabled")))
 	if err != nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "query callback configs failed"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "查询回调配置列表失败"})
 		return
 	}
 	views := make([]callbackConfigView, 0, len(items))
@@ -53,8 +52,7 @@ func (h *CallbackHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		Priority         int    `json:"priority"`
 		RegistryID       uint64 `json:"registry_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	now := time.Now()
@@ -80,7 +78,7 @@ func (h *CallbackHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:        now,
 	}
 	if err := h.repository.Save(r.Context(), record); err != nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save callback config failed"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "保存回调配置失败"})
 		return
 	}
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"callback_config_id": id}})
@@ -92,12 +90,11 @@ func (h *CallbackHandler) SetEnabled(w http.ResponseWriter, r *http.Request) {
 		CallbackConfigID uint64 `json:"callback_config_id"`
 		Enabled          bool   `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if err := h.repository.SetEnabled(r.Context(), req.CallbackConfigID, req.Enabled); err != nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "update callback config failed"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "更新回调配置状态失败"})
 		return
 	}
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{"callback_config_id": req.CallbackConfigID, "enabled": req.Enabled}})

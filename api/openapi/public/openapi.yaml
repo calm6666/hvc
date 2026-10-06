@@ -58,7 +58,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/QueryProgressResponse'
 
-  /v1/manifest/dash/{job_id}.mpd:
+  /v1/manifest/dash/{job_id}:
     get:
       summary: 动态构建 DASH MPD 播放清单
       description: |
@@ -91,7 +91,7 @@ paths:
               schema:
                 type: string
 
-  /v1/manifest/hls/{job_id}.m3u8:
+  /v1/manifest/hls/{job_id}:
     get:
       summary: 动态构建 HLS Master 播放清单
       description: |
@@ -124,7 +124,7 @@ paths:
               schema:
                 type: string
 
-  /v1/manifest/hls/{job_id}/{rendition}.m3u8:
+  /v1/manifest/hls/{job_id}/{rendition}:
     get:
       summary: 动态构建 HLS Variant 播放清单
       description: |
@@ -173,6 +173,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LivePlaybackResponse'
+
+  /v1/live/channel/push-auth:
+    get:
+      summary: 直播推流鉴权
+      description: |
+        对接推流入口鉴权回调，返回是否允许推流以及签名过期时间。
+      operationId: livePushAuth
+      tags: [Live]
+      parameters:
+        - name: channel_key
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: expire
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sign
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveAuthResponse'
+
+  /v1/live/channel/play-auth:
+    get:
+      summary: 直播播放鉴权
+      description: |
+        对接播放层鉴权回调，返回是否允许播放以及签名过期时间。
+      operationId: livePlayAuth
+      tags: [Live]
+      parameters:
+        - name: channel_key
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: expire
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sign
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveAuthResponse'
 
 components:
   schemas:
@@ -439,6 +503,8 @@ components:
       properties:
         code:
           type: integer
+        message:
+          type: string
         data:
           type: object
           properties:
@@ -446,6 +512,12 @@ components:
               type: string
             status:
               type: string
+              description: 播放态状态值，当前实现返回 IDLE / RUNNING / STOPPED
+            play_token:
+              type: string
+            expire_at:
+              type: integer
+              format: int64
             master_hls_url:
               type: string
             http_flv_url:
@@ -454,3 +526,36 @@ components:
               type: array
               items:
                 type: string
+            renditions:
+              type: array
+              items:
+                type: object
+                properties:
+                  rendition_name:
+                    type: string
+                  is_source:
+                    type: boolean
+                  hls_url:
+                    type: string
+                  http_flv_url:
+                    type: string
+
+    LiveAuthResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            allowed:
+              type: boolean
+            reason:
+              type: string
+            channel_key:
+              type: string
+            expire_at:
+              type: integer
+              format: int64

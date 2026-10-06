@@ -6,7 +6,7 @@ import (
 )
 
 // EnsureLocalNode 确保本机节点在节点表里存在。
-func (r *ClusterNodeRepository) EnsureLocalNode(ctx context.Context, nodeID uint64, nodeName, hostIP, httpHost string) error {
+func (r *ClusterNodeRepository) EnsureLocalNode(ctx context.Context, nodeID uint64, nodeName, hostIP, grpcHost, httpHost, nodeTags string) error {
 	var record ClusterNodeRecord
 	now := time.Now()
 	result := r.db.WithContext(ctx).Where("node_id = ?", nodeID).Limit(1).Find(&record)
@@ -17,7 +17,9 @@ func (r *ClusterNodeRepository) EnsureLocalNode(ctx context.Context, nodeID uint
 		return r.db.WithContext(ctx).Model(&ClusterNodeRecord{}).Where("node_id = ?", nodeID).Updates(map[string]any{
 			"node_name":            nodeName,
 			"host_ip":              hostIP,
+			"grpc_host":            grpcHost,
 			"http_host":            httpHost,
+			"node_tags":            nodeTags,
 			"enabled":              true,
 			"last_state_change_at": now,
 			"updated_at":           now,
@@ -28,7 +30,9 @@ func (r *ClusterNodeRepository) EnsureLocalNode(ctx context.Context, nodeID uint
 		NodeID:             nodeID,
 		NodeName:           nodeName,
 		HostIP:             hostIP,
+		GRPCHost:           grpcHost,
 		HTTPHost:           httpHost,
+		NodeTags:           nodeTags,
 		Enabled:            true,
 		Quarantined:        false,
 		Draining:           false,
@@ -43,9 +47,13 @@ func (r *ClusterNodeRepository) EnsureLocalNode(ctx context.Context, nodeID uint
 
 // SetEnabled 切换节点启用状态。
 func (r *ClusterNodeRepository) SetEnabled(ctx context.Context, nodeID uint64, enabled bool) error {
+	now := time.Now()
 	return r.db.WithContext(ctx).Model(&ClusterNodeRecord{}).Where("node_id = ?", nodeID).Updates(map[string]any{
-		"enabled":    enabled,
-		"updated_at": time.Now(),
+		// enabled 也是节点治理状态的一部分，必须同步刷新状态变更时间，
+		// 否则后台治理时间线和审计排障会出现“状态变了但 last_state_change_at 没动”的错误口径。
+		"enabled":              enabled,
+		"last_state_change_at": now,
+		"updated_at":           now,
 	}).Error
 }
 

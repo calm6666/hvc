@@ -39,6 +39,17 @@ type SourceInfo struct {
 	DurationMS       int64   `json:"duration_ms"`
 }
 
+// CompletedSegmentDigest 单个分片的内容凭据（B3 清单物化）。
+//
+// 用途：A1 的判据是"回调送达 ⇒ 清单引用的每个分片都能 GET 到且 sha256 通过"。
+// 回调载荷里带上每片的摘要，下游（与门禁）就能在拿到回调后逐片复算校验，而不必信任我们的自述。
+// 摘要由切片产出时算好、随分片行落库（见 worker/segment_digest.go 与 verifyJobSegments）。
+type CompletedSegmentDigest struct {
+	ObjectKey string `json:"object_key"`
+	SHA256    string `json:"sha256"`
+	SizeBytes uint64 `json:"size_bytes"`
+}
+
 // CompletedRendition 转码完成的单个清晰度信息。
 type CompletedRendition struct {
 	RenditionName         string `json:"rendition_name"`
@@ -54,6 +65,8 @@ type CompletedRendition struct {
 	ManifestDashURL       string `json:"manifest_dash_url"`
 	ManifestHLSURL        string `json:"manifest_hls_url"`
 	ManifestHLSVariantURL string `json:"manifest_hls_variant_url"`
+	// Segments 该清晰度下每个媒体分片的摘要（不含 init 段）；顺序与清单里出现的顺序一致。
+	Segments []CompletedSegmentDigest `json:"segments,omitempty"`
 }
 
 // TranscodeFailedPayload 转码失败回调载荷。

@@ -1,6 +1,6 @@
 # HVC 视频转码服务 - 完整接口文档
 
-> 版本：2.0.0 | 更新日期：2026-05-09
+> 版本：2.0.0 | 更新日期：2026-05-12
 
 ---
 
@@ -215,9 +215,9 @@ GET /v1/transcode/job/progress?request_id=req-001
 ### 3.4 动态构建 DASH MPD
 
 ```
-GET /v1/manifest/dash/{job_id}.mpd
-GET /v1/manifest/dash/{job_id}.mpd?renditions=720p,480p
-GET /v1/manifest/dash/{job_id}.mpd?max_height=720
+GET /v1/manifest/dash/{job_id}
+GET /v1/manifest/dash/{job_id}?renditions=720p,480p
+GET /v1/manifest/dash/{job_id}?max_height=720
 ```
 
 | 参数 | 位置 | 说明 |
@@ -231,9 +231,9 @@ GET /v1/manifest/dash/{job_id}.mpd?max_height=720
 ### 3.5 动态构建 HLS Master
 
 ```
-GET /v1/manifest/hls/{job_id}.m3u8
-GET /v1/manifest/hls/{job_id}.m3u8?renditions=720p,480p
-GET /v1/manifest/hls/{job_id}.m3u8?max_height=720
+GET /v1/manifest/hls/{job_id}
+GET /v1/manifest/hls/{job_id}?renditions=720p,480p
+GET /v1/manifest/hls/{job_id}?max_height=720
 ```
 
 **响应：** `Content-Type: application/vnd.apple.mpegurl`，`Cache-Control: public, max-age=5`
@@ -241,7 +241,7 @@ GET /v1/manifest/hls/{job_id}.m3u8?max_height=720
 ### 3.6 动态构建 HLS Variant
 
 ```
-GET /v1/manifest/hls/{job_id}/{rendition}.m3u8
+GET /v1/manifest/hls/{job_id}/{rendition}
 ```
 
 **响应：** `Content-Type: application/vnd.apple.mpegurl`，`Cache-Control: public, max-age=5`
@@ -260,10 +260,20 @@ GET /v1/live/channel/playback?channel_key=live-001
   "message": "ok",
   "data": {
     "channel_key": "live-001",
-    "status": "LIVE",
+    "status": "RUNNING",
+    "play_token": "signed-token",
+    "expire_at": 1893456000,
     "master_hls_url": "https://cdn.example.com/live/live-001.m3u8",
     "http_flv_url": "https://cdn.example.com/live/live-001.flv",
-    "rendition_names": ["1080p", "720p", "480p"]
+    "rendition_names": ["1080p", "720p", "480p"],
+    "renditions": [
+      {
+        "rendition_name": "1080p",
+        "is_source": false,
+        "hls_url": "https://cdn.example.com/live/live-001/1080p.m3u8",
+        "http_flv_url": "https://cdn.example.com/live/live-001_1080p.flv"
+      }
+    ]
   }
 }
 ```
@@ -301,7 +311,10 @@ GET /v1/live/channel/play-auth?channel_key=live-001&expire=1700000000&sign=xxxx
 |------|------|------|
 | `/v1/admin/auth/login` | POST | 管理员登录（表单提交），通过 HttpOnly Cookie 建立后台会话 |
 | `/v1/admin/auth/logout` | POST | 管理员登出（需认证） |
-| `/v1/admin/auth/me` | GET | 获取当前用户信息（需认证） |
+| `/v1/admin/auth/current-user` | GET | 获取当前管理员会话与菜单/权限数据（首选路径，需认证） |
+| `/v1/admin/auth/profile` | GET | 获取当前管理员会话与菜单/权限数据（兼容推荐路径，需认证） |
+| `/v1/admin/auth/session` | GET | 获取当前管理员会话（兼容别名，需认证） |
+| `/v1/admin/auth/me` | GET | 获取当前管理员会话（兼容别名） |
 | `/v1/admin/ping` | GET | 后台接口存活检查（需认证） |
 
 **登录请求（表单提交）：**
@@ -353,14 +366,34 @@ username=admin&password=admin123&otp_code=
       "system.user.read",
       "system.menu.read"
     ],
-    "menu_tree": [
+    "tree": true,
+    "items": [
       {
+        "id": 100,
         "menu_id": 100,
         "parent_id": 0,
         "menu_key": "system",
         "menu_name": "系统管理",
         "route_path": "/system",
-        "component_name": "Layout",
+        "component": "Layout",
+        "icon_name": "settings",
+        "menu_type": "catalog",
+        "permission_key": "",
+        "sort_no": 10,
+        "hidden": false,
+        "status": 1,
+        "children": []
+      }
+    ],
+    "menu_tree": [
+      {
+        "id": 100,
+        "menu_id": 100,
+        "parent_id": 0,
+        "menu_key": "system",
+        "menu_name": "系统管理",
+        "route_path": "/system",
+        "component": "Layout",
         "icon_name": "settings",
         "menu_type": "catalog",
         "permission_key": "",
@@ -374,75 +407,64 @@ username=admin&password=admin123&otp_code=
 }
 ```
 
+说明：
+
+- `auth/session` 现以 `data.items + data.tree=true` 作为统一菜单树口径
+- `menu_tree` 仍保留为兼容字段，方便旧前端平滑迁移
+- 菜单树节点统一包含 `id`, `menu_id`, `parent_id`, `component` 等完整字段，前端可直接用 `id` 做唯一键
+
 ### 4.2 运行配置管理
 
 说明：
 
 - 运行期业务配置的唯一生效源是数据库中的已发布 `runtime config`
 - 本地 `configs/config.yaml` 已收敛为 bootstrap 配置；首版 runtime config 使用程序内置默认值初始化
+- `configs/config.yaml` 中的 `server.node_mode` 明确声明节点部署角色：`standalone / cluster-control / cluster-worker / cluster-allinone`
+- `node_mode` 会对本节点最终生效的模块边界做硬约束：
+  - `cluster-control` 不会被共享 runtime config 热改成执行节点
+  - `cluster-worker` 不会被共享 runtime config 热改成调度节点，也不会在本机启动 `http/public gRPC/mq consumer/callback`
 - 若启动配置里仍然写入 `scheduler/worker/callback/storage/grpc/mq` 段，服务会在启动校验阶段直接报错
 - 外部“配置中心”绑定不直接下发运行时业务配置，也不参与运行期热更新
 
 | 接口 | 方法 | 权限 | 说明 |
 |------|------|------|------|
 | `/v1/admin/config/runtime/versions` | GET | config.version.read | 查询配置版本列表 |
-| `/v1/admin/config/runtime/update` | POST | config.runtime.update | 更新运行配置（创建待发布版本） |
+| `/v1/admin/config/runtime/server/update` | POST | config.runtime.update | 仅更新 HTTP/WebSocket 对外暴露开关（创建待发布版本） |
+| `/v1/admin/config/runtime/scheduler/update` | POST | config.runtime.update | 仅更新调度策略相关运行配置（创建待发布版本） |
+| `/v1/admin/config/runtime/worker/update` | POST | config.runtime.update | 仅更新 Worker 轮询/心跳/上传并发配置（创建待发布版本） |
+| `/v1/admin/config/runtime/storage/update` | POST | config.runtime.update | 仅更新存储相关运行配置（创建待发布版本） |
+| `/v1/admin/config/runtime/callback/update` | POST | config.runtime.update | 仅更新默认回调兜底配置（创建待发布版本） |
+| `/v1/admin/config/runtime/mq/update` | POST | config.runtime.update | 仅更新 MQ 消费相关运行配置（创建待发布版本） |
+| `/v1/admin/config/runtime/grpc/update` | POST | config.runtime.update | 仅更新对外 public gRPC 相关运行配置（创建待发布版本） |
 | `/v1/admin/config/publish` | POST | config.version.publish | 发布配置版本 |
 
 **配置版本列表查询参数：** `page`, `page_size`, `published`
 
 **配置版本列表返回字段：**
 - 分页统一为：`page`, `page_size`, `total`, `items`
-- `items[*]` 关键字段包括：`config_version`, `published`, `enable_http_server`, `enable_grpc_server`, `enable_mq_consumer`, `storage_type`, `change_summary`, `config_source`, `published_by`, `published_at`
+- `items[*]` 关键字段包括：`config_version`, `published`, `enable_http_server`, `enable_grpc_server`, `public_grpc_registry_id`, `enable_mq_consumer`, `storage_type`, `change_summary`, `config_source`, `published_by`, `published_at`
 - 出于安全考虑，`callback_rpc_endpoint`、`mq_password`、`storage_access_key_id`、`storage_secret_access_key` 在列表接口里返回的是脱敏值，不会回传明文
 
-**更新运行配置请求：**
+**按域更新运行配置说明：**
+
+- 运行时配置对外只保留分域更新接口，不再暴露全量 `runtime/update`
+- `server/update` 负责 HTTP 主入口与 WebSocket 监控入口热启停
+- `scheduler/update` 负责调度总并发、租约 TTL、请求覆盖、硬件编码约束、节点安全阈值等
+- `worker/update` 负责 Worker 心跳超时、轮询周期、单任务上传并发
+- `storage/update` 负责存储与对象前缀
+- `callback/update` 负责默认回调兜底开关与 `callback_*`
+- `mq/update` 负责 MQ 创建任务消费者参数
+- `grpc/update` 负责对外 public gRPC 开关、监听地址与 etcd 绑定
+- 更新后均生成新的待发布版本，再通过 `/v1/admin/config/publish` 生效
+
+**分域更新请求示例（以 gRPC 为例）：**
 
 ```json
 {
-  "enable_http_server": true,
-  "enable_callback": true,
-  "default_profile_id": 0,
-  "max_global_transcode_sessions": 100,
-  "job_lease_ttl_sec": 300,
-  "worker_heartbeat_timeout_sec": 30,
-  "allow_request_override_profile": true,
-  "allow_request_override_segment_duration": true,
-  "allow_request_override_hwaccel": true,
-  "scheduler_loop_interval_ms": 1000,
-  "worker_loop_interval_ms": 1000,
-  "single_job_upload_concurrency": 4,
-  "require_hardware_encode": false,
-  "allow_software_decode_fallback": true,
-  "require_hardware_watermark": false,
-  "node_cpu_safety_limit_percent": 85,
-  "node_memory_safety_limit_percent": 85,
-  "node_gpu_safety_limit_percent": 90,
-  "callback_http_url": "https://callback.example.com/transcode",
-  "callback_mq_topic": "transcode.job.callback",
   "enable_grpc_server": true,
   "grpc_listen_address": ":9090",
-  "enable_mq_consumer": true,
-  "mq_queue_name": "hvc.transcode.create",
-  "mq_host": "127.0.0.1",
-  "mq_port": 5672,
-  "mq_username": "guest",
-  "mq_password": "guest",
-  "mq_vhost": "/",
-  "mq_consumer_tag": "hvc-runtime",
-  "mq_prefetch_count": 16,
-  "storage_type": "s3",
-  "storage_endpoint": "127.0.0.1:9000",
-  "storage_bucket": "hvc-media",
-  "storage_access_key_id": "minioadmin",
-  "storage_secret_access_key": "minioadmin",
-  "storage_use_ssl": false,
-  "storage_play_domain": "https://play.example.com/live",
-  "storage_flv_domain": "https://flv.example.com/live",
-  "storage_local_base_path": "/data/hvc/media",
-  "default_storage_id": 0,
-  "worker_object_prefix": "hvc/runtime",
-  "change_summary": "增加全局并发数"
+  "public_grpc_registry_id": 3001,
+  "change_summary": "更新对外 gRPC 暴露"
 }
 ```
 
@@ -451,11 +473,16 @@ username=admin&password=admin123&otp_code=
 - `scheduler` / `worker` / `callback` 运行参数会按最新生效配置热更新
 - `HTTP` 对外入口、`WebSocket` 监控入口跟随 `enable_http_server` 热启停；监听地址仍由 bootstrap `server.listen_address` 固定
 - `callback` 投递模块支持通过 `enable_callback` 热启停
-- 对外 `public gRPC` 服务支持动态启停与监听地址切换
+- 对外 `public gRPC` 服务支持动态启停与监听地址切换；若 `public_grpc_registry_id > 0`，服务启动后会把当前实例可访问地址注册到对应 etcd 命名空间，并在配置发布导致 registry 变化时自动重建注册
 - `internal_grpc` 属于 bootstrap 配置，不参与运行期热更新，也不会被 `enable_grpc_server` 影响
 - `MQ` 创建任务消费者支持动态启停与队列/连接参数切换；启用时必须同时提供 `mq_queue_name` 和 `mq_host`
+- `cluster-worker` 节点即使读到全局开启的 runtime config，也会在本机被硬约束为不启动 `HTTP/public gRPC/MQ consumer/callback/scheduler`，只保留 worker 与 internal gRPC
 - 配置发布后会先更新 MySQL，再刷新 Redis 缓存版本；所有节点通过 Redis 版本探测自动同步到最新已发布版本
 - 已在运行中的转码任务不会被强制中断，但后续轮询、上传、回调和新任务派发会按新配置执行
+
+说明补充：
+
+- `/v1/admin/config/runtime/server|scheduler|worker|storage|callback|mq|grpc/update` 适合后台按模块拆分编辑，未传字段会继续沿用当前已发布版本。
 
 **发布配置请求：**
 
@@ -534,15 +561,35 @@ username=admin&password=admin123&otp_code=
 | callback_type | 说明 |
 |---------------|------|
 | 1 | HTTP 回调（POST 到 target_url） |
-| 2 | gRPC 回调（调用 rpc_endpoint） |
+| 2 | gRPC 回调（优先调用 rpc_endpoint；若为空则用 registry_id + rpc_service_name 走 etcd 发现） |
 | 3 | MQ 回调（发送到 mq_exchange + mq_routing_key） |
 
 说明：
 - 系统级回调目标通过 `/v1/admin/config/callback/upsert` 和 `/v1/admin/config/callback/enabled` 保存后立即生效，无需发布运行时配置版本。
 - 单任务 `callback_url` 优先级高于系统级回调配置。
-- 系统级回调同时支持 HTTP、gRPC、MQ 三种形式；其中 gRPC 使用 `rpc_endpoint + rpc_service_name`，MQ 使用 `mq_exchange + mq_routing_key`。
+- 系统级回调同时支持 HTTP、gRPC、MQ 三种形式；其中 gRPC 既支持 `rpc_endpoint + rpc_service_name` 固定地址，也支持 `registry_id + rpc_service_name` 通过 etcd 动态发现，MQ 使用 `mq_exchange + mq_routing_key`。
 - runtime config 里的 `callback_http_url` / `callback_mq_topic` 仅保留兼容兜底语义；主配置入口仍然是 `callback_config` 表。
 - 单次投递失败会写入补偿记录，记录中会落具体的 `callback_url` 实际目标值（字段名为 `callback_target`），便于排障和审计。
+
+### 4.3.1 etcd 注册配置管理
+
+| 接口 | 方法 | 权限 | 说明 |
+|------|------|------|------|
+| `/v1/admin/registry/etcd/list` | GET | config.version.read | 查询 etcd 注册配置分页列表 |
+| `/v1/admin/registry/etcd/upsert` | POST | config.runtime.update | 创建/更新 etcd 注册配置 |
+| `/v1/admin/registry/etcd/enabled` | POST | config.runtime.update | 启用/禁用 etcd 注册配置 |
+
+用途说明：
+
+- 对外 `public gRPC` 的 etcd 注册使用 `runtime config.public_grpc_registry_id` 绑定。
+- gRPC 类型回调配置可使用 `callback_config.registry_id` 绑定。
+- 服务注册 key 采用 `/{service_namespace}/{service_name}/{endpoint}` 形式；当前 public gRPC 服务名为 `transcode.v1.TranscodePublicService`。
+
+**etcd 注册配置列表查询参数：** `page`, `page_size`, `registry_name`, `enabled`
+
+**etcd 注册配置列表返回字段：**
+- 分页统一为：`page`, `page_size`, `total`, `items`
+- `items[*]` 关键字段包括：`registry_id`, `registry_name`, `endpoints`, `service_namespace`, `lease_ttl_sec`, `dial_timeout_ms`, `enabled`, `priority`, `created_at`, `updated_at`
 
 **回调配置写入成功响应：**
 
@@ -568,6 +615,7 @@ username=admin&password=admin123&otp_code=
 
 - 该接口虽然总共只有 6 条预置方案，但返回结构已统一为分页格式：`page/page_size/total/items`
 - `current_template` 单独返回当前运行时生效模板
+- `saved_templates` 会额外返回最近保存过的模板记录，字段包括：`id`, `config_version`, `output_base_tpl`, `init_seg_name_tpl`, `media_seg_name_tpl`, `created_at`
 
 **配置模板请求：**
 
@@ -628,7 +676,7 @@ username=admin&password=admin123&otp_code=
 **配置中心绑定列表查询参数：** `page`, `page_size`, `provider_type`, `enabled`
 
 **配置中心绑定列表返回字段：**
-- 顶层除分页字段外，还会返回：`config_scope`, `affects_runtime`, `runtime_update_path`, `runtime_publish_path`
+- 顶层除分页字段外，还会返回：`config_scope`, `affects_runtime`, `runtime_update_paths`, `runtime_publish_path`
 - `items[*]` 关键字段包括：`binding_id`, `binding_name`, `provider_type`, `endpoint`, `namespace`, `auth_mode`, `enabled`, `priority`, `last_sync_status`, `last_sync_at`, `binding_usage`
 - `access_key`、`secret_key`、`token` 在列表接口中同样只返回脱敏值，便于确认是否已配置，但不泄露明文
 
@@ -637,7 +685,7 @@ username=admin&password=admin123&otp_code=
 - 该组接口用于维护外部 bootstrap 配置源元数据，例如 MySQL/集群注册/节点身份这类启动基础配置来源
 - 该组接口不直接发布 `scheduler/worker/callback/http/grpc/mq` 等运行期业务配置
 - 本地 `configs/config.yaml` 同样不允许再携带这些业务动态段，误写会导致启动失败
-- 运行期业务配置仍通过 `/v1/admin/config/runtime/update` + `/v1/admin/config/publish` 生效
+- 运行期业务配置通过分域接口 `/v1/admin/config/runtime/server|scheduler|worker|storage|callback|mq|grpc/update` + `/v1/admin/config/publish` 生效
 - `list`/`upsert`/`enabled` 返回都会显式带上 `config_scope=bootstrap` 与 `affects_runtime=false`
 
 **配置中心绑定写入成功响应：**
@@ -699,8 +747,10 @@ username=admin&password=admin123&otp_code=
 - `user/list`、`role/list`、`audit/list` 为分页接口
 - 权限和菜单改为树形返回，不分页，统一放在 `data.items`
 - `role/all` 用于下拉选择器，返回全部角色，统一放在 `data.items`
+- `role/menu/tree` 同样统一返回 `data.items`，并通过 `role_id`、`menu_ids` 标识当前角色上下文
 - 树接口和非分页全量列表接口统一返回 `data.items`；树接口额外返回 `data.tree=true`
 - 用户列表、登录态用户信息、用户写接口响应均已屏蔽 `password_hash` 与 `password_salt`
+- 创建/更新管理员用户接口统一接收明文 `password`，由后端负责做哈希；`password_hash` 仅保留旧客户端兼容，不再推荐使用
 - `role/upsert`、`permission/upsert`、`menu/upsert` 不再直接返回数据库结构体，而是统一返回 snake_case 视图对象
 
 **用户列表查询参数：** `page`, `page_size`, `username`, `status`
@@ -718,11 +768,24 @@ username=admin&password=admin123&otp_code=
 ```json
 {
   "username": "operator",
-  "password_hash": "$2a$10$...",
+  "password": "admin123",
   "display_name": "运维人员",
   "status": 1
 }
 ```
+
+- 新建管理员时 `password` 必填
+- 更新管理员时不传 `password` 表示保留原密码
+
+**权限树返回说明：**
+
+- `data.items[*]` 统一包含 `id`, `parent_id`, `perm_id`, `key`, `label`, `node_type`, `module`, `children`
+- 目录节点（`module` / `group`）主要用于树结构组织；叶子权限节点额外携带真实 `perm_id`
+
+**菜单树返回说明：**
+
+- `/v1/admin/system/menu/tree`、`/v1/admin/system/menu/current-tree`、`/v1/admin/system/role/menu/tree` 的 `data.items[*]` 统一包含 `id`, `menu_id`, `parent_id`, `menu_key`, `menu_name`, `route_path`, `component`, `icon_name`, `menu_type`, `permission_key`, `sort_no`, `hidden`, `status`, `children`
+- `component` 用于保存前端组件路径；`component_name` 仅作为旧客户端兼容入参，后续应统一只传 `component`
 
 **启用/禁用用户请求：**
 
@@ -759,7 +822,7 @@ username=admin&password=admin123&otp_code=
 
 ```json
 {
-  "user_id": 2,
+  "admin_user_id": 2,
   "role_id": 2
 }
 ```
@@ -782,7 +845,7 @@ username=admin&password=admin123&otp_code=
   "menu_key": "system.user",
   "menu_name": "用户管理",
   "route_path": "/system/user",
-  "component_name": "system/user/index",
+  "component": "system/user/index",
   "icon_name": "users",
   "menu_type": "menu",
   "permission_key": "system.user.read",
@@ -860,12 +923,13 @@ username=admin&password=admin123&otp_code=
   "code": 0,
   "message": "ok",
   "data": {
+    "id": 101,
     "menu_id": 101,
     "parent_id": 100,
     "menu_key": "system.user",
     "menu_name": "用户管理",
     "route_path": "/system/user",
-    "component_name": "system/user/index",
+    "component": "system/user/index",
     "icon_name": "users",
     "menu_type": "menu",
     "permission_key": "system.user.read",
@@ -903,8 +967,8 @@ username=admin&password=admin123&otp_code=
 | `/v1/admin/cluster/member/list` | GET | cluster.read | 集群成员分页列表 |
 | `/v1/admin/cluster/worker/list` | GET | cluster.read | Worker 实例分页列表 |
 | `/v1/admin/cluster/scheduler/insight` | GET | cluster.read | 调度洞察 |
-| `/v1/admin/cluster/worker/offline` | POST | cluster.worker.offline | 手动下线 Worker |
-| `/v1/admin/cluster/worker/exit` | POST | cluster.worker.exit | 手动标记 Worker 退出 |
+| `/v1/admin/cluster/worker/offline` | POST | cluster.worker.offline | 手动下线 Worker，优先远程下发到目标节点 |
+| `/v1/admin/cluster/worker/exit` | POST | cluster.worker.exit | 手动标记 Worker 退出，优先远程下发到目标节点 |
 | `/v1/admin/cluster/job/takeover` | POST | cluster.job.takeover | 强制接管节点/Worker上的活跃任务 |
 | `/v1/admin/cluster/node/enabled` | POST | cluster.node.enable | 启用/禁用节点 |
 | `/v1/admin/cluster/node/quarantined` | POST | cluster.node.quarantine | 隔离/取消隔离节点 |
@@ -913,26 +977,45 @@ username=admin&password=admin123&otp_code=
 `/v1/admin/cluster/overview` 返回重点包括：
 
 - 当前运行模式：`standalone / cluster-control / cluster-worker / cluster-allinone`
+- `node_mode`：节点 bootstrap 部署角色，稳定不因运行时模块热停而漂移
+- `mode`：当前激活模块组合摘要，用于观察运行态，不用于表达部署角色
 - 集群拓扑：当前节点角色、当前节点是否控制面、控制面节点总数、可访问后台节点总数、worker-only 节点总数、控制面节点列表
+- 集群拓扑还会给出推荐后台入口：`recommended_admin_node_id`、`recommended_admin_base_url`
 - 模块状态：HTTP、public gRPC、internal gRPC、MQ consumer、scheduler、worker、callback
+- public gRPC 观测：当前启停状态、运行时监听地址、是否绑定 etcd、绑定的 registry_id、service_namespace、租约 TTL、dial timeout
+- public gRPC 观测还会返回：`registry_key`、`registry_key_exists`、`registry_value_json`、`registry_lease_id`、`registry_lease_ttl_sec`，用于直接判断当前实例应该注册的 etcd key 是否已经落进去，以及当前 lease 是否还活着
+- `governance`：最近 24 小时的集群治理动作摘要，除 `recent_action_total`、`latest_action` 和 `recent_actions` 外，还会返回启用/停用、隔离/解除隔离、排空/恢复调度、worker 下线/退出、任务接管等动作计数
 - 调度器状态：`max_global_transcode_sessions`、`active_execution_total`、`remaining_execution_capacity`、`worker_heartbeat_timeout_sec`
 - 集群统计：节点总数、启用节点数、隔离节点数、排空节点数、在线节点数、成员数、GPU 总数、可调度 GPU 数、活动会话数、上传队列深度
 - Worker 统计：`worker_total`、`worker_online_total`
-- 节点摘要：每个节点的启用/隔离/在线状态、GPU 总数、可调度 GPU 数、活动转码会话、上传队列深度
+- 节点摘要：每个节点的启用/隔离/在线状态、在线判定来源、是否可调度、不可调度原因、GPU 总数、可调度 GPU 数、活动转码会话、上传队列深度
 - 版本信息：MySQL 服务端版本、Redis 服务端版本、Redis 模式、运行时配置数据库版本、运行时配置 Redis 缓存版本、缓存 TTL
+- 在线判定口径：优先看 worker metrics，其次看 `t_cluster_node.last_heartbeat_at`，控制面节点还会额外参考 registry 心跳，因此不跑 worker 的 control-plane 节点也不会被误判离线
 
 `/v1/admin/cluster/realtime` 适合后台轮询，除 `overview` 的聚合字段外，还直接返回：
 
 - 任务队列计数：`queued / assigned / running / uploading / completed / failed / canceled`
 - `nodes` 节点聚合视图：节点主档、`metrics_available`、`metrics_fresh`、`scheduler_ready`、`state_reason`、`online_estimate`、`last_metrics_at`
 - `topology`：补充当前节点角色、控制面节点列表与后台可访问节点统计，便于判断后台当前连到的是不是控制面节点
+- `topology` 还会返回推荐后台入口，后台轮询页和巡检脚本可直接用来选择控制面目标
 - `resource/distribution`：返回每台节点的活跃执行数、转码会话数、上传队列深度、剩余转码容量、剩余上传容量，以及每张 GPU 的活跃会话与实时利用率
+- `resource/distribution` 还会补充 `control_plane`、`admin_accessible`、`online_signal_source`，便于一眼区分控制面节点与执行节点
 - `gpu_summary`：单节点 GPU 数、健康数、可调度数、最大并发会话数
+- `overview` / `realtime` / `topology` / `resource/distribution` 当前会写入 2~3 秒的 Redis 摘要缓存，用于削平后台高频轮询尖峰；正常运维刷新通常不会感知到差异，但不应把这些接口当作亚秒级强实时流使用
 
 说明：
 - `cluster/realtime` 面向后台轮询，返回的是节点聚合视图，不返回 `gpu_devices`
 - `gpu_devices[*].runtime_capability` 仅在 `cluster/node/detail` 中返回，适合排障和能力核查
 - 示例中的 `internal_grpc.listen_address` 属于 bootstrap 固定入口，默认示例端口为 `:19090`；对外 `public gRPC` 监听地址由 runtime config 中的 `grpc_listen_address` 决定，默认示例端口为 `:9090`
+- `overview` 与 `realtime` 中的 `public_grpc` 用于回答“当前北向 RPC 是否真的启着、是否绑定了 etcd、绑定的是哪一组注册配置”
+
+**集群治理写接口返回说明：**
+
+- `/cluster/node/enabled` 返回：`node_id`, `enabled`, `target_status`, `takeover_active_jobs`, `takeover_result`
+- `/cluster/node/quarantined` 返回：`node_id`, `quarantined`, `target_status`, `takeover_active_jobs`, `takeover_result`
+- `/cluster/node/draining` 返回：`node_id`, `draining`, `target_status`, `takeover_active_jobs`, `takeover_result`
+- `/cluster/worker/offline` 与 `/cluster/worker/exit` 返回：`worker_id`, `node_id`, `control_path`, `target_status`, `takeover_active_jobs`, `takeover_result`
+- `/cluster/job/takeover` 返回：`matched_job_total`, `reset_job_total`, `abandoned_execution_total`
 
 **集群总览响应关键结构：**
 
@@ -964,6 +1047,83 @@ username=admin&password=admin123&otp_code=
     "internal_grpc": {
       "listen_address": ":19090"
     },
+    "public_grpc": {
+      "enabled": true,
+      "listen_address": ":9090",
+      "effective_endpoint": ":9090",
+      "registry_bound": true,
+      "registry_id": 3001,
+      "service_name": "transcode.v1.TranscodePublicService",
+      "discovery_mode": "etcd",
+      "service_namespace": "/vod/transcoding",
+      "registry_endpoints": [
+        "127.0.0.1:2379"
+      ],
+      "registry_enabled": true,
+      "lease_ttl_sec": 30,
+      "dial_timeout_ms": 3000
+    },
+    "governance": {
+      "window_minutes": 1440,
+      "recent_action_total": 3,
+      "node_enable_total": 0,
+      "node_disable_total": 0,
+      "node_quarantine_total": 0,
+      "node_unquarantine_total": 0,
+      "node_drain_total": 1,
+      "node_resume_total": 0,
+      "worker_offline_total": 1,
+      "worker_exit_total": 0,
+      "job_takeover_total": 1,
+      "latest_action": {
+        "action_name": "cluster.node.drain",
+        "target_type": "cluster_node",
+        "target_id": "1",
+        "result_code": 0,
+        "result_message": "{\"target_status\":\"draining\",\"takeover_active_jobs\":true,\"takeover_result\":{\"matched_job_total\":3,\"reset_job_total\":2,\"abandoned_execution_total\":1},\"reason\":\"rolling_upgrade\"}",
+        "result": {
+          "target_status": "draining",
+          "takeover_active_jobs": true,
+          "takeover_result": {
+            "matched_job_total": 3,
+            "reset_job_total": 2,
+            "abandoned_execution_total": 1
+          },
+          "extras": {
+            "reason": "rolling_upgrade"
+          }
+        },
+        "request_ip": "127.0.0.1:54321",
+        "created_at": "2026-05-11T10:00:00+08:00",
+        "admin_user_id": 1,
+        "username": "admin"
+      },
+      "recent_actions": [
+        {
+          "action_name": "cluster.node.drain",
+          "target_type": "cluster_node",
+          "target_id": "1",
+          "result_code": 0,
+          "result_message": "{\"target_status\":\"draining\",\"takeover_active_jobs\":true,\"takeover_result\":{\"matched_job_total\":3,\"reset_job_total\":2,\"abandoned_execution_total\":1},\"reason\":\"rolling_upgrade\"}",
+          "result": {
+            "target_status": "draining",
+            "takeover_active_jobs": true,
+            "takeover_result": {
+              "matched_job_total": 3,
+              "reset_job_total": 2,
+              "abandoned_execution_total": 1
+            },
+            "extras": {
+              "reason": "rolling_upgrade"
+            }
+          },
+          "request_ip": "127.0.0.1:54321",
+          "created_at": "2026-05-11T10:00:00+08:00",
+          "admin_user_id": 1,
+          "username": "admin"
+        }
+      ]
+    },
     "cluster": {
       "node_total": 2,
       "node_enabled_total": 2,
@@ -981,10 +1141,16 @@ username=admin&password=admin123&otp_code=
         {
           "node_id": 1,
           "node_name": "node-a",
+          "node_role": "cluster-allinone",
           "enabled": true,
           "quarantined": false,
           "draining": false,
+          "control_plane": true,
+          "admin_accessible": true,
           "online_estimate": true,
+          "online_signal_source": "metrics",
+          "scheduler_ready": true,
+          "state_reason": "ready",
           "gpu_total": 2,
           "gpu_schedulable_total": 2,
           "active_transcode_sessions": 3,
@@ -1021,19 +1187,32 @@ GET /v1/admin/cluster/node/metrics?node_id=1
 说明：
 - `node.list` 查询参数：`page`, `page_size`, `keyword`, `enabled`, `quarantined`, `draining`
 - `node.detail` 统一从 query string 读取 `node_id`
-- `node.metrics` 查询参数：`page`, `page_size`, `node_id`
-- `member.list` 查询参数：`page`, `page_size`
-- `node.metrics` 支持全量查询；传 `node_id` 时仅返回指定节点指标
+- `node.metrics` 查询参数：`page`, `page_size`, `keyword`, `enabled`, `quarantined`, `draining`, `node_id`
+- `member.list` 查询参数：`page`, `page_size`, `keyword`, `enabled`, `quarantined`, `draining`
+- `node.metrics` 现以节点分页为基准，只拼当前页节点的最新运行态指标；传 `node_id` 时仅返回指定节点
+- `member.list` 现以节点主表分页为基准，再补充 registry / metrics / worker 汇总字段，不再先构造全量成员快照后内存分页
+- `overview` / `realtime` / `resource.distribution` 中的任务状态计数、按节点活跃任务数、Worker 总数与按节点在线数，现已改为数据库聚合查询，避免后台轮询时反复把整张任务表和 Worker 表拉回进程内统计
+- `overview` / `realtime` / `resource.distribution` / `node.list` / `node.metrics` 读取节点运行态指标时，现已改为按当前节点集合批量执行 Redis `MGET`，不再逐节点单独往返 Redis
+- `node.list` / `member.list` 构建节点聚合视图时，只会查询当前节点集合对应的 GPU 主档，不再为分页结果额外拉取整张 GPU 表
+- `overview` / `realtime` 的 GPU 总数、健康数、可调度数、最大会话数，现已直接走数据库按节点聚合，不再先构造所有 GPU 明细对象后再汇总
+- `scheduler.insight` 构建候选节点快照时，也会按当前节点集合批量读取 Redis metrics，并复用数据库 GPU 活跃会话聚合结果
+- 调度器真实分配循环不会再每轮全量拉取所有 queued 任务，而是按“优先级倒序 + 创建时间正序”拉取一个与剩余全局并发容量相关的有限批次
+- 调度真实分配和 `scheduler.insight` 的 codec 过滤现在都会消费任务中锁定的 `renditions[*].video_codec`，不会再出现请求指定编码格式但调度过滤阶段未生效的问题
+- 节点在线估算所依赖的 registry 心跳也会先一次性构造成内存快照，再参与节点视图拼装，避免按节点重复扫描 registry
 - `node.list` 与 `node.detail` 返回聚合视图，而不是单纯数据库原始行；后台不需要再自行拼装 GPU 与实时指标
-- `node.list.items[*]` 关键字段包括：`node_id`, `node_name`, `host_ip`, `grpc_host`, `http_host`, `enabled`, `quarantined`, `draining`, `drain_reason`, `metrics_fresh`, `scheduler_ready`, `state_reason`, `last_metrics_at`, `metrics`, `gpu_summary`
+- `node.list.items[*]` 关键字段包括：`node_id`, `node_name`, `node_role`, `host_ip`, `grpc_host`, `http_host`, `enabled`, `quarantined`, `draining`, `drain_reason`, `control_plane`, `admin_accessible`, `metrics_fresh`, `online_signal_source`, `scheduler_ready`, `state_reason`, `last_metrics_at`, `metrics`, `gpu_summary`
+- `overview.cluster.nodes[*]` 关键字段包括：`node_role`, `control_plane`, `admin_accessible`, `online_signal_source`, `scheduler_ready`, `state_reason`
 - `member.list.items[*]` 关键字段包括：`node_role`, `control_plane`, `admin_accessible`
-- `member.list.items[*]` 关键字段包括：`node_id`, `node_name`, `host`, `host_ip`, `grpc_host`, `http_host`, `online_estimate`, `source`, `last_heartbeat_at`, `registry_heartbeat_at`, `last_metrics_at`, `worker_total`, `worker_online_total`, `draining`
+- `member.list.items[*]` 关键字段包括：`node_id`, `node_name`, `host`, `host_ip`, `grpc_host`, `http_host`, `online_estimate`, `online_signal_source`, `scheduler_ready`, `state_reason`, `source`, `last_heartbeat_at`, `registry_heartbeat_at`, `last_metrics_at`, `worker_total`, `worker_online_total`, `draining`
 - `worker.list` 查询参数：`page`, `page_size`, `node_id`, `worker_id`, `status`, `online_only`
-- `worker.list.items[*]` 关键字段包括：`worker_id`, `logical_worker_id`, `physical_worker_id`, `startup_instance_id`, `online_estimate`, `last_heartbeat_at`
+- `worker.list.items[*]` 关键字段包括：`worker_id`, `logical_worker_id`, `physical_worker_id`, `startup_instance_id`, `online_estimate`, `status_source`, `last_heartbeat_at`
 - `worker.list.items[*].status_name` 当前取值：`online`、`offline`、`exited`；其中 `offline` 由心跳超时自动收口
+- `worker.list.items[*].status_source` 当前取值包括：`heartbeat`、`heartbeat_stale`、`heartbeat_timeout`、`manual_offline`、`manual_exit`、`process_exit`
 - `draining=true` 表示节点处于排空维护模式，只阻止新任务调度，不会中断已在执行的任务
+- `online_signal_source` 当前取值包括：`metrics`、`node_heartbeat`、`registry`、`unknown`。其中 control-plane 节点即使不跑 worker metrics，也会通过 registry 心跳保持在线判定一致
 - `scheduler.insight` 查询参数：`preferred_hw_accel`, `video_codec`, `enable_watermark`
 - `scheduler.insight` 会返回当前调度器快照、候选节点列表、过滤原因、Top-K 池和推荐结果，主要用于后台排障与容量分析
+- `scheduler.insight.candidates[*]` 关键字段包括：`node_id`, `node_name`, `node_role`, `enabled`, `quarantined`, `draining`, `control_plane`, `admin_accessible`, `shielded`, `metrics_available`, `metrics_fresh`, `online`, `online_signal_source`, `scheduler_ready`, `state_reason`, `score`, `score_rank`, `filter_passed`, `filter_reasons`, `in_top_k_pool`, `decision_preview`, `metrics`
 
 **集群实时快照请求（GET）：**
 
@@ -1052,18 +1231,34 @@ GET /v1/admin/cluster/worker/list?page=1&page_size=20&node_id=1&worker_id=&statu
 ```json
 {
   "worker_id": "worker-node1-001",
-  "reason": "manual isolate"
+  "reason": "manual isolate",
+  "takeover_active_jobs": true
 }
 ```
+
+成功响应会额外返回：
+- `node_id`：目标 Worker 所属节点
+- `control_path`：本次控制实际走的是 `local_worker_module` 还是 `internal_grpc`
+- `target_status`：目标状态，当前为 `offline`
+- `takeover_active_jobs`：是否已请求联动任务接管
+- `takeover_result`：当 `takeover_active_jobs=true` 时返回接管统计，包括 `matched_job_total`、`reset_job_total`、`abandoned_execution_total`
 
 **Worker 手动标记退出请求：**
 
 ```json
 {
   "worker_id": "worker-node1-001",
-  "reason": "process terminated by operator"
+  "reason": "process terminated by operator",
+  "takeover_active_jobs": true
 }
 ```
+
+成功响应会额外返回：
+- `node_id`：目标 Worker 所属节点
+- `control_path`：本次控制实际走的是 `local_worker_module` 还是 `internal_grpc`
+- `target_status`：目标状态，当前为 `exited`
+- `takeover_active_jobs`：是否已请求联动任务接管
+- `takeover_result`：当 `takeover_active_jobs=true` 时返回接管统计，包括 `matched_job_total`、`reset_job_total`、`abandoned_execution_total`
 
 **调度洞察请求（GET）：**
 
@@ -1076,9 +1271,16 @@ GET /v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h2
 ```json
 {
   "node_id": 1,
-  "enabled": true
+  "enabled": false,
+  "reason": "host maintenance",
+  "takeover_active_jobs": true
 }
 ```
+
+成功响应会额外返回：
+- `target_status`：当前为 `enabled` 或 `disabled`
+- `takeover_active_jobs`：仅当 `enabled=false` 时才可能为 `true`
+- `takeover_result`：当 `takeover_active_jobs=true` 时返回接管统计，包括 `matched_job_total`、`reset_job_total`、`abandoned_execution_total`
 
 **隔离/取消隔离节点请求：**
 
@@ -1086,9 +1288,15 @@ GET /v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h2
 {
   "node_id": 1,
   "quarantined": true,
-  "reason": "GPU故障维护"
+  "reason": "GPU故障维护",
+  "takeover_active_jobs": true
 }
 ```
+
+成功响应会额外返回：
+- `target_status`：当前为 `quarantined` 或 `active`
+- `takeover_active_jobs`：仅当 `quarantined=true` 时才可能为 `true`
+- `takeover_result`：当 `takeover_active_jobs=true` 时返回接管统计，包括 `matched_job_total`、`reset_job_total`、`abandoned_execution_total`
 
 **排空/恢复节点请求：**
 
@@ -1096,9 +1304,15 @@ GET /v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h2
 {
   "node_id": 1,
   "draining": true,
-  "reason": "rolling upgrade"
+  "reason": "rolling upgrade",
+  "takeover_active_jobs": true
 }
 ```
+
+成功响应会额外返回：
+- `target_status`：当前为 `draining` 或 `schedulable`
+- `takeover_active_jobs`：仅当 `draining=true` 时才可能为 `true`
+- `takeover_result`：当 `takeover_active_jobs=true` 时返回接管统计，包括 `matched_job_total`、`reset_job_total`、`abandoned_execution_total`
 
 ### 4.8 转码任务管理
 
@@ -1223,6 +1437,13 @@ GET /v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h2
 - `items[*]` 关键字段包括：`session_id`, `channel_id`, `channel_key`, `session_key`, `status`, `ingest_url`, `playback_hls_url`, `push_protocol`, `assigned_node_id`, `assigned_worker_id`, `started_at`, `stopped_at`, `resume_count`
 
 **频道详情查询参数：** `channel_id` 或 `channel_key`
+
+**直播控制接口说明：**
+
+- `/v1/admin/live/channel/start` 支持按 `node_id` 指定目标节点；若目标不是当前节点，控制面会自动转发到目标节点内部 HTTP 控制接口
+- `/v1/admin/live/channel/stop` 会优先根据频道当前 `assigned_node_id` 选择本地执行或远程转发
+- `start / stop` 会返回 `channel_id`, `control_path`, `target_node_id`, `target_worker_id`，便于后台明确看到本次控制是本地执行还是内部转发
+- `delete` 仍返回统一成功结构；最终状态请以 `channel/detail` 和列表接口为准
 
 说明：
 - 频道详情响应会同时返回 `channel`、`playback`，以及存在时的 `active_session`。
@@ -1386,7 +1607,15 @@ GET /v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h2
   "data": {
     "config_scope": "bootstrap",
     "affects_runtime": false,
-    "runtime_update_path": "/v1/admin/config/runtime/update",
+    "runtime_update_paths": {
+      "server": "/v1/admin/config/runtime/server/update",
+      "scheduler": "/v1/admin/config/runtime/scheduler/update",
+      "worker": "/v1/admin/config/runtime/worker/update",
+      "storage": "/v1/admin/config/runtime/storage/update",
+      "callback": "/v1/admin/config/runtime/callback/update",
+      "mq": "/v1/admin/config/runtime/mq/update",
+      "grpc": "/v1/admin/config/runtime/grpc/update"
+    },
     "runtime_publish_path": "/v1/admin/config/publish",
     "page": 1,
     "page_size": 20,
@@ -1457,6 +1686,14 @@ GET /v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h2
 
 **运行日志返回字段：**
 - `items[*]` 关键字段包括：`log_id`, `service_name`, `log_level`, `action_name`, `fields`, `logged_at`
+- `action_name` 查询当前支持模糊匹配，便于按动作前缀或关键片段检索
+
+实现说明：
+
+- 运行日志写入链路采用“进程内异步队列 + 数据库批量落库”模式，不阻塞业务主线程
+- 文件日志仍按 `log/YYYY-MM-DD.log` 按天滚动
+- 终端只镜像少量启动/监听类信息日志，错误日志仍会输出，避免控制台被普通 info 刷屏
+- 对高频路径（如 `/healthz`、`/v1/manifest/*`、转码进度查询、监控快照、集群总览轮询、internal heartbeat/metrics/lease`）会省略 request/response body，只保留 `request_body_size`、`response_body_size` 以及 `*_body_omitted=true` 摘要字段
 
 **运行日志示例响应：**
 
@@ -1502,27 +1739,44 @@ Authorization: Bearer {session_token}
 ```
 
 一次性拉取完整监控快照。
-注意：该接口直接返回原始 snapshot JSON，不包裹 `code/message/data` 通用响应结构。
+该接口返回统一 `code/message/data` 响应结构，`data` 中承载完整监控快照。
+
+实现说明：
+- `pending_jobs` 直接来自数据库状态计数，不再通过拉取全部 queued 任务后在进程内取长度
+- `nodes[*].online` 会优先参考 Redis 中最近的节点 metrics，缺失时再退化为节点主档心跳时间
+- HTTP `monitor/snapshot` 当前也会写入 2 秒 Redis 摘要缓存，避免多个后台页面并发轮询时重复做同一份快照拼装
+- Worker 与 control-plane 节点心跳采用“Redis 高频、MySQL 节流持久化”模型：
+  - Redis 心跳每轮刷新，供调度器、监控和实时接口优先读取
+  - `t_cluster_node.last_heartbeat_at`、`t_worker_instance.last_heartbeat_at` 只按节流窗口落库，避免数据库变成高频时序写热点
+  - 节流窗口始终小于 `worker_heartbeat_timeout`，不会改变离线判定语义
+- 任务进度与执行实例心跳也采用同样思路：
+  - Redis `progress_store` 继续保存实时帧率、码率、速度、剩余时长等高频进度
+  - `t_transcode_job.progress_*` 只在阶段切换、进度明显跃迁或节流窗口到达时持久化
+  - `t_transcode_job_execution.last_heartbeat_at` 只按节流窗口更新，后台活跃执行数仍能正确统计
 
 **示例响应：**
 
 ```json
 {
-  "timestamp": 1746756000000,
-  "mode": "cluster",
-  "pending_jobs": 2,
-  "active_jobs": 5,
-  "node_count": 3,
-  "system_metrics": {
-    "total_active_sessions": 5,
-    "total_pending_jobs": 2
-  },
-  "nodes": [
-    {
-      "node_id": 1,
-      "online": true
-    }
-  ]
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "timestamp": 1746756000000,
+    "mode": "cluster",
+    "pending_jobs": 2,
+    "active_jobs": 5,
+    "node_count": 3,
+    "system_metrics": {
+      "total_active_sessions": 5,
+      "total_pending_jobs": 2
+    },
+    "nodes": [
+      {
+        "node_id": 1,
+        "online": true
+      }
+    ]
+  }
 }
 ```
 
@@ -1560,6 +1814,11 @@ Content-Type: application/json
   }
 }
 ```
+
+实现说明：
+
+- 该接口先写 Redis 热路径，再按节流策略更新 `t_cluster_node` 与 `t_worker_instance`
+- 如果请求体携带 `timestamp`，数据库持久化会保留该时间戳，不会被服务端重新改写成接收时间
 
 ### 5.2 Worker 指标上报
 
@@ -1666,6 +1925,82 @@ Content-Type: application/json
 }
 ```
 
+### 5.6 直播推流建立通知
+
+```
+POST /v1/internal/live/publish-connected
+Content-Type: application/json
+```
+
+```json
+{
+  "channel_key": "live-001",
+  "node_id": 1,
+  "worker_id": "worker-node1-001",
+  "stream_key": "live-001",
+  "publish_ip": "10.0.0.10",
+  "push_protocol": "rtmp",
+  "ingest_url": "rtmp://push.example.com/live/live-001",
+  "playback_hls_url": "https://play.example.com/live/live-001/master.m3u8"
+}
+```
+
+### 5.7 直播推流断开通知
+
+```
+POST /v1/internal/live/publish-disconnected
+Content-Type: application/json
+```
+
+```json
+{
+  "channel_key": "live-001",
+  "stream_key": "live-001"
+}
+```
+
+### 5.8 直播推流中断通知
+
+```
+POST /v1/internal/live/publish-interrupted
+Content-Type: application/json
+```
+
+```json
+{
+  "channel_key": "live-001",
+  "stream_key": "live-001"
+}
+```
+
+### 5.9 内部启动直播频道
+
+```
+POST /v1/internal/live/channel/start
+Content-Type: application/json
+```
+
+```json
+{
+  "channel_id": 1,
+  "node_id": 1,
+  "worker_id": "worker-node1-001"
+}
+```
+
+### 5.10 内部停止直播频道
+
+```
+POST /v1/internal/live/channel/stop
+Content-Type: application/json
+```
+
+```json
+{
+  "channel_id": 1
+}
+```
+
 ---
 
 ## 六、gRPC 公共接口
@@ -1760,6 +2095,12 @@ rpc WorkerHeartbeat(WorkerHeartbeatRequest) returns (WorkerHeartbeatResponse);
 | accepted | bool | 是否接受心跳 |
 | lease_generation | uint64 | 当前租约代数 |
 
+实现说明：
+
+- internal gRPC 心跳与 internal HTTP 心跳的落库语义保持一致：都会同步维护 `t_cluster_node` 与 `t_worker_instance`
+- gRPC 请求体当前没有 `timestamp` 字段，因此数据库落库时间使用服务端接收时间
+- 落库路径同样采用“Redis 高频、MySQL 节流持久化”策略，避免集群内部高频心跳把数据库打成热点
+
 ### 7.2 ReportProgress
 
 ```protobuf
@@ -1801,6 +2142,42 @@ rpc SegmentUploaded(SegmentUploadedRequest) returns (SegmentUploadedResponse);
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | accepted | bool | 是否接受通知 |
+
+### 7.4 SetWorkerOffline
+
+```protobuf
+rpc SetWorkerOffline(SetWorkerOfflineRequest) returns (SetWorkerOfflineResponse);
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| worker_id | string | 目标 Worker 实例标识 |
+| reason | string | 运维下线原因 |
+
+**响应字段：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| accepted | bool | 是否接受控制动作 |
+| message | string | 控制结果说明 |
+
+### 7.5 RequestWorkerExit
+
+```protobuf
+rpc RequestWorkerExit(RequestWorkerExitRequest) returns (RequestWorkerExitResponse);
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| worker_id | string | 目标 Worker 实例标识 |
+| reason | string | 退出原因 |
+
+**响应字段：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| accepted | bool | 是否接受控制动作 |
+| message | string | 控制结果说明 |
 
 ---
 
@@ -1979,6 +2356,7 @@ Authorization: Bearer {session_token}
 ```
 
 一次性拉取完整监控快照，响应格式同 WebSocket snapshot 的 data 字段。
+HTTP 接口外层仍统一包裹 `code/message/data`，其中 `data` 字段结构与 WebSocket `snapshot.data` 一致。
 
 ---
 
@@ -2032,7 +2410,7 @@ Content-Type: application/json
   "segment_duration_sec": 6,
   "support_dash": true,
   "support_hls": true,
-  "segment_template": "{job_id}-{resolution}-{rendition_key}-{media_type}-{number}.m4s",
+  "segment_template": "{job_id}-{rendition_key}-{media_type}-{number}.m4s",
   "storage_type": "s3",
   "storage_bucket": "hvc-media",
   "play_domain": "https://cdn.example.com",
@@ -2057,9 +2435,9 @@ Content-Type: application/json
       "audio_bitrate_kbps": 128,
       "segment_count": 12,
       "init_segment_object_key": "hvc/1893456789012345678-1920_1080-video-0.m4s",
-      "manifest_dash_url": "/v1/manifest/dash/1893456789012345678.mpd",
-      "manifest_hls_url": "/v1/manifest/hls/1893456789012345678.m3u8",
-      "manifest_hls_variant_url": "/v1/manifest/hls/1893456789012345678/1080p.m3u8"
+      "manifest_dash_url": "/v1/manifest/dash/1893456789012345678",
+      "manifest_hls_url": "/v1/manifest/hls/1893456789012345678",
+      "manifest_hls_variant_url": "/v1/manifest/hls/1893456789012345678/1080p"
     }
   ],
   "total_segment_count": 48,

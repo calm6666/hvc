@@ -126,6 +126,24 @@ func TestDefaultTimeoutMS(t *testing.T) {
 	}
 }
 
+func TestSendingLeaseTimeout(t *testing.T) {
+	cfg := config.DynamicRuntimeConfig{
+		Callback: config.CallbackConfig{
+			HTTPTimeout: 8 * time.Second,
+			GRPCTimeout: 3 * time.Second,
+			MQTimeout:   5 * time.Second,
+		},
+	}
+	if got := sendingLeaseTimeout(cfg); got != 30*time.Second {
+		t.Fatalf("expected minimum sending lease timeout 30s, got %s", got)
+	}
+
+	cfg.Callback.HTTPTimeout = 20 * time.Second
+	if got := sendingLeaseTimeout(cfg); got != 40*time.Second {
+		t.Fatalf("expected doubled sending lease timeout, got %s", got)
+	}
+}
+
 func TestCallbackTargetString(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -164,5 +182,20 @@ func TestCallbackTargetString(t *testing.T) {
 		if got := callbackTargetString(tt.target); got != tt.want {
 			t.Fatalf("%s: expected %s, got %s", tt.name, tt.want, got)
 		}
+	}
+}
+
+func TestGRPCServiceNameFromMethod(t *testing.T) {
+	if got := grpcServiceNameFromMethod("/transcode.callback.Service/Notify"); got != "transcode.callback.Service" {
+		t.Fatalf("unexpected service name: %s", got)
+	}
+	if got := grpcServiceNameFromMethod("transcode.callback.Service/Notify"); got != "transcode.callback.Service" {
+		t.Fatalf("unexpected service name without leading slash: %s", got)
+	}
+}
+
+func TestRegistryServicePrefix(t *testing.T) {
+	if got := registryServicePrefix("hvc/public", "transcode.callback.Service"); got != "/hvc/public/transcode.callback.Service/" {
+		t.Fatalf("unexpected registry prefix: %s", got)
 	}
 }

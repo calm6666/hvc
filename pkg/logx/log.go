@@ -30,6 +30,11 @@ type entry struct {
 	at     time.Time
 }
 
+type httpLogPolicy struct {
+	captureRequestBody  bool
+	captureResponseBody bool
+}
+
 var (
 	logger         *zap.Logger
 	queue          chan entry
@@ -56,6 +61,18 @@ type PersistedEntry struct {
 type PersistenceSink interface {
 	SavePersistedEntry(item PersistedEntry) error
 }
+
+// BatchPersistenceSink 表示支持批量写入的日志持久化落点。
+type BatchPersistenceSink interface {
+	PersistenceSink
+	SavePersistedEntries(items []PersistedEntry) error
+}
+
+const (
+	persistBatchSize     = 100
+	persistFlushInterval = 500 * time.Millisecond
+	persistRetryMax      = 3
+)
 
 // Init 初始化日志组件。
 func Init(serviceName string) {
@@ -123,21 +140,31 @@ func Error(action string, err error, fields Fields) {
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		requestBody, requestTruncated := readBody(r.Body)
-		if r.Body != nil {
+		policy := resolveHTTPLogPolicy(r.Method, r.URL.Path)
+		requestBody := []byte(nil)
+		requestTruncated := false
+		if policy.captureRequestBody {
+			requestBody, requestTruncated = readBody(r.Body)
+		}
+		if policy.captureRequestBody && r.Body != nil {
 			r.Body = io.NopCloser(bytes.NewBuffer(requestBody))
 		}
-		writer := &bodyWriter{ResponseWriter: w, body: bytes.NewBuffer(nil), statusCode: http.StatusOK}
+		writer := &bodyWriter{
+			ResponseWriter: w,
+			body:           bytes.NewBuffer(nil),
+			statusCode:     http.StatusOK,
+			captureBody:    policy.captureResponseBody,
+		}
 		next.ServeHTTP(writer, r)
 		responseBody := writer.body.Bytes()
 		responseTruncated := false
-		if len(responseBody) > 65536 {
+		if policy.captureResponseBody && len(responseBody) > 65536 {
 			responseBody = responseBody[:65536]
 			responseTruncated = true
 		}
 		safeRequestBody := sanitizeHTTPLogBody(r.URL.Path, requestBody)
 		safeResponseBody := sanitizeHTTPLogBody(r.URL.Path, responseBody)
-		Info("http.request", Fields{
+		fields := Fields{
 			"method":             r.Method,
 			"path":               r.URL.Path,
 			"query":              r.URL.RawQuery,
@@ -145,11 +172,22 @@ func Middleware(next http.Handler) http.Handler {
 			"latency_ms":         time.Since(start).Milliseconds(),
 			"client_ip":          r.RemoteAddr,
 			"user_agent":         r.UserAgent(),
-			"request_body":       string(safeRequestBody),
-			"request_truncated":  requestTruncated,
-			"response_body":      string(safeResponseBody),
-			"response_truncated": responseTruncated,
-		})
+			"request_body_size":  resolveRequestBodySize(r, requestBody),
+			"response_body_size": writer.bytesWritten,
+		}
+		if policy.captureRequestBody {
+			fields["request_body"] = string(safeRequestBody)
+			fields["request_truncated"] = requestTruncated
+		} else {
+			fields["request_body_omitted"] = true
+		}
+		if policy.captureResponseBody {
+			fields["response_body"] = string(safeResponseBody)
+			fields["response_truncated"] = responseTruncated
+		} else {
+			fields["response_body_omitted"] = true
+		}
+		Info("http.request", fields)
 		if droppedValue := dropped.Load(); droppedValue > 0 {
 			stdlog.Println("log_queue_dropped", droppedValue)
 			dropped.Store(0)
@@ -159,8 +197,10 @@ func Middleware(next http.Handler) http.Handler {
 
 type bodyWriter struct {
 	http.ResponseWriter
-	body       *bytes.Buffer
-	statusCode int
+	body         *bytes.Buffer
+	statusCode   int
+	captureBody  bool
+	bytesWritten int
 }
 
 func (w *bodyWriter) WriteHeader(statusCode int) {
@@ -169,8 +209,12 @@ func (w *bodyWriter) WriteHeader(statusCode int) {
 }
 
 func (w *bodyWriter) Write(data []byte) (int, error) {
-	w.body.Write(data)
-	return w.ResponseWriter.Write(data)
+	if w.captureBody {
+		w.body.Write(data)
+	}
+	n, err := w.ResponseWriter.Write(data)
+	w.bytesWritten += n
+	return n, err
 }
 
 func consume() {
@@ -235,6 +279,54 @@ func WriteJSON(w http.ResponseWriter, statusCode int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func resolveHTTPLogPolicy(method string, path string) httpLogPolicy {
+	policy := httpLogPolicy{
+		captureRequestBody:  true,
+		captureResponseBody: true,
+	}
+	method = strings.ToUpper(strings.TrimSpace(method))
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return policy
+	}
+	if method == http.MethodGet {
+		switch {
+		case path == "/healthz",
+			strings.HasPrefix(path, "/v1/manifest/"),
+			path == "/v1/transcode/job/progress",
+			path == "/v1/admin/transcode/job/progress",
+			strings.HasPrefix(path, "/v1/admin/transcode/monitor/"),
+			path == "/v1/admin/cluster/overview",
+			path == "/v1/admin/cluster/realtime",
+			path == "/v1/admin/cluster/topology",
+			path == "/v1/admin/cluster/resource/distribution",
+			path == "/v1/admin/cluster/node/metrics":
+			policy.captureRequestBody = false
+			policy.captureResponseBody = false
+			return policy
+		}
+	}
+	switch {
+	case strings.HasPrefix(path, "/v1/internal/worker/"),
+		path == "/v1/internal/jobs/lease/renew",
+		strings.HasPrefix(path, "/v1/internal/segments/"),
+		path == "/v1/admin/transcode/monitor/ws":
+		policy.captureRequestBody = false
+		policy.captureResponseBody = false
+	}
+	return policy
+}
+
+func resolveRequestBodySize(r *http.Request, captured []byte) int {
+	if len(captured) > 0 {
+		return len(captured)
+	}
+	if r != nil && r.ContentLength > 0 {
+		return int(r.ContentLength)
+	}
+	return 0
 }
 
 func shouldMirrorInfoToConsole(action string) bool {
@@ -317,13 +409,31 @@ func sanitizeHTTPLogBody(path string, body []byte) []byte {
 }
 
 func consumePersistence() {
-	for item := range persistQueue {
-		sink := persistSink
-		if sink == nil {
-			continue
+	ticker := time.NewTicker(persistFlushInterval)
+	defer ticker.Stop()
+
+	batch := make([]PersistedEntry, 0, persistBatchSize)
+	flush := func() {
+		if len(batch) == 0 {
+			return
 		}
-		if err := sink.SavePersistedEntry(item); err != nil {
-			stdlog.Println("log_persist_failed", err)
+		flushPersistenceBatch(batch)
+		batch = batch[:0]
+	}
+
+	for {
+		select {
+		case item, ok := <-persistQueue:
+			if !ok {
+				flush()
+				return
+			}
+			batch = append(batch, item)
+			if len(batch) >= persistBatchSize {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
 		}
 	}
 }
@@ -350,6 +460,61 @@ func enqueuePersistence(item entry) {
 			stdlog.Println("log_persist_queue_dropped", droppedValue)
 			persistDropped.Store(0)
 		}
+	}
+}
+
+func flushPersistenceBatch(items []PersistedEntry) {
+	sink := persistSink
+	if sink == nil || len(items) == 0 {
+		return
+	}
+	if batchSink, ok := sink.(BatchPersistenceSink); ok {
+		if err := savePersistedEntriesWithRetry(batchSink.SavePersistedEntries, items); err != nil {
+			stdlog.Println("log_persist_batch_failed", "size", len(items), "error", err)
+		}
+		return
+	}
+
+	for _, item := range items {
+		entry := item
+		if err := savePersistedEntryWithRetry(sink.SavePersistedEntry, entry); err != nil {
+			stdlog.Println("log_persist_failed", "action", entry.Action, "error", err)
+		}
+	}
+}
+
+func savePersistedEntriesWithRetry(save func([]PersistedEntry) error, items []PersistedEntry) error {
+	var err error
+	for attempt := 0; attempt < persistRetryMax; attempt++ {
+		err = save(items)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(resolvePersistRetryBackoff(attempt))
+	}
+	return err
+}
+
+func savePersistedEntryWithRetry(save func(PersistedEntry) error, item PersistedEntry) error {
+	var err error
+	for attempt := 0; attempt < persistRetryMax; attempt++ {
+		err = save(item)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(resolvePersistRetryBackoff(attempt))
+	}
+	return err
+}
+
+func resolvePersistRetryBackoff(attempt int) time.Duration {
+	switch attempt {
+	case 0:
+		return 100 * time.Millisecond
+	case 1:
+		return 300 * time.Millisecond
+	default:
+		return time.Second
 	}
 }
 

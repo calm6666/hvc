@@ -240,6 +240,59 @@ func TestPublishInterruptedEndpoint(t *testing.T) {
 	}
 }
 
+func TestStartAndStopRequestedEndpoints(t *testing.T) {
+	idgen.Configure(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), 1, 1, 1)
+
+	channelStore := newTestLiveChannelStore(model.LiveChannel{
+		ChannelID:  7003,
+		ChannelKey: "live-endpoint-3",
+		Status:     model.LiveChannelStatusIdle,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	})
+	manager := livemanager.NewManager(channelStore, newTestLiveSessionStore())
+	handler := NewLiveHandler(manager, nil)
+
+	startBody, _ := json.Marshal(map[string]any{
+		"channel_id": 7003,
+		"node_id":    9,
+		"worker_id":  "worker-z",
+	})
+	startReq := httptest.NewRequest(http.MethodPost, "/v1/internal/live/channel/start", bytes.NewReader(startBody))
+	startResp := httptest.NewRecorder()
+	handler.StartRequested(startResp, startReq)
+	if startResp.Code != http.StatusOK {
+		t.Fatalf("unexpected start status code: %d, body=%s", startResp.Code, startResp.Body.String())
+	}
+
+	channel, ok := manager.GetChannel(t.Context(), 7003)
+	if !ok || channel == nil {
+		t.Fatal("expected channel to exist after start-requested")
+	}
+	if channel.Status != model.LiveChannelStatusStarting {
+		t.Fatalf("unexpected channel status after start-requested: %s", channel.Status)
+	}
+	if channel.AssignedNodeID != 9 || channel.AssignedWorkerID != "worker-z" {
+		t.Fatalf("unexpected channel assignment after start-requested: %+v", channel)
+	}
+
+	stopBody, _ := json.Marshal(map[string]any{"channel_id": 7003})
+	stopReq := httptest.NewRequest(http.MethodPost, "/v1/internal/live/channel/stop", bytes.NewReader(stopBody))
+	stopResp := httptest.NewRecorder()
+	handler.StopRequested(stopResp, stopReq)
+	if stopResp.Code != http.StatusOK {
+		t.Fatalf("unexpected stop status code: %d, body=%s", stopResp.Code, stopResp.Body.String())
+	}
+
+	channel, ok = manager.GetChannel(t.Context(), 7003)
+	if !ok || channel == nil {
+		t.Fatal("expected channel to exist after stop-requested")
+	}
+	if channel.Status != model.LiveChannelStatusStopped {
+		t.Fatalf("unexpected channel status after stop-requested: %s", channel.Status)
+	}
+}
+
 type fakePlaybackTokenWriter struct {
 	called    int
 	channelID uint64

@@ -34,7 +34,7 @@ func (h *RBACHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	status, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("status")))
 	items, total, err := h.adminRepository.ListUsersPage(r.Context(), page, pageSize, r.URL.Query().Get("username"), status)
 	if err != nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "query users failed"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "查询管理员列表失败"})
 		return
 	}
 	views := make([]adminUserView, 0, len(items))
@@ -50,7 +50,7 @@ func (h *RBACHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	status, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("status")))
 	items, total, err := h.rbacRepository.ListRolesPage(r.Context(), page, pageSize, r.URL.Query().Get("role_key"), status)
 	if err != nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "query roles failed"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "查询角色列表失败"})
 		return
 	}
 	views := make([]adminRoleView, 0, len(items))
@@ -91,7 +91,7 @@ func (h *RBACHandler) ListMenuTree(w http.ResponseWriter, r *http.Request) {
 func (h *RBACHandler) CurrentMenuTree(w http.ResponseWriter, r *http.Request) {
 	userID := internalauth.CurrentAdminUserID(r.Context(), r)
 	if userID == 0 {
-		logx.WriteJSON(w, http.StatusUnauthorized, model.Response{Code: 401, Message: "unauthorized"})
+		logx.WriteJSON(w, http.StatusUnauthorized, model.Response{Code: 401, Message: "未登录或登录已失效"})
 		return
 	}
 	items := h.adminRepository.ListMenusByUserID(r.Context(), userID)
@@ -102,19 +102,15 @@ func (h *RBACHandler) CurrentMenuTree(w http.ResponseWriter, r *http.Request) {
 func (h *RBACHandler) RoleMenuTree(w http.ResponseWriter, r *http.Request) {
 	roleID, _ := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("role_id")), 10, 64)
 	if roleID == 0 {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "role_id is required"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "role_id 不能为空"})
 		return
 	}
 	items := h.rbacRepository.ListMenus(r.Context(), false)
 	menuIDs := h.rbacRepository.ListMenuIDsByRoleID(r.Context(), roleID)
-	logx.WriteJSON(w, http.StatusOK, model.Response{
-		Code:    0,
-		Message: "ok",
-		Data: map[string]any{
-			"role_id":   roleID,
-			"menu_ids":  menuIDs,
-			"menu_tree": buildMenuTree(items),
-		},
+	writeItemsResponse(w, buildMenuTree(items), map[string]any{
+		"tree":     true,
+		"role_id":  roleID,
+		"menu_ids": menuIDs,
 	})
 }
 
@@ -136,7 +132,7 @@ func (h *RBACHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 // ListRuntimeLogs 返回运行日志分页列表。
 func (h *RBACHandler) ListRuntimeLogs(w http.ResponseWriter, r *http.Request) {
 	if h.opsLogRepository == nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "runtime log repository not ready"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "运行日志仓储未初始化"})
 		return
 	}
 	page, pageSize := parsePageParams(r)

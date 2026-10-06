@@ -39,6 +39,20 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      accepted:
+                        type: boolean
 
   /v1/internal/worker/metrics:
     post:
@@ -50,6 +64,20 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      accepted:
+                        type: boolean
 
   /v1/internal/jobs/lease/renew:
     post:
@@ -61,6 +89,23 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      accepted:
+                        type: boolean
+                      lease_generation:
+                        type: integer
+                        format: uint64
 
   /v1/internal/segments/upload-failed:
     post:
@@ -82,6 +127,20 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      accepted:
+                        type: boolean
 
   /v1/internal/segments/upload-succeeded:
     post:
@@ -100,9 +159,6 @@ paths:
                 segment_id:
                   type: integer
                   format: uint64
-                object_key:
-                  type: string
-                  description: 对象存储键（按模板命名）
                 object_size_bytes:
                   type: integer
                   format: uint64
@@ -111,3 +167,235 @@ paths:
       responses:
         '200':
           description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      accepted:
+                        type: boolean
+
+  /v1/internal/live/publish-connected:
+    post:
+      summary: 直播推流建立通知
+      description: |
+        执行节点或接入层在推流连接建立后通知本节点直播管理器创建活跃会话，
+        并同步频道状态、推流节点和播放地址。
+      tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_key:
+                  type: string
+                node_id:
+                  type: integer
+                  format: uint64
+                worker_id:
+                  type: string
+                stream_key:
+                  type: string
+                publish_ip:
+                  type: string
+                push_protocol:
+                  type: string
+                ingest_url:
+                  type: string
+                playback_hls_url:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      session_id:
+                        type: integer
+                        format: uint64
+                      channel_id:
+                        type: integer
+                        format: uint64
+                      channel_key:
+                        type: string
+                      session_key:
+                        type: string
+                      status:
+                        type: string
+                      ingest_url:
+                        type: string
+                      playback_hls_url:
+                        type: string
+                      push_protocol:
+                        type: string
+                      assigned_node_id:
+                        type: integer
+                        format: uint64
+                      assigned_worker_id:
+                        type: string
+                      started_at:
+                        type: string
+                        format: date-time
+                      stopped_at:
+                        type: string
+                        format: date-time
+                      resume_count:
+                        type: integer
+
+  /v1/internal/live/publish-disconnected:
+    post:
+      summary: 直播推流断开通知
+      description: 推流正常断开后更新直播会话和频道状态。
+      tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_key:
+                  type: string
+                stream_key:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+
+  /v1/internal/live/publish-interrupted:
+    post:
+      summary: 直播推流中断通知
+      description: 推流异常中断后把会话置为等待恢复状态，并标记频道异常。
+      tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_key:
+                  type: string
+                stream_key:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+
+  /v1/internal/live/channel/start:
+    post:
+      summary: 内部启动直播频道
+      description: |
+        控制节点根据频道绑定的目标节点，将启动请求通过内部 HTTP 控制面转发到执行节点。
+        该接口只在集群内部使用，并要求共享内部令牌鉴权。
+      tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_id]
+              properties:
+                channel_id:
+                  type: integer
+                  format: uint64
+                node_id:
+                  type: integer
+                  format: uint64
+                worker_id:
+                  type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      channel_id:
+                        type: integer
+                        format: uint64
+                      node_id:
+                        type: integer
+                        format: uint64
+                      worker_id:
+                        type: string
+
+  /v1/internal/live/channel/stop:
+    post:
+      summary: 内部停止直播频道
+      description: 控制节点将停止请求转发到承载该频道的执行节点。
+      tags: [Live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_id]
+              properties:
+                channel_id:
+                  type: integer
+                  format: uint64
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      channel_id:
+                        type: integer
+                        format: uint64

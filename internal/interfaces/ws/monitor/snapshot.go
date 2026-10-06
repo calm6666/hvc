@@ -23,6 +23,7 @@ import (
 	"hvc/internal/cluster/hotpath"
 	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/infra/db/mysql"
+	"hvc/internal/model"
 	"hvc/pkg/logx"
 
 	"github.com/gorilla/websocket"
@@ -50,6 +51,9 @@ type NodeSnapshot struct {
 	NodeID uint64 `json:"node_id"`
 	Online bool   `json:"online"`
 }
+
+const monitorNodeOnlineGrace = 2 * time.Minute
+const monitorSnapshotCacheTTL = 2 * time.Second
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -99,13 +103,24 @@ func NewSnapshotHandler(
 
 // Snapshot 处理 HTTP 快照请求。
 func (h *SnapshotHandler) Snapshot(w http.ResponseWriter, r *http.Request) {
-	snapshot := h.buildSnapshot(r)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-cache")
-	if err := json.NewEncoder(w).Encode(snapshot); err != nil {
-		logx.Error("monitor.snapshot.encode_failed", err, nil)
+	if payload, ok := h.getCachedSnapshotPayload(r.Context()); ok {
+		writeSnapshotResponse(w, payload)
+		return
 	}
+	snapshot := h.buildSnapshot(r)
+	payload, err := json.Marshal(model.Response{
+		Code:    0,
+		Message: "ok",
+		Data:    snapshot,
+	})
+	if err != nil {
+		logx.Error("monitor.snapshot.encode_failed", err, nil)
+		return
+	}
+	if err := h.saveCachedSnapshotPayload(r.Context(), string(payload)); err != nil {
+		logx.Error("monitor.snapshot.cache_save_failed", err, nil)
+	}
+	writeSnapshotResponse(w, string(payload))
 }
 
 // HandleWS 处理 WebSocket 连接升级。
@@ -141,7 +156,7 @@ func (h *SnapshotHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	go h.readPump(conn)
 
 	logx.Info("monitor.ws.client_connected", logx.Fields{
-		"remote_addr": conn.RemoteAddr().String(),
+		"remote_addr":  conn.RemoteAddr().String(),
 		"client_count": len(h.clients),
 	})
 }
@@ -286,8 +301,7 @@ func (h *SnapshotHandler) buildSnapshotFromCtx(ctx context.Context) MonitorSnaps
 	}
 
 	if h.jobRepository != nil {
-		queued := h.jobRepository.ListQueued(ctx)
-		snapshot.PendingJobs = len(queued)
+		snapshot.PendingJobs = int(h.jobRepository.CountByStatus(ctx, model.JobStatusQueued))
 	}
 
 	if h.hotpathBus != nil {
@@ -300,12 +314,23 @@ func (h *SnapshotHandler) buildSnapshotFromCtx(ctx context.Context) MonitorSnaps
 	}
 
 	if h.clusterNodeRepo != nil {
-		nodes := h.clusterNodeRepo.List(ctx)
+		nodes := h.clusterNodeRepo.ListHeartbeatSnapshot(ctx)
+		nodeIDs := make([]uint64, 0, len(nodes))
+		for _, node := range nodes {
+			nodeIDs = append(nodeIDs, node.NodeID)
+		}
+		metricsByNode := h.getNodeMetricsBatch(ctx, nodeIDs)
+		now := time.Now()
 		snapshot.NodeCount = len(nodes)
 		for _, node := range nodes {
+			metrics, ok := metricsByNode[node.NodeID]
+			lastMetricsAt := time.Time{}
+			if ok {
+				lastMetricsAt = metrics.Timestamp
+			}
 			snapshot.Nodes = append(snapshot.Nodes, NodeSnapshot{
 				NodeID: node.NodeID,
-				Online: true,
+				Online: isMonitorNodeOnline(node.LastHeartbeatAt, lastMetricsAt, now),
 			})
 		}
 	} else {
@@ -314,4 +339,45 @@ func (h *SnapshotHandler) buildSnapshotFromCtx(ctx context.Context) MonitorSnaps
 	}
 
 	return snapshot
+}
+
+func (h *SnapshotHandler) getNodeMetricsBatch(ctx context.Context, nodeIDs []uint64) map[uint64]model.NodeMetrics {
+	if h.stateCache == nil || len(nodeIDs) == 0 {
+		return map[uint64]model.NodeMetrics{}
+	}
+	return h.stateCache.GetNodeMetricsBatch(ctx, nodeIDs)
+}
+
+func isMonitorNodeOnline(lastHeartbeatAt time.Time, lastMetricsAt time.Time, now time.Time) bool {
+	if !lastMetricsAt.IsZero() && now.Sub(lastMetricsAt) <= monitorNodeOnlineGrace {
+		return true
+	}
+	if !lastHeartbeatAt.IsZero() && now.Sub(lastHeartbeatAt) <= monitorNodeOnlineGrace {
+		return true
+	}
+	return false
+}
+
+func (h *SnapshotHandler) getCachedSnapshotPayload(ctx context.Context) (string, bool) {
+	if h == nil || h.stateCache == nil {
+		return "", false
+	}
+	return h.stateCache.GetJSONSnapshot(ctx, h.snapshotCacheKey())
+}
+
+func (h *SnapshotHandler) saveCachedSnapshotPayload(ctx context.Context, payload string) error {
+	if h == nil || h.stateCache == nil {
+		return nil
+	}
+	return h.stateCache.SaveJSONSnapshot(ctx, h.snapshotCacheKey(), payload, monitorSnapshotCacheTTL)
+}
+
+func (h *SnapshotHandler) snapshotCacheKey() string {
+	return cluster.MonitorSnapshotCacheKey(h.mode)
+}
+
+func writeSnapshotResponse(w http.ResponseWriter, payload string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write([]byte(payload))
 }

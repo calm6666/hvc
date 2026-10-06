@@ -54,9 +54,36 @@ func (r *ConfigCenterBindingRepository) Save(ctx context.Context, record ConfigC
 		record.BindingID = idgen.Next()
 	}
 	now := time.Now()
+	var existing ConfigCenterBindingRecord
+	result := r.db.WithContext(ctx).Where("binding_id = ?", record.BindingID).Limit(1).Find(&existing)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		record.CreatedAt = existing.CreatedAt
+		record.UpdatedAt = now
+		return r.db.WithContext(ctx).Model(&ConfigCenterBindingRecord{}).
+			Where("binding_id = ?", record.BindingID).
+			Updates(map[string]any{
+				"binding_name":      record.BindingName,
+				"provider_type":     record.ProviderType,
+				"endpoint":          record.Endpoint,
+				"namespace":         record.Namespace,
+				"auth_mode":         record.AuthMode,
+				"access_key":        record.AccessKey,
+				"secret_key":        record.SecretKey,
+				"token":             record.Token,
+				"enabled":           record.Enabled,
+				"priority":          record.Priority,
+				"last_sync_status":  record.LastSyncStatus,
+				"last_sync_message": record.LastSyncMessage,
+				"last_sync_at":      record.LastSyncAt,
+				"updated_at":        now,
+			}).Error
+	}
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now
 	}
 	record.UpdatedAt = now
-	return r.db.WithContext(ctx).Save(&record).Error
+	return r.db.WithContext(ctx).Create(&record).Error
 }

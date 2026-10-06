@@ -1,0 +1,50 @@
+# Docker Compose 单机演示专用 bootstrap 配置。
+# 说明：
+# 1. 该文件只用于 deployments/docker/docker-compose.yml；
+# 2. 地址全部使用 compose 内部服务名；
+# 3. 这里只放 bootstrap 配置，运行期业务配置仍然通过后台 runtime config 维护。
+
+server:
+  listen_address: ":8080"
+  advertise_ip: "hvc-server"
+  node_mode: "standalone"
+  service_name: "hili-video-cloud"
+  node_id: 1
+  worker_id: "worker-compose-1"
+
+mysql:
+  dsn: "hvc:hvc_pwd@tcp(mysql:3306)/hvc?parseTime=true&charset=utf8mb4"
+  sharding_enabled: false
+  shard_count: 1
+  query_timeout: "3s"
+  exec_timeout: "5s"
+
+redis:
+  addrs:
+    - "redis:6379"
+  password: ""
+  db: 0
+  cluster_enabled: false
+  dial_timeout: "2s"
+  read_timeout: "2s"
+  write_timeout: "2s"
+
+internal_grpc:
+  enabled: true
+  listen_address: ":19090"
+  shared_token: "hvc-internal-compose-token"
+  max_recv_msg_size: 64
+  max_send_msg_size: 64
+  graceful_stop_timeout: "5s"
+
+config_center:
+  enabled: false
+  endpoint: ""
+  namespace: ""
+  auth_mode: "none"
+  token: ""
+
+id:
+  start_time: "2025-01-01T00:00:00Z"
+  node_bits: 10
+  sequence_bits: 12

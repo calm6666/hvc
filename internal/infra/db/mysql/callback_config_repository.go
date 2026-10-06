@@ -3,6 +3,9 @@ package mysql
 import (
 	"context"
 	"strings"
+	"time"
+
+	"hvc/pkg/idgen"
 )
 
 // CallbackConfigRepository 表示回调配置仓储。
@@ -56,10 +59,46 @@ func (r *CallbackConfigRepository) ListPage(ctx context.Context, page, pageSize 
 
 // Save 保存回调配置。
 func (r *CallbackConfigRepository) Save(ctx context.Context, record CallbackConfigRecord) error {
-	return r.db.WithContext(ctx).Save(&record).Error
+	if record.CallbackConfigID == 0 {
+		record.CallbackConfigID = idgen.Next()
+	}
+	now := time.Now()
+	var existing CallbackConfigRecord
+	result := r.db.WithContext(ctx).Where("callback_config_id = ?", record.CallbackConfigID).Limit(1).Find(&existing)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		record.CreatedAt = existing.CreatedAt
+		record.UpdatedAt = now
+		return r.db.WithContext(ctx).Model(&CallbackConfigRecord{}).
+			Where("callback_config_id = ?", record.CallbackConfigID).
+			Updates(map[string]any{
+				"callback_name":    record.CallbackName,
+				"callback_type":    record.CallbackType,
+				"target_url":       record.TargetURL,
+				"rpc_endpoint":     record.RPCEndpoint,
+				"rpc_service_name": record.RPCServiceName,
+				"mq_exchange":      record.MQExchange,
+				"mq_routing_key":   record.MQRoutingKey,
+				"timeout_ms":       record.TimeoutMS,
+				"retry_times":      record.RetryTimes,
+				"enabled":          record.Enabled,
+				"priority":         record.Priority,
+				"registry_id":      record.RegistryID,
+				"updated_at":       now,
+			}).Error
+	}
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = now
+	}
+	record.UpdatedAt = now
+	return r.db.WithContext(ctx).Create(&record).Error
 }
 
 // SetEnabled 切换回调配置启用状态。
 func (r *CallbackConfigRepository) SetEnabled(ctx context.Context, callbackConfigID uint64, enabled bool) error {
-	return r.db.WithContext(ctx).Model(&CallbackConfigRecord{}).Where("callback_config_id = ?", callbackConfigID).Update("enabled", enabled).Error
+	return r.db.WithContext(ctx).Model(&CallbackConfigRecord{}).
+		Where("callback_config_id = ?", callbackConfigID).
+		Updates(map[string]any{"enabled": enabled, "updated_at": time.Now()}).Error
 }

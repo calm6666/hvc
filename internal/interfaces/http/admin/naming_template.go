@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -50,9 +49,22 @@ func NewNamingTemplateHandler(namingTemplateRepo *mysql.NamingTemplateRepository
 func (h *NamingTemplateHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	templates := buildPresetTemplates()
 	currentTemplate := ""
+	recentTemplates := make([]map[string]any, 0)
 	if h.effectiveConfig != nil {
 		cfg := h.effectiveConfig.Snapshot()
 		currentTemplate = cfg.Worker.SegmentTemplate
+	}
+	if h.namingTemplateRepo != nil {
+		for _, item := range h.namingTemplateRepo.ListRecent(r.Context(), 20) {
+			recentTemplates = append(recentTemplates, map[string]any{
+				"id":                item.ID,
+				"config_version":    item.ConfigVersion,
+				"output_base_tpl":   item.OutputBaseTpl,
+				"init_seg_name_tpl": item.InitSegNameTpl,
+				"media_seg_name_tpl": item.MediaSegNameTpl,
+				"created_at":        item.CreatedAt,
+			})
+		}
 	}
 	page, pageSize := parsePageParams(r)
 	total := int64(len(templates))
@@ -66,6 +78,7 @@ func (h *NamingTemplateHandler) ListTemplates(w http.ResponseWriter, r *http.Req
 	}
 	writePageResponseWithMeta(w, page, pageSize, total, templates[start:end], map[string]any{
 		"current_template": currentTemplate,
+		"saved_templates":  recentTemplates,
 	})
 }
 
@@ -80,8 +93,7 @@ func (h *NamingTemplateHandler) ConfigureTemplate(w http.ResponseWriter, r *http
 		TemplateID     int    `json:"template_id"`
 		CustomTemplate string `json:"custom_template"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -95,17 +107,17 @@ func (h *NamingTemplateHandler) ConfigureTemplate(w http.ResponseWriter, r *http
 			}
 		}
 		if selectedTemplate == "" {
-			logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid template_id"})
+			logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "template_id 无效"})
 			return
 		}
 	} else if req.CustomTemplate != "" {
 		if err := validateTemplate(req.CustomTemplate); err != nil {
-			logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: err.Error()})
+			logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: err.Error()})
 			return
 		}
 		selectedTemplate = req.CustomTemplate
 	} else {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "template_id or custom_template required"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "template_id 和 custom_template 至少传一个"})
 		return
 	}
 
@@ -120,7 +132,7 @@ func (h *NamingTemplateHandler) ConfigureTemplate(w http.ResponseWriter, r *http
 	}
 	if h.namingTemplateRepo != nil {
 		if err := h.namingTemplateRepo.Save(r.Context(), record); err != nil {
-			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save naming template failed"})
+			logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "保存命名模板失败"})
 			return
 		}
 	}
@@ -143,16 +155,15 @@ func (h *NamingTemplateHandler) ActivateTemplate(w http.ResponseWriter, r *http.
 	var req struct {
 		Template string `json:"template"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Template == "" {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "template required"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "template 不能为空"})
 		return
 	}
 	if err := validateTemplate(req.Template); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: err.Error()})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: err.Error()})
 		return
 	}
 
@@ -167,7 +178,7 @@ func (h *NamingTemplateHandler) ActivateTemplate(w http.ResponseWriter, r *http.
 	}
 	if h.namingTemplateRepo != nil {
 		if err := h.namingTemplateRepo.Save(r.Context(), record); err != nil {
-			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save naming template failed"})
+			logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "保存命名模板失败"})
 			return
 		}
 	}
@@ -176,7 +187,7 @@ func (h *NamingTemplateHandler) ActivateTemplate(w http.ResponseWriter, r *http.
 	if h.effectiveConfig != nil {
 		base, ok := h.runtimeConfigRepo.LatestPublished(r.Context())
 		if !ok {
-			logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "no base runtime config"})
+			logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "当前没有可作为基线的已发布运行时配置"})
 			return
 		}
 		base.ConfigVersion = idgen.Next()
@@ -188,26 +199,33 @@ func (h *NamingTemplateHandler) ActivateTemplate(w http.ResponseWriter, r *http.
 		base.CreatedAt = now
 		base.UpdatedAt = now
 		if err := h.runtimeConfigRepo.Save(r.Context(), base); err != nil {
-			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save runtime config failed"})
+			logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "保存运行时配置失败"})
 			return
 		}
-		if err := h.runtimeConfigRepo.MarkPublished(r.Context(), base.ConfigVersion, "admin"); err != nil {
-			logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "publish runtime config failed"})
+		previous, previousExists, err := h.runtimeConfigRepo.SwitchPublished(r.Context(), base.ConfigVersion, "admin")
+		if err != nil {
+			logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "发布运行时配置失败"})
 			return
 		}
 		publishedConfigVersion = base.ConfigVersion
 
 		cfg := mysql.ApplyLatestNamingTemplate(r.Context(), h.namingTemplateRepo, mysql.ToDynamicRuntimeConfig(base))
 		if h.runtimeConfigCache != nil {
-			if err := h.runtimeConfigCache.InvalidatePublished(r.Context()); err != nil {
-				logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "invalidate runtime config cache failed"})
-				return
-			}
 			if err := h.runtimeConfigCache.SavePublished(r.Context(), rediscache.RuntimeConfigSnapshot{
 				ConfigVersion: base.ConfigVersion,
 				Config:        cfg,
 			}); err != nil {
-				logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "save runtime config cache failed"})
+				_ = h.runtimeConfigCache.InvalidatePublished(r.Context())
+				restoreErr := h.runtimeConfigRepo.RestorePublished(r.Context(), base.ConfigVersion, previous, previousExists)
+				if restoreErr != nil {
+					logx.Error("admin.naming_template.activate.rollback_failed", restoreErr, logx.Fields{
+						"config_version":          base.ConfigVersion,
+						"previous_config_version": previous.ConfigVersion,
+					})
+					logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "写入运行时配置缓存失败，且数据库回滚失败"})
+					return
+				}
+				logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "写入运行时配置缓存失败，发布已回滚"})
 				return
 			}
 		}

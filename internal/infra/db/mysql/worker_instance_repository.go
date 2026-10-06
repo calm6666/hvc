@@ -80,13 +80,15 @@ func (r *WorkerInstanceRepository) EnsureOnline(ctx context.Context, nodeID uint
 }
 
 // TouchHeartbeat 更新 Worker 实例心跳时间。
-func (r *WorkerInstanceRepository) TouchHeartbeat(ctx context.Context, workerID string) error {
-	now := time.Now()
+func (r *WorkerInstanceRepository) TouchHeartbeat(ctx context.Context, workerID string, heartbeatAt time.Time) error {
+	if heartbeatAt.IsZero() {
+		heartbeatAt = time.Now()
+	}
 	return r.db.WithContext(ctx).Model(&WorkerInstanceRecord{}).
 		Where("worker_id = ?", workerID).
 		Updates(map[string]any{
-			"last_heartbeat_at": now,
-			"updated_at":        now,
+			"last_heartbeat_at": heartbeatAt,
+			"updated_at":        time.Now(),
 		}).Error
 }
 
@@ -186,4 +188,74 @@ func (r *WorkerInstanceRepository) ListAll(ctx context.Context) []WorkerInstance
 		return nil
 	}
 	return records
+}
+
+// CountSummary 返回 Worker 总数和在线数，供总览接口直接复用数据库聚合结果。
+func (r *WorkerInstanceRepository) CountSummary(ctx context.Context, onlineAfter time.Time) (int, int) {
+	if r == nil {
+		return 0, 0
+	}
+
+	type row struct {
+		Total  int64 `gorm:"column:total"`
+		Online int64 `gorm:"column:online"`
+	}
+
+	var result row
+	if err := r.db.WithContext(ctx).
+		Model(&WorkerInstanceRecord{}).
+		Select(
+			"COUNT(*) AS total, "+
+				"SUM(CASE WHEN status = 1 AND last_heartbeat_at >= ? THEN 1 ELSE 0 END) AS online",
+			onlineAfter,
+		).
+		Scan(&result).Error; err != nil {
+		return 0, 0
+	}
+	return int(result.Total), int(result.Online)
+}
+
+// CountByNodeSummary 返回按节点聚合的 Worker 总数和在线数。
+func (r *WorkerInstanceRepository) CountByNodeSummary(ctx context.Context, onlineAfter time.Time) (map[uint64]int, map[uint64]int) {
+	totalByNode := make(map[uint64]int)
+	onlineByNode := make(map[uint64]int)
+	if r == nil {
+		return totalByNode, onlineByNode
+	}
+
+	type row struct {
+		NodeID uint64 `gorm:"column:node_id"`
+		Total  int    `gorm:"column:total"`
+		Online int    `gorm:"column:online"`
+	}
+
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Model(&WorkerInstanceRecord{}).
+		Select(
+			"node_id, COUNT(*) AS total, "+
+				"SUM(CASE WHEN status = 1 AND last_heartbeat_at >= ? THEN 1 ELSE 0 END) AS online",
+			onlineAfter,
+		).
+		Group("node_id").
+		Scan(&rows).Error; err != nil {
+		return totalByNode, onlineByNode
+	}
+	for _, item := range rows {
+		totalByNode[item.NodeID] = item.Total
+		onlineByNode[item.NodeID] = item.Online
+	}
+	return totalByNode, onlineByNode
+}
+
+// FindByWorkerID 按稳定 worker_id 查询实例记录。
+//
+// 后台治理接口和集群远程控制链路需要先定位“这个 worker 当前属于哪台节点”，
+// 因此这里提供精确查询，避免上层再走模糊分页列表做二次筛选。
+func (r *WorkerInstanceRepository) FindByWorkerID(ctx context.Context, workerID string) (WorkerInstanceRecord, bool) {
+	var record WorkerInstanceRecord
+	if err := r.db.WithContext(ctx).Where("worker_id = ?", strings.TrimSpace(workerID)).Take(&record).Error; err != nil {
+		return WorkerInstanceRecord{}, false
+	}
+	return record, true
 }

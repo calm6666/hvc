@@ -1,8 +1,11 @@
 package admin
 
 import (
+	"encoding/json"
+	"strings"
 	"time"
 
+	"hvc/internal/audit"
 	"hvc/internal/cluster/membership"
 	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
@@ -35,6 +38,7 @@ type clusterNodeGPUDeviceView struct {
 type clusterNodeListItemView struct {
 	NodeID               uint64                         `json:"node_id"`
 	NodeName             string                         `json:"node_name"`
+	NodeRole             string                         `json:"node_role"`
 	HostIP               string                         `json:"host_ip"`
 	GRPCHost             string                         `json:"grpc_host"`
 	HTTPHost             string                         `json:"http_host"`
@@ -43,6 +47,8 @@ type clusterNodeListItemView struct {
 	QuarantineReason     string                         `json:"quarantine_reason"`
 	Draining             bool                           `json:"draining"`
 	DrainReason          string                         `json:"drain_reason"`
+	ControlPlane         bool                           `json:"control_plane"`
+	AdminAccessible      bool                           `json:"admin_accessible"`
 	LastStateChangeAt    time.Time                      `json:"last_state_change_at"`
 	CapacityGeneration   uint64                         `json:"capacity_generation"`
 	SupportNVENC         bool                           `json:"support_nvenc"`
@@ -62,6 +68,7 @@ type clusterNodeListItemView struct {
 	MetricsAvailable     bool                           `json:"metrics_available"`
 	MetricsFresh         bool                           `json:"metrics_fresh"`
 	OnlineEstimate       bool                           `json:"online_estimate"`
+	OnlineSignalSource   string                         `json:"online_signal_source"`
 	SchedulerReady       bool                           `json:"scheduler_ready"`
 	StateReason          string                         `json:"state_reason"`
 	LastMetricsAt        *time.Time                     `json:"last_metrics_at,omitempty"`
@@ -88,6 +95,9 @@ type clusterMemberView struct {
 	ControlPlane        bool       `json:"control_plane"`
 	AdminAccessible     bool       `json:"admin_accessible"`
 	OnlineEstimate      bool       `json:"online_estimate"`
+	OnlineSignalSource  string     `json:"online_signal_source"`
+	SchedulerReady      bool       `json:"scheduler_ready"`
+	StateReason         string     `json:"state_reason"`
 	Source              string     `json:"source"`
 	LastHeartbeatAt     time.Time  `json:"last_heartbeat_at"`
 	RegistryHeartbeatAt *time.Time `json:"registry_heartbeat_at,omitempty"`
@@ -110,9 +120,12 @@ func toClusterNodeMetricsSummaryView(metrics *model.NodeMetrics) *clusterNodeMet
 }
 
 func toClusterNodeListItemView(item ClusterNodeView) clusterNodeListItemView {
+	nodeRole := nodeRoleFromTags(item.NodeTags)
+	controlPlane, adminAccessible := evaluateNodeManagementCapability(nodeRole, item.Enabled, item.HTTPHost)
 	return clusterNodeListItemView{
 		NodeID:               item.NodeID,
 		NodeName:             item.NodeName,
+		NodeRole:             nodeRole,
 		HostIP:               item.HostIP,
 		GRPCHost:             item.GRPCHost,
 		HTTPHost:             item.HTTPHost,
@@ -121,6 +134,8 @@ func toClusterNodeListItemView(item ClusterNodeView) clusterNodeListItemView {
 		QuarantineReason:     item.QuarantineReason,
 		Draining:             item.Draining,
 		DrainReason:          item.DrainReason,
+		ControlPlane:         controlPlane,
+		AdminAccessible:      adminAccessible,
 		LastStateChangeAt:    item.LastStateChangeAt,
 		CapacityGeneration:   item.CapacityGeneration,
 		SupportNVENC:         item.SupportNVENC,
@@ -140,6 +155,7 @@ func toClusterNodeListItemView(item ClusterNodeView) clusterNodeListItemView {
 		MetricsAvailable:     item.MetricsAvailable,
 		MetricsFresh:         item.MetricsFresh,
 		OnlineEstimate:       item.OnlineEstimate,
+		OnlineSignalSource:   resolveNodeOnlineSignalSource(item),
 		SchedulerReady:       item.SchedulerReady,
 		StateReason:          item.StateReason,
 		LastMetricsAt:        item.LastMetricsAt,
@@ -189,10 +205,26 @@ func toClusterMemberView(item membership.Node) clusterMemberView {
 		ControlPlane:        controlPlane,
 		AdminAccessible:     adminAccessible,
 		OnlineEstimate:      true,
+		OnlineSignalSource:  "registry",
+		SchedulerReady:      false,
+		StateReason:         "node_record_missing",
 		Source:              "registry",
 		LastHeartbeatAt:     item.LastHeartbeatAt,
 		RegistryHeartbeatAt: &registryAt,
 	}
+}
+
+func resolveNodeOnlineSignalSource(item ClusterNodeView) string {
+	if item.LastMetricsAt != nil && !item.LastMetricsAt.IsZero() && item.MetricsFresh {
+		return "metrics"
+	}
+	if !item.LastHeartbeatAt.IsZero() {
+		return "node_heartbeat"
+	}
+	if item.OnlineEstimate {
+		return "registry"
+	}
+	return "unknown"
 }
 
 func evaluateNodeManagementCapability(nodeRole string, enabled bool, httpHost string) (bool, bool) {
@@ -203,28 +235,6 @@ func evaluateNodeManagementCapability(nodeRole string, enabled bool, httpHost st
 		controlPlane = enabled
 	}
 	return controlPlane, adminAccessible
-}
-
-func pageSlice[T any](items []T, page, pageSize int) ([]T, int64) {
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
-	total := int64(len(items))
-	start := (page - 1) * pageSize
-	if start >= len(items) {
-		return []T{}, total
-	}
-	end := start + pageSize
-	if end > len(items) {
-		end = len(items)
-	}
-	return items[start:end], total
 }
 
 func toClusterNodeRecordView(record mysql.ClusterNodeRecord) clusterNodeListItemView {
@@ -245,6 +255,7 @@ type clusterWorkerListItemView struct {
 	Status             int        `json:"status"`
 	StatusName         string     `json:"status_name"`
 	OnlineEstimate     bool       `json:"online_estimate"`
+	StatusSource       string     `json:"status_source"`
 	StartAt            time.Time  `json:"start_at"`
 	ExitedAt           *time.Time `json:"exited_at,omitempty"`
 	ExitReason         string     `json:"exit_reason"`
@@ -274,9 +285,12 @@ type clusterSchedulerDecisionPreviewView struct {
 type clusterSchedulerCandidateView struct {
 	NodeID                    uint64                               `json:"node_id"`
 	NodeName                  string                               `json:"node_name"`
+	NodeRole                  string                               `json:"node_role"`
 	Enabled                   bool                                 `json:"enabled"`
 	Quarantined               bool                                 `json:"quarantined"`
 	Draining                  bool                                 `json:"draining"`
+	ControlPlane              bool                                 `json:"control_plane"`
+	AdminAccessible           bool                                 `json:"admin_accessible"`
 	Shielded                  bool                                 `json:"shielded"`
 	SupportsHardwareWatermark bool                                 `json:"supports_hardware_watermark"`
 	MaxTranscodeSessions      int                                  `json:"max_transcode_sessions"`
@@ -284,6 +298,9 @@ type clusterSchedulerCandidateView struct {
 	MetricsAvailable          bool                                 `json:"metrics_available"`
 	MetricsFresh              bool                                 `json:"metrics_fresh"`
 	Online                    bool                                 `json:"online"`
+	OnlineSignalSource        string                               `json:"online_signal_source"`
+	SchedulerReady            bool                                 `json:"scheduler_ready"`
+	StateReason               string                               `json:"state_reason"`
 	LastMetricsAt             time.Time                            `json:"last_metrics_at"`
 	LastHeartbeatAt           time.Time                            `json:"last_heartbeat_at"`
 	Score                     int                                  `json:"score"`
@@ -310,48 +327,95 @@ type clusterSchedulerInsightView struct {
 }
 
 type clusterNodeResourceGPUView struct {
-	GPUIndex               int    `json:"gpu_index"`
-	GPUUUID                string `json:"gpu_uuid"`
-	Model                  string `json:"model"`
-	Vendor                 string `json:"vendor"`
-	MemoryTotalMB          int    `json:"memory_total_mb"`
-	GPUMemoryUsagePercent  int    `json:"gpu_memory_usage_percent"`
-	GPUUtilizationPercent  int    `json:"gpu_utilization_percent"`
-	ActiveSessions         int    `json:"active_sessions"`
-	MaxSessions            int    `json:"max_sessions"`
-	Schedulable            bool   `json:"schedulable"`
-	Healthy                bool   `json:"healthy"`
+	GPUIndex              int    `json:"gpu_index"`
+	GPUUUID               string `json:"gpu_uuid"`
+	Model                 string `json:"model"`
+	Vendor                string `json:"vendor"`
+	MemoryTotalMB         int    `json:"memory_total_mb"`
+	GPUMemoryUsagePercent int    `json:"gpu_memory_usage_percent"`
+	GPUUtilizationPercent int    `json:"gpu_utilization_percent"`
+	ActiveSessions        int    `json:"active_sessions"`
+	MaxSessions           int    `json:"max_sessions"`
+	Schedulable           bool   `json:"schedulable"`
+	Healthy               bool   `json:"healthy"`
 }
 
 type clusterNodeResourceDistributionView struct {
-	NodeID                      uint64                     `json:"node_id"`
-	NodeName                    string                     `json:"node_name"`
-	NodeRole                    string                     `json:"node_role"`
-	Enabled                     bool                       `json:"enabled"`
-	Quarantined                 bool                       `json:"quarantined"`
-	Draining                    bool                       `json:"draining"`
-	OnlineEstimate              bool                       `json:"online_estimate"`
-	SchedulerReady              bool                       `json:"scheduler_ready"`
-	StateReason                 string                     `json:"state_reason"`
-	MetricsAvailable            bool                       `json:"metrics_available"`
-	MetricsFresh                bool                       `json:"metrics_fresh"`
-	LastMetricsAt               *time.Time                 `json:"last_metrics_at,omitempty"`
-	LastHeartbeatAt             time.Time                  `json:"last_heartbeat_at"`
-	ActiveExecutionTotal        int                        `json:"active_execution_total"`
-	ActiveTranscodeSessions     int                        `json:"active_transcode_sessions"`
-	UploadQueueDepth            int                        `json:"upload_queue_depth"`
-	MaxTranscodeSessions        int                        `json:"max_transcode_sessions"`
-	MaxUploadConcurrency        int                        `json:"max_upload_concurrency"`
-	RemainingTranscodeCapacity  int                        `json:"remaining_transcode_capacity"`
-	RemainingUploadCapacity     int                        `json:"remaining_upload_capacity"`
-	CPUUsagePercent             int                        `json:"cpu_usage_percent"`
-	MemoryUsagePercent          int                        `json:"memory_usage_percent"`
-	GPUMemoryUsagePercent       int                        `json:"gpu_memory_usage_percent"`
-	GPUActiveSessionTotal       int                        `json:"gpu_active_session_total"`
-	GPUs                        []clusterNodeResourceGPUView `json:"gpus"`
+	NodeID                     uint64                       `json:"node_id"`
+	NodeName                   string                       `json:"node_name"`
+	NodeRole                   string                       `json:"node_role"`
+	Enabled                    bool                         `json:"enabled"`
+	Quarantined                bool                         `json:"quarantined"`
+	Draining                   bool                         `json:"draining"`
+	ControlPlane               bool                         `json:"control_plane"`
+	AdminAccessible            bool                         `json:"admin_accessible"`
+	OnlineEstimate             bool                         `json:"online_estimate"`
+	OnlineSignalSource         string                       `json:"online_signal_source"`
+	SchedulerReady             bool                         `json:"scheduler_ready"`
+	StateReason                string                       `json:"state_reason"`
+	MetricsAvailable           bool                         `json:"metrics_available"`
+	MetricsFresh               bool                         `json:"metrics_fresh"`
+	LastMetricsAt              *time.Time                   `json:"last_metrics_at,omitempty"`
+	LastHeartbeatAt            time.Time                    `json:"last_heartbeat_at"`
+	ActiveExecutionTotal       int                          `json:"active_execution_total"`
+	ActiveTranscodeSessions    int                          `json:"active_transcode_sessions"`
+	UploadQueueDepth           int                          `json:"upload_queue_depth"`
+	MaxTranscodeSessions       int                          `json:"max_transcode_sessions"`
+	MaxUploadConcurrency       int                          `json:"max_upload_concurrency"`
+	RemainingTranscodeCapacity int                          `json:"remaining_transcode_capacity"`
+	RemainingUploadCapacity    int                          `json:"remaining_upload_capacity"`
+	CPUUsagePercent            int                          `json:"cpu_usage_percent"`
+	MemoryUsagePercent         int                          `json:"memory_usage_percent"`
+	GPUMemoryUsagePercent      int                          `json:"gpu_memory_usage_percent"`
+	GPUActiveSessionTotal      int                          `json:"gpu_active_session_total"`
+	GPUs                       []clusterNodeResourceGPUView `json:"gpus"`
+}
+
+type clusterGovernanceRecentActionView struct {
+	ActionName    string                             `json:"action_name"`
+	TargetType    string                             `json:"target_type"`
+	TargetID      string                             `json:"target_id"`
+	ResultCode    int                                `json:"result_code"`
+	ResultMessage string                             `json:"result_message"`
+	Result        *clusterGovernanceActionResultView `json:"result,omitempty"`
+	RequestIP     string                             `json:"request_ip"`
+	CreatedAt     time.Time                          `json:"created_at"`
+	AdminUserID   uint64                             `json:"admin_user_id"`
+	Username      string                             `json:"username"`
+}
+
+type clusterGovernanceActionResultView struct {
+	TargetStatus       string                               `json:"target_status,omitempty"`
+	ControlPath        string                               `json:"control_path,omitempty"`
+	TakeoverActiveJobs *bool                                `json:"takeover_active_jobs,omitempty"`
+	TakeoverResult     *clusterGovernanceTakeoverResultView `json:"takeover_result,omitempty"`
+	Extras             map[string]any                       `json:"extras,omitempty"`
+}
+
+type clusterGovernanceTakeoverResultView struct {
+	MatchedJobTotal         int `json:"matched_job_total"`
+	ResetJobTotal           int `json:"reset_job_total"`
+	AbandonedExecutionTotal int `json:"abandoned_execution_total"`
+}
+
+type clusterGovernanceSummaryView struct {
+	WindowMinutes         int                                 `json:"window_minutes"`
+	RecentActionTotal     int64                               `json:"recent_action_total"`
+	NodeEnableTotal       int64                               `json:"node_enable_total"`
+	NodeDisableTotal      int64                               `json:"node_disable_total"`
+	NodeQuarantineTotal   int64                               `json:"node_quarantine_total"`
+	NodeUnquarantineTotal int64                               `json:"node_unquarantine_total"`
+	NodeDrainTotal        int64                               `json:"node_drain_total"`
+	NodeResumeTotal       int64                               `json:"node_resume_total"`
+	WorkerOfflineTotal    int64                               `json:"worker_offline_total"`
+	WorkerExitTotal       int64                               `json:"worker_exit_total"`
+	JobTakeoverTotal      int64                               `json:"job_takeover_total"`
+	LatestAction          *clusterGovernanceRecentActionView  `json:"latest_action,omitempty"`
+	RecentActions         []clusterGovernanceRecentActionView `json:"recent_actions"`
 }
 
 func toClusterWorkerListItemView(record mysql.WorkerInstanceRecord, now time.Time) clusterWorkerListItemView {
+	onlineEstimate := record.Status == 1 && !record.LastHeartbeatAt.IsZero() && now.Sub(record.LastHeartbeatAt) <= clusterNodeOnlineGracePeriod
 	return clusterWorkerListItemView{
 		ID:                 record.ID,
 		NodeID:             record.NodeID,
@@ -365,13 +429,36 @@ func toClusterWorkerListItemView(record mysql.WorkerInstanceRecord, now time.Tim
 		Version:            record.Version,
 		Status:             record.Status,
 		StatusName:         workerStatusName(record.Status),
-		OnlineEstimate:     record.Status == 1 && !record.LastHeartbeatAt.IsZero() && now.Sub(record.LastHeartbeatAt) <= clusterNodeOnlineGracePeriod,
+		OnlineEstimate:     onlineEstimate,
+		StatusSource:       workerStatusSource(record, now, onlineEstimate),
 		StartAt:            record.StartAt,
 		ExitedAt:           record.ExitedAt,
 		ExitReason:         record.ExitReason,
 		LastHeartbeatAt:    record.LastHeartbeatAt,
 		CreatedAt:          record.CreatedAt,
 		UpdatedAt:          record.UpdatedAt,
+	}
+}
+
+func workerStatusSource(record mysql.WorkerInstanceRecord, now time.Time, onlineEstimate bool) string {
+	switch record.Status {
+	case 1:
+		if onlineEstimate {
+			return "heartbeat"
+		}
+		return "heartbeat_stale"
+	case 2:
+		if record.ExitReason == "heartbeat_timeout" {
+			return "heartbeat_timeout"
+		}
+		return "manual_offline"
+	case 3:
+		if strings.HasPrefix(record.ExitReason, "manual") {
+			return "manual_exit"
+		}
+		return "process_exit"
+	default:
+		return "unknown"
 	}
 }
 
@@ -395,9 +482,12 @@ func toClusterSchedulerInsightView(insight schedulerview.DispatchInsight) cluste
 		view.Candidates = append(view.Candidates, clusterSchedulerCandidateView{
 			NodeID:                    item.NodeID,
 			NodeName:                  item.NodeName,
+			NodeRole:                  item.NodeRole,
 			Enabled:                   item.Enabled,
 			Quarantined:               item.Quarantined,
 			Draining:                  item.Draining,
+			ControlPlane:              item.ControlPlane,
+			AdminAccessible:           item.AdminAccessible,
 			Shielded:                  item.Shielded,
 			SupportsHardwareWatermark: item.SupportsHardwareWatermark,
 			MaxTranscodeSessions:      item.MaxTranscodeSessions,
@@ -405,6 +495,9 @@ func toClusterSchedulerInsightView(insight schedulerview.DispatchInsight) cluste
 			MetricsAvailable:          item.MetricsAvailable,
 			MetricsFresh:              item.MetricsFresh,
 			Online:                    item.Online,
+			OnlineSignalSource:        item.OnlineSignalSource,
+			SchedulerReady:            item.SchedulerReady,
+			StateReason:               item.StateReason,
 			LastMetricsAt:             item.LastMetricsAt,
 			LastHeartbeatAt:           item.LastHeartbeatAt,
 			Score:                     item.Score,
@@ -454,5 +547,87 @@ func workerStatusName(status int) string {
 		return "exited"
 	default:
 		return "unknown"
+	}
+}
+
+func toClusterGovernanceRecentActionView(item audit.Item) clusterGovernanceRecentActionView {
+	return clusterGovernanceRecentActionView{
+		ActionName:    item.ActionName,
+		TargetType:    item.TargetType,
+		TargetID:      item.TargetID,
+		ResultCode:    item.ResultCode,
+		ResultMessage: item.ResultMessage,
+		Result:        parseClusterGovernanceActionResult(item.ResultMessage),
+		RequestIP:     item.RequestIP,
+		CreatedAt:     item.CreatedAt,
+		AdminUserID:   item.AdminUserID,
+		Username:      item.Username,
+	}
+}
+
+func parseClusterGovernanceActionResult(raw string) *clusterGovernanceActionResultView {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "ok" {
+		return nil
+	}
+
+	payload := make(map[string]any)
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil
+	}
+
+	result := &clusterGovernanceActionResultView{}
+	if value, ok := payload["target_status"].(string); ok {
+		result.TargetStatus = value
+		delete(payload, "target_status")
+	}
+	if value, ok := payload["control_path"].(string); ok {
+		result.ControlPath = value
+		delete(payload, "control_path")
+	}
+	if value, exists := payload["takeover_active_jobs"]; exists {
+		if enabled, ok := value.(bool); ok {
+			copy := enabled
+			result.TakeoverActiveJobs = &copy
+		}
+		delete(payload, "takeover_active_jobs")
+	}
+	if value, ok := payload["takeover_result"].(map[string]any); ok {
+		result.TakeoverResult = &clusterGovernanceTakeoverResultView{
+			MatchedJobTotal:         jsonNumberToInt(value["matched_job_total"]),
+			ResetJobTotal:           jsonNumberToInt(value["reset_job_total"]),
+			AbandonedExecutionTotal: jsonNumberToInt(value["abandoned_execution_total"]),
+		}
+		delete(payload, "takeover_result")
+	}
+	if len(payload) > 0 {
+		result.Extras = payload
+	}
+	if result.TargetStatus == "" && result.ControlPath == "" && result.TakeoverActiveJobs == nil && result.TakeoverResult == nil && len(result.Extras) == 0 {
+		return nil
+	}
+	return result
+}
+
+func jsonNumberToInt(value any) int {
+	switch v := value.(type) {
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case int:
+		return v
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case uint:
+		return int(v)
+	case uint32:
+		return int(v)
+	case uint64:
+		return int(v)
+	default:
+		return 0
 	}
 }

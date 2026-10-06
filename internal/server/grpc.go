@@ -2,19 +2,25 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	transcodev1 "hvc/api/pb/transcodev1"
 	"hvc/internal/config"
 	"hvc/internal/configcenter"
+	"hvc/internal/infra/db/mysql"
 	grpcinterceptor "hvc/internal/interfaces/grpc/interceptor"
 	grpcpublic "hvc/internal/interfaces/grpc/public"
 	"hvc/internal/model"
 	"hvc/pkg/logx"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -24,21 +30,28 @@ import (
 // 这一层只承载面向外部调用方发布的业务 RPC，支持运行期热启停和监听地址切换。
 // 集群内部通信使用独立的 InternalGRPCServer，避免热更新把内部链路一并打断。
 type GRPCServer struct {
-	initialConfig   config.DynamicRuntimeConfig
-	effectiveConfig *configcenter.EffectiveConfig
-	publicServer    grpcpublic.TranscodePublicServer
-	mu              sync.Mutex
-	running         bool
-	cancel          context.CancelFunc
-	currentAddress  string
+	initialConfig     config.DynamicRuntimeConfig
+	effectiveConfig   *configcenter.EffectiveConfig
+	publicServer      grpcpublic.TranscodePublicServer
+	registryRepo      *mysql.RegistryEtcdConfigRepository
+	runtimeConfigRepo *mysql.RuntimeConfigRepository
+	advertiseHost     string
+	mu                sync.Mutex
+	running           bool
+	cancel            context.CancelFunc
+	currentAddress    string
+	currentRegistryID uint64
 }
 
 // NewGRPCServer 创建对外 public gRPC 服务管理器。
-func NewGRPCServer(initialConfig config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, publicServer grpcpublic.TranscodePublicServer) *GRPCServer {
+func NewGRPCServer(initialConfig config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, publicServer grpcpublic.TranscodePublicServer, registryRepo *mysql.RegistryEtcdConfigRepository, runtimeConfigRepo *mysql.RuntimeConfigRepository, advertiseHost string) *GRPCServer {
 	return &GRPCServer{
-		initialConfig:   initialConfig,
-		effectiveConfig: effectiveConfig,
-		publicServer:    publicServer,
+		initialConfig:     initialConfig,
+		effectiveConfig:   effectiveConfig,
+		publicServer:      publicServer,
+		registryRepo:      registryRepo,
+		runtimeConfigRepo: runtimeConfigRepo,
+		advertiseHost:     strings.TrimSpace(advertiseHost),
 	}
 }
 
@@ -49,6 +62,7 @@ func (s *GRPCServer) Reconcile(parent context.Context) {
 	if address == "" {
 		address = ":9090"
 	}
+	registryID := s.resolvePublishedRegistryID(parent)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -57,7 +71,7 @@ func (s *GRPCServer) Reconcile(parent context.Context) {
 		s.stopLocked()
 		return
 	}
-	if s.running && s.currentAddress == address {
+	if s.running && s.currentAddress == address && s.currentRegistryID == registryID {
 		return
 	}
 	s.stopLocked()
@@ -66,6 +80,7 @@ func (s *GRPCServer) Reconcile(parent context.Context) {
 	s.cancel = cancel
 	s.running = true
 	s.currentAddress = address
+	s.currentRegistryID = registryID
 	go s.serve(ctx, cfg, address)
 }
 
@@ -79,6 +94,12 @@ func (s *GRPCServer) serve(ctx context.Context, cfg config.DynamicRuntimeConfig,
 	logx.Info("grpc.public.listening", logx.Fields{
 		"address": address,
 	})
+	deregister := s.registerService(ctx, cfg, address)
+	defer func() {
+		if deregister != nil {
+			deregister()
+		}
+	}()
 
 	serverOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpcinterceptor.UnaryLogInterceptor()),
@@ -129,6 +150,7 @@ func (s *GRPCServer) stopLocked() {
 	s.cancel = nil
 	s.running = false
 	s.currentAddress = ""
+	s.currentRegistryID = 0
 }
 
 func (s *GRPCServer) markStopped(address string) {
@@ -137,8 +159,172 @@ func (s *GRPCServer) markStopped(address string) {
 	if s.currentAddress == address {
 		s.running = false
 		s.currentAddress = ""
+		s.currentRegistryID = 0
 		s.cancel = nil
 	}
+}
+
+func (s *GRPCServer) registerService(ctx context.Context, cfg config.DynamicRuntimeConfig, address string) func() {
+	if s.registryRepo == nil {
+		return nil
+	}
+	record, ok := s.resolvePublishedRegistryConfig(ctx)
+	if !ok {
+		return nil
+	}
+	if !record.Enabled {
+		return nil
+	}
+	endpoints := splitRegistryEndpoints(record.Endpoints)
+	if len(endpoints) == 0 {
+		return nil
+	}
+	endpoint, host, port, err := s.resolvePublishedEndpoint(address)
+	if err != nil {
+		logx.Error("grpc.public.registry.address_invalid", err, logx.Fields{"address": address})
+		return nil
+	}
+	client, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: resolveRegistryDialTimeout(record),
+	})
+	if err != nil {
+		logx.Error("grpc.public.registry.connect_failed", err, logx.Fields{"registry_id": record.RegistryID})
+		return nil
+	}
+	leaseResp, err := client.Grant(ctx, int64(resolveRegistryLeaseTTL(record).Seconds()))
+	if err != nil {
+		_ = client.Close()
+		logx.Error("grpc.public.registry.lease_failed", err, logx.Fields{"registry_id": record.RegistryID})
+		return nil
+	}
+	key := buildPublicGRPCRegistryKey(record.ServiceNamespace, "transcode.v1.TranscodePublicService", endpoint)
+	payload, _ := json.Marshal(map[string]any{
+		"endpoint":   endpoint,
+		"host":       host,
+		"port":       port,
+		"service":    "transcode.v1.TranscodePublicService",
+		"updated_at": time.Now(),
+	})
+	if _, err := client.Put(ctx, key, string(payload), clientv3.WithLease(leaseResp.ID)); err != nil {
+		_ = client.Close()
+		logx.Error("grpc.public.registry.put_failed", err, logx.Fields{"registry_id": record.RegistryID, "key": key})
+		return nil
+	}
+	keepAliveCtx, cancel := context.WithCancel(context.Background())
+	go func() {
+		ch, err := client.KeepAlive(keepAliveCtx, leaseResp.ID)
+		if err != nil {
+			logx.Error("grpc.public.registry.keepalive_failed", err, logx.Fields{"registry_id": record.RegistryID, "key": key})
+			return
+		}
+		for range ch {
+		}
+	}()
+	logx.Info("grpc.public.registry.registered", logx.Fields{
+		"registry_id": record.RegistryID,
+		"key":         key,
+		"endpoint":    endpoint,
+	})
+	return func() {
+		cancel()
+		_, _ = client.Revoke(context.Background(), leaseResp.ID)
+		_ = client.Close()
+	}
+}
+
+func (s *GRPCServer) resolvePublishedRegistryConfig(ctx context.Context) (mysql.RegistryEtcdConfigRecord, bool) {
+	if s.registryRepo == nil {
+		return mysql.RegistryEtcdConfigRecord{}, false
+	}
+	if published, ok := s.publishedRuntimeConfig(ctx); ok && published.PublicGRPCRegistryID > 0 {
+		return s.registryRepo.FindByID(ctx, published.PublicGRPCRegistryID)
+	}
+	return mysql.RegistryEtcdConfigRecord{}, false
+}
+
+func (s *GRPCServer) resolvePublishedRegistryID(ctx context.Context) uint64 {
+	if published, ok := s.publishedRuntimeConfig(ctx); ok {
+		return published.PublicGRPCRegistryID
+	}
+	return 0
+}
+
+func (s *GRPCServer) publishedRuntimeConfig(ctx context.Context) (mysql.RuntimeConfigRecord, bool) {
+	if s.runtimeConfigRepo == nil {
+		return mysql.RuntimeConfigRecord{}, false
+	}
+	return s.runtimeConfigRepo.LatestPublished(ctx)
+}
+
+// resolvePublishedEndpoint 生成真正写入 etcd 的服务接入点。
+//
+// 监听地址允许使用 0.0.0.0 或空 host，但注册中心必须写可被其它实例访问的地址。
+// 因此这里优先使用显式监听 host；若监听的是 wildcard，则回退到 bootstrap 注入的 advertise IP。
+func (s *GRPCServer) resolvePublishedEndpoint(address string) (string, string, int, error) {
+	host, port, err := splitServiceAddress(address)
+	if err != nil {
+		return "", "", 0, err
+	}
+	publishedHost := strings.TrimSpace(host)
+	if publishedHost == "" || publishedHost == "0.0.0.0" || publishedHost == "::" {
+		publishedHost = strings.TrimSpace(s.advertiseHost)
+	}
+	if publishedHost == "" {
+		publishedHost = host
+	}
+	return net.JoinHostPort(publishedHost, strconv.Itoa(port)), publishedHost, port, nil
+}
+
+func splitRegistryEndpoints(raw string) []string {
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, item := range parts {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func splitServiceAddress(address string) (string, int, error) {
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", 0, err
+	}
+	if host == "" {
+		host = "0.0.0.0"
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return "", 0, err
+	}
+	return host, port, nil
+}
+
+func resolveRegistryDialTimeout(record mysql.RegistryEtcdConfigRecord) time.Duration {
+	if record.DialTimeoutMS > 0 {
+		return time.Duration(record.DialTimeoutMS) * time.Millisecond
+	}
+	return 3 * time.Second
+}
+
+func resolveRegistryLeaseTTL(record mysql.RegistryEtcdConfigRecord) time.Duration {
+	if record.LeaseTTLSec > 0 {
+		return time.Duration(record.LeaseTTLSec) * time.Second
+	}
+	return 30 * time.Second
+}
+
+func buildPublicGRPCRegistryKey(namespace, serviceName, endpoint string) string {
+	namespace = strings.Trim(strings.TrimSpace(namespace), "/")
+	serviceName = strings.Trim(strings.TrimSpace(serviceName), "/")
+	endpoint = strings.Trim(strings.TrimSpace(endpoint), "/")
+	if namespace == "" {
+		return fmt.Sprintf("/%s/%s", serviceName, endpoint)
+	}
+	return fmt.Sprintf("/%s/%s/%s", namespace, serviceName, endpoint)
 }
 
 type transcodePublicRPCServer struct {

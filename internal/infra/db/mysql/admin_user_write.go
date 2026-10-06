@@ -2,13 +2,14 @@ package mysql
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"hvc/pkg/idgen"
 )
 
 // SaveUser 保存或更新管理员用户。
-func (r *AdminRepository) SaveUser(ctx context.Context, username, passwordHash, displayName string, status int) (AdminUserRecord, error) {
+func (r *AdminRepository) SaveUser(ctx context.Context, username, passwordHash, passwordSalt, displayName string, status int) (AdminUserRecord, error) {
 	now := time.Now()
 	var record AdminUserRecord
 	result := r.db.WithContext(ctx).Where("username = ?", username).Limit(1).Find(&record)
@@ -16,16 +17,23 @@ func (r *AdminRepository) SaveUser(ctx context.Context, username, passwordHash, 
 		return AdminUserRecord{}, result.Error
 	}
 	if result.RowsAffected > 0 {
-		record.PasswordHash = passwordHash
+		if passwordHash != "" {
+			record.PasswordHash = passwordHash
+			record.PasswordSalt = passwordSalt
+		}
 		record.DisplayName = displayName
 		record.Status = status
 		record.UpdatedAt = now
 		return record, r.db.WithContext(ctx).Save(&record).Error
 	}
+	if passwordHash == "" {
+		return AdminUserRecord{}, fmt.Errorf("password is required for new user")
+	}
 	record = AdminUserRecord{
 		AdminUserID:  idgen.Next(),
 		Username:     username,
 		PasswordHash: passwordHash,
+		PasswordSalt: passwordSalt,
 		DisplayName:  displayName,
 		Status:       status,
 		CreatedAt:    now,

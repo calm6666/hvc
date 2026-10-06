@@ -10,10 +10,12 @@ import (
 	clusterv1 "hvc/api/pb/clusterv1"
 	"hvc/internal/cluster"
 	"hvc/internal/config"
+	"hvc/internal/configcenter"
 	rediscache "hvc/internal/infra/cache/redis"
 	"hvc/internal/infra/db/mysql"
 	grpcinterceptor "hvc/internal/interfaces/grpc/interceptor"
 	"hvc/internal/model"
+	"hvc/internal/worker"
 	"hvc/pkg/logx"
 
 	"google.golang.org/grpc"
@@ -27,23 +29,33 @@ import (
 // 这一层属于 bootstrap 通信基础设施，节点启动后即建立监听，
 // 不参与运行期 public gRPC 的热启停。
 type InternalGRPCServer struct {
-	cfg           config.InternalGRPCConfig
-	stateCache    *cluster.StateCache
-	progressStore *rediscache.ProgressStore
-	segmentRepo   *mysql.SegmentRepository
-	jobRepo       *mysql.JobRepository
-	nodeRepo      *mysql.ClusterNodeRepository
+	cfg             config.InternalGRPCConfig
+	stateCache      *cluster.StateCache
+	progressStore   *rediscache.ProgressStore
+	segmentRepo     *mysql.SegmentRepository
+	jobRepo         *mysql.JobRepository
+	nodeRepo        *mysql.ClusterNodeRepository
+	workerRepo      *mysql.WorkerInstanceRepository
+	workerModule    *worker.Module
+	effectiveConfig *configcenter.EffectiveConfig
+	heartbeatGate   *cluster.HeartbeatPersistGate
+	jobRuntimeGate  *cluster.JobRuntimePersistGate
 }
 
 // NewInternalGRPCServer 创建集群内部 gRPC 服务。
-func NewInternalGRPCServer(cfg config.InternalGRPCConfig, stateCache *cluster.StateCache, progressStore *rediscache.ProgressStore, segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository, nodeRepo *mysql.ClusterNodeRepository) *InternalGRPCServer {
+func NewInternalGRPCServer(cfg config.InternalGRPCConfig, stateCache *cluster.StateCache, progressStore *rediscache.ProgressStore, segmentRepo *mysql.SegmentRepository, jobRepo *mysql.JobRepository, nodeRepo *mysql.ClusterNodeRepository, workerRepo *mysql.WorkerInstanceRepository, workerModule *worker.Module, effectiveConfig *configcenter.EffectiveConfig) *InternalGRPCServer {
 	return &InternalGRPCServer{
-		cfg:           cfg,
-		stateCache:    stateCache,
-		progressStore: progressStore,
-		segmentRepo:   segmentRepo,
-		jobRepo:       jobRepo,
-		nodeRepo:      nodeRepo,
+		cfg:             cfg,
+		stateCache:      stateCache,
+		progressStore:   progressStore,
+		segmentRepo:     segmentRepo,
+		jobRepo:         jobRepo,
+		nodeRepo:        nodeRepo,
+		workerRepo:      workerRepo,
+		workerModule:    workerModule,
+		effectiveConfig: effectiveConfig,
+		heartbeatGate:   cluster.NewHeartbeatPersistGate(),
+		jobRuntimeGate:  cluster.NewJobRuntimePersistGate(),
 	}
 }
 
@@ -79,11 +91,16 @@ func (s *InternalGRPCServer) Start(ctx context.Context) error {
 
 	grpcServer := grpc.NewServer(serverOpts...)
 	clusterv1.RegisterClusterInternalServiceServer(grpcServer, &clusterInternalRPCServer{
-		stateCache:    s.stateCache,
-		progressStore: s.progressStore,
-		segmentRepo:   s.segmentRepo,
-		jobRepo:       s.jobRepo,
-		nodeRepo:      s.nodeRepo,
+		stateCache:      s.stateCache,
+		progressStore:   s.progressStore,
+		segmentRepo:     s.segmentRepo,
+		jobRepo:         s.jobRepo,
+		nodeRepo:        s.nodeRepo,
+		workerRepo:      s.workerRepo,
+		workerModule:    s.workerModule,
+		effectiveConfig: s.effectiveConfig,
+		heartbeatGate:   s.heartbeatGate,
+		jobRuntimeGate:  s.jobRuntimeGate,
 	})
 
 	go func() {
@@ -113,11 +130,16 @@ func (s *InternalGRPCServer) Start(ctx context.Context) error {
 
 type clusterInternalRPCServer struct {
 	clusterv1.UnimplementedClusterInternalServiceServer
-	stateCache    *cluster.StateCache
-	progressStore *rediscache.ProgressStore
-	segmentRepo   *mysql.SegmentRepository
-	jobRepo       *mysql.JobRepository
-	nodeRepo      *mysql.ClusterNodeRepository
+	stateCache      *cluster.StateCache
+	progressStore   *rediscache.ProgressStore
+	segmentRepo     *mysql.SegmentRepository
+	jobRepo         *mysql.JobRepository
+	nodeRepo        *mysql.ClusterNodeRepository
+	workerRepo      *mysql.WorkerInstanceRepository
+	workerModule    *worker.Module
+	effectiveConfig *configcenter.EffectiveConfig
+	heartbeatGate   *cluster.HeartbeatPersistGate
+	jobRuntimeGate  *cluster.JobRuntimePersistGate
 }
 
 func internalGRPCTokenInterceptor(sharedToken string) grpc.UnaryServerInterceptor {
@@ -148,10 +170,25 @@ func (s *clusterInternalRPCServer) WorkerHeartbeat(ctx context.Context, req *clu
 			Timestamp:          heartbeatAt,
 		})
 	}
-	if s.nodeRepo != nil {
-		_ = s.nodeRepo.TouchHeartbeat(ctx, req.GetNodeId(), heartbeatAt)
+	heartbeatTimeout := s.currentHeartbeatTimeout()
+	if s.nodeRepo != nil && s.heartbeatGate.ShouldPersistNode(heartbeatAt, req.GetNodeId(), heartbeatTimeout) {
+		if err := s.nodeRepo.TouchHeartbeat(ctx, req.GetNodeId(), heartbeatAt); err == nil {
+			s.heartbeatGate.MarkNodePersisted(req.GetNodeId(), heartbeatAt)
+		}
+	}
+	if s.workerRepo != nil && s.heartbeatGate.ShouldPersistWorker(heartbeatAt, req.GetWorkerId(), heartbeatTimeout) {
+		if err := s.workerRepo.TouchHeartbeat(ctx, req.GetWorkerId(), heartbeatAt); err == nil {
+			s.heartbeatGate.MarkWorkerPersisted(req.GetWorkerId(), heartbeatAt)
+		}
 	}
 	return &clusterv1.WorkerHeartbeatResponse{Accepted: true}, nil
+}
+
+func (s *clusterInternalRPCServer) currentHeartbeatTimeout() time.Duration {
+	if s == nil || s.effectiveConfig == nil {
+		return 20 * time.Second
+	}
+	return s.effectiveConfig.Snapshot().Scheduler.WorkerHeartbeatTimeout
 }
 
 func (s *clusterInternalRPCServer) ReportProgress(ctx context.Context, req *clusterv1.ReportProgressRequest) (*clusterv1.ReportProgressResponse, error) {
@@ -168,8 +205,10 @@ func (s *clusterInternalRPCServer) ReportProgress(ctx context.Context, req *clus
 	if s.progressStore != nil {
 		s.progressStore.Save(ctx, snapshot)
 	}
-	if s.jobRepo != nil {
-		_ = s.jobRepo.UpdateProgress(ctx, snapshot.JobID, snapshot.ProgressPermille, snapshot.Stage)
+	if s.jobRepo != nil && s.jobRuntimeGate.ShouldPersistProgress(snapshot, snapshot.UpdatedAt) {
+		if err := s.jobRepo.UpdateProgressAt(ctx, snapshot.JobID, snapshot.ProgressPermille, snapshot.Stage, snapshot.UpdatedAt); err == nil {
+			s.jobRuntimeGate.MarkProgressPersisted(snapshot, snapshot.UpdatedAt)
+		}
 	}
 	return &clusterv1.ReportProgressResponse{Accepted: true}, nil
 }
@@ -182,4 +221,36 @@ func (s *clusterInternalRPCServer) SegmentUploaded(ctx context.Context, req *clu
 		return nil, err
 	}
 	return &clusterv1.SegmentUploadedResponse{Accepted: true}, nil
+}
+
+func (s *clusterInternalRPCServer) SetWorkerOffline(ctx context.Context, req *clusterv1.SetWorkerOfflineRequest) (*clusterv1.SetWorkerOfflineResponse, error) {
+	if s.workerModule == nil {
+		return nil, status.Error(codes.FailedPrecondition, "worker module not initialized")
+	}
+	if strings.TrimSpace(req.GetWorkerId()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "worker_id is required")
+	}
+	if err := s.workerModule.SetOffline(ctx, req.GetWorkerId(), req.GetReason()); err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &clusterv1.SetWorkerOfflineResponse{
+		Accepted: true,
+		Message:  "worker offline request accepted",
+	}, nil
+}
+
+func (s *clusterInternalRPCServer) RequestWorkerExit(ctx context.Context, req *clusterv1.RequestWorkerExitRequest) (*clusterv1.RequestWorkerExitResponse, error) {
+	if s.workerModule == nil {
+		return nil, status.Error(codes.FailedPrecondition, "worker module not initialized")
+	}
+	if strings.TrimSpace(req.GetWorkerId()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "worker_id is required")
+	}
+	if err := s.workerModule.RequestExit(ctx, req.GetWorkerId(), req.GetReason()); err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &clusterv1.RequestWorkerExitResponse{
+		Accepted: true,
+		Message:  "worker exit request accepted",
+	}, nil
 }

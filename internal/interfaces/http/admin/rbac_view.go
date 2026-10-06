@@ -41,12 +41,13 @@ type adminPermissionView struct {
 }
 
 type adminMenuNode struct {
+	ID            uint64          `json:"id"`
 	MenuID        uint64          `json:"menu_id"`
 	ParentID      uint64          `json:"parent_id"`
 	MenuKey       string          `json:"menu_key"`
 	MenuName      string          `json:"menu_name"`
 	RoutePath     string          `json:"route_path,omitempty"`
-	ComponentName string          `json:"component_name,omitempty"`
+	Component     string          `json:"component,omitempty"`
 	IconName      string          `json:"icon_name,omitempty"`
 	MenuType      string          `json:"menu_type"`
 	PermissionKey string          `json:"permission_key,omitempty"`
@@ -81,6 +82,9 @@ type runtimeLogView struct {
 }
 
 type permissionTreeNode struct {
+	ID         string               `json:"id"`
+	ParentID   string               `json:"parent_id"`
+	PermID     uint64               `json:"perm_id,omitempty"`
 	Key        string               `json:"key"`
 	Label      string               `json:"label"`
 	NodeType   string               `json:"node_type"`
@@ -120,12 +124,13 @@ func toAdminRoleView(record mysql.AdminRoleRecord) adminRoleView {
 
 func toAdminMenuNode(record mysql.AdminMenuRecord) adminMenuNode {
 	return adminMenuNode{
+		ID:            record.MenuID,
 		MenuID:        record.MenuID,
 		ParentID:      record.ParentID,
 		MenuKey:       record.MenuKey,
 		MenuName:      record.MenuName,
 		RoutePath:     record.RoutePath,
-		ComponentName: record.ComponentName,
+		Component:     record.Component,
 		IconName:      record.IconName,
 		MenuType:      record.MenuType,
 		PermissionKey: record.PermissionKey,
@@ -183,11 +188,12 @@ func buildMenuTree(records []mysql.AdminMenuRecord) []adminMenuNode {
 		record := record
 		nodes[record.MenuID] = &adminMenuNode{
 			MenuID:        record.MenuID,
+			ID:            record.MenuID,
 			ParentID:      record.ParentID,
 			MenuKey:       record.MenuKey,
 			MenuName:      record.MenuName,
 			RoutePath:     record.RoutePath,
-			ComponentName: record.ComponentName,
+			Component:     record.Component,
 			IconName:      record.IconName,
 			MenuType:      record.MenuType,
 			PermissionKey: record.PermissionKey,
@@ -267,9 +273,11 @@ func buildPermissionTree(records []mysql.AdminPermissionRecord) []permissionTree
 		children   map[string]*mutablePermissionNode
 	}
 
-	var freeze func(node *mutablePermissionNode) permissionTreeNode
-	freeze = func(node *mutablePermissionNode) permissionTreeNode {
+	var freeze func(node *mutablePermissionNode, parentID string) permissionTreeNode
+	freeze = func(node *mutablePermissionNode, parentID string) permissionTreeNode {
 		result := permissionTreeNode{
+			ID:       node.key,
+			ParentID: parentID,
 			Key:      node.key,
 			Label:    node.label,
 			NodeType: node.nodeType,
@@ -277,6 +285,7 @@ func buildPermissionTree(records []mysql.AdminPermissionRecord) []permissionTree
 		}
 		if node.permission != nil {
 			perm := *node.permission
+			result.PermID = perm.PermID
 			result.Permission = &perm
 		}
 		if len(node.children) == 0 {
@@ -289,7 +298,7 @@ func buildPermissionTree(records []mysql.AdminPermissionRecord) []permissionTree
 		sort.Strings(childKeys)
 		result.Children = make([]permissionTreeNode, 0, len(childKeys))
 		for _, key := range childKeys {
-			result.Children = append(result.Children, freeze(node.children[key]))
+			result.Children = append(result.Children, freeze(node.children[key], node.key))
 		}
 		return result
 	}
@@ -354,7 +363,7 @@ func buildPermissionTree(records []mysql.AdminPermissionRecord) []permissionTree
 	sort.Strings(moduleKeys)
 	result := make([]permissionTreeNode, 0, len(moduleKeys))
 	for _, key := range moduleKeys {
-		result = append(result, freeze(root.children[key]))
+		result = append(result, freeze(root.children[key], ""))
 	}
 	return result
 }

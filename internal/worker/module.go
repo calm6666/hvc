@@ -44,6 +44,7 @@ import (
 type Module struct {
 	cfg                     config.DynamicRuntimeConfig
 	effectiveConfig         *configcenter.EffectiveConfig
+	nodeMode                string
 	nodeID                  uint64
 	workerID                string
 	jobRepository           *mysql.JobRepository
@@ -71,16 +72,34 @@ type Module struct {
 	runningGPUSessions      map[int]int
 	runningJobsMu           sync.Mutex
 	hostStats               *hoststats.Collector
+	controlMu               sync.RWMutex
+	offlineRequested        bool
+	offlineReason           string
+	exitRequested           bool
+	exitReason              string
+	runCancel               context.CancelFunc
+	lastNodeSnapshotAt      time.Time
+	lastNodeSnapshotTags    string
+	lastNodeSnapshotCPU     int
+	lastNodeSnapshotMemory  int
+	lastNodeSnapshotTrans   int
+	lastNodeSnapshotUpload  int
+	lastNodeHeartbeatAt     time.Time
+	lastWorkerHeartbeatAt   time.Time
+	jobRuntimePersistGate   *cluster.JobRuntimePersistGate
 }
 
+const nodeSnapshotPersistInterval = 30 * time.Second
+
 // NewModule 创建执行模块。
-func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, renditionRepository *mysql.TranscodeRenditionRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus, stateCache *cluster.StateCache, workerInstanceRepo *mysql.WorkerInstanceRepository, clusterNodeRepository *mysql.ClusterNodeRepository, gpuDeviceRepository *mysql.GPUDeviceRepository, gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Module {
+func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.EffectiveConfig, nodeMode string, nodeID uint64, workerID string, jobRepository *mysql.JobRepository, renditionRepository *mysql.TranscodeRenditionRepository, segmentRepository *mysql.SegmentRepository, progressStore *rediscache.ProgressStore, outboxRepository *mysql.OutboxRepository, hotpathBus *hotpath.MemoryBus, stateCache *cluster.StateCache, workerInstanceRepo *mysql.WorkerInstanceRepository, clusterNodeRepository *mysql.ClusterNodeRepository, gpuDeviceRepository *mysql.GPUDeviceRepository, gpuCapabilityRepository *mysql.WorkerCodecCapabilityRepository, jobExecutionRepository *mysql.JobExecutionRepository) *Module {
 	uploader, _ := storage.Open(cfg.Storage)
 	startupInstanceID := workerID + "-startup"
 	machineFingerprint := "node-" + workerID
 	return &Module{
 		cfg:                     cfg,
 		effectiveConfig:         effectiveConfig,
+		nodeMode:                nodeMode,
 		nodeID:                  nodeID,
 		workerID:                workerID,
 		jobRepository:           jobRepository,
@@ -109,6 +128,7 @@ func NewModule(cfg config.DynamicRuntimeConfig, effectiveConfig *configcenter.Ef
 		runningJobs:            make(map[uint64]struct{}),
 		runningGPUSessions:     make(map[int]int),
 		hostStats:              hoststats.NewCollector(),
+		jobRuntimePersistGate:  cluster.NewJobRuntimePersistGate(),
 	}
 }
 
@@ -148,7 +168,12 @@ func (m *Module) CanAcceptNewTask(cpuPercent, memPercent, gpuMemPercent, uploadQ
 // 不阻塞主循环。主循环仅负责触发，不等待完成。
 func (m *Module) Start(ctx context.Context) error {
 	m.ensureWorkerInstance(ctx)
-	defer m.markWorkerExited(context.Background(), "context_canceled")
+	runCtx, cancel := context.WithCancel(ctx)
+	m.setRunCancel(cancel)
+	defer func() {
+		m.clearRunCancel(cancel)
+		m.markWorkerExited(context.Background(), m.shutdownReason(ctx.Err()))
+	}()
 
 	jobSem := make(chan struct{}, 1024)
 	uploadSem := make(chan struct{}, 1024)
@@ -156,16 +181,16 @@ func (m *Module) Start(ctx context.Context) error {
 		cfg := m.currentConfig()
 		m.refreshRuntimeState(cfg)
 		select {
-		case <-ctx.Done():
+		case <-runCtx.Done():
 			return nil
 		case <-time.After(loopInterval(cfg.Worker.LoopInterval, 2*time.Second)):
 			if !cfg.Mode.EnableWorker {
 				continue
 			}
-			m.reportHeartbeatOnce(ctx)
-			m.reportMetricsOnce(ctx)
-			m.dispatchJobs(ctx, cfg, jobSem)
-			m.dispatchUploads(ctx, cfg, uploadSem)
+			m.reportHeartbeatOnce(runCtx)
+			m.reportMetricsOnce(runCtx)
+			m.dispatchJobs(runCtx, cfg, jobSem)
+			m.dispatchUploads(runCtx, cfg, uploadSem)
 		}
 	}
 }
@@ -175,6 +200,9 @@ func (m *Module) Start(ctx context.Context) error {
 // 使用信号量控制最大并发转码数，避免资源过载。
 // 每个任务在独立 goroutine 中执行，不阻塞主循环。
 func (m *Module) dispatchJobs(ctx context.Context, cfg config.DynamicRuntimeConfig, sem chan struct{}) {
+	if !m.acceptingNewAssignments() {
+		return
+	}
 	jobs := m.jobRepository.ListAssigned(ctx, m.nodeID, m.workerID)
 	for _, job := range jobs {
 		m.runningJobsMu.Lock()
@@ -240,6 +268,61 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 		}
 	}
 
+	/*
+	 * B2 断点续跑的第一道判据：先确认"这一版输入"与上一次执行的是不是同一份。
+	 *   · 任务行指纹为空   ⇒ 首次执行，记下当前指纹（之后各步骤行都带同一个指纹）；
+	 *   · 与当前指纹一致   ⇒ 允许按步骤续跑（下面各阶段的 Running/Done 标记才有意义）；
+	 *   · 不一致（换源/改规格）⇒ 清指纹 + 清步骤行，整任务重跑。不清就会把上一版输入的中间产物
+	 *     当成本版结果（例如两版清晰度的分片混进同一份清单）。
+	 * 指纹只含源 URL 与输出规格，不含源文件大小/ETag：那两项在网络抖动时可能取不到，
+	 * 放进来会把"这次没取到"误判成"输入变了"而白白全量重跑（见 computeJobInputHash 的说明）。
+	 */
+	inputHash := computeJobInputHash(job)
+	resumeAllowed := false
+
+	switch {
+	case job.InputHash == "":
+		if err := m.jobRepository.SetInputHash(ctx, job.JobID, inputHash); err != nil {
+			logx.Error("worker.job.set_input_hash_failed", err, logx.Fields{
+				"job_id": job.JobID,
+			})
+		}
+
+	case job.InputHash == inputHash:
+		resumeAllowed = true
+		logx.Info("worker.job.input_unchanged", logx.Fields{
+			"job_id":    job.JobID,
+			"input_hash": inputHash,
+			"steps":     len(m.jobRepository.ListJobSteps(ctx, job.JobID)),
+		})
+
+	default:
+		logx.Info("worker.job.input_changed", logx.Fields{
+			"job_id":   job.JobID,
+			"old_hash": job.InputHash,
+			"new_hash": inputHash,
+		})
+		if err := m.jobRepository.DeleteJobSteps(ctx, job.JobID); err != nil {
+			logx.Error("worker.job.clear_steps_failed", err, logx.Fields{
+				"job_id": job.JobID,
+			})
+		}
+		if err := m.jobRepository.ResetInputHash(ctx, job.JobID); err != nil {
+			logx.Error("worker.job.reset_input_hash_failed", err, logx.Fields{
+				"job_id": job.JobID,
+			})
+		}
+		if err := m.jobRepository.SetInputHash(ctx, job.JobID, inputHash); err != nil {
+			logx.Error("worker.job.set_input_hash_failed", err, logx.Fields{
+				"job_id": job.JobID,
+			})
+		}
+	}
+
+	/* PROBE：标记开始/结束。注意——ffprobe 结果目前还没有落库（步骤行的 detail 列就是为它准备的），
+	 * 所以续跑时这一步仍会真的重跑一次；等结果进 detail 之后才能跳过。 */
+	_ = m.jobRepository.UpsertJobStep(ctx, job.JobID, mysql.JobStepProbe, mysql.JobStepRunning, inputHash, nil)
+
 	probeResult := probe.Inspect(job.SourceURL)
 	logx.Info("worker.job.probe", logx.Fields{
 		"job_id":      job.JobID,
@@ -258,6 +341,17 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 		m.failJob(ctx, job, "PROBE_FAILED", "ffprobe returned zero duration")
 		return
 	}
+
+	_ = m.jobRepository.UpsertJobStep(ctx, job.JobID, mysql.JobStepProbe, mysql.JobStepDone, inputHash, nil)
+	logx.Info("worker.job.resume_decision", logx.Fields{
+		"job_id":         job.JobID,
+		"input_hash":     inputHash,
+		"resume_allowed": resumeAllowed,
+		"probe_done":     m.jobRepository.IsJobStepDone(ctx, job.JobID, mysql.JobStepProbe),
+		"plan_done":      m.jobRepository.IsJobStepDone(ctx, job.JobID, mysql.JobStepPlan),
+		"segment_done":   m.jobRepository.IsJobStepDone(ctx, job.JobID, mysql.JobStepSegment),
+		"upload_done":    m.jobRepository.IsJobStepDone(ctx, job.JobID, mysql.JobStepUpload),
+	})
 
 	executionHW := job.SelectedExecutionHWAccel
 	if executionHW == "" {
@@ -298,6 +392,11 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 		"hw_encode":       pipeline.HardwareEncode,
 	})
 
+	_ = m.jobRepository.UpsertJobStep(ctx, job.JobID, mysql.JobStepPlan, mysql.JobStepDone, inputHash, nil)
+	/* UPLOAD：先把这一步标成进行中（真正的完成标记在 uploadSegments 全部分片传完后写），
+	 * 这样续跑时"上传没做完"这件事在步骤表里是可见的，而不是只看分片行的状态去猜。 */
+	_ = m.jobRepository.UpsertJobStep(ctx, job.JobID, mysql.JobStepUpload, mysql.JobStepRunning, inputHash, nil)
+
 	logx.Info("worker.job.start", logx.Fields{
 		"job_id":     job.JobID,
 		"request_id": job.RequestID,
@@ -327,15 +426,22 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 			}
 		}
 		snapshot := executor.ToSnapshot(progress, status)
+		snapshot.UpdatedAt = time.Now()
 		m.progressStore.Save(ctx, snapshot)
 		m.hotpathBus.SaveProgress(ctx, progress)
-		if err := m.jobRepository.UpdateProgress(ctx, job.JobID, snapshot.ProgressPermille, snapshot.Stage); err != nil {
-			logx.Error("worker.job.update_progress_failed", err, logx.Fields{
-				"job_id": job.JobID,
-			})
+		if m.jobRepository != nil && m.jobRuntimePersistGate.ShouldPersistProgress(snapshot, snapshot.UpdatedAt) {
+			if err := m.jobRepository.UpdateProgressAt(ctx, job.JobID, snapshot.ProgressPermille, snapshot.Stage, snapshot.UpdatedAt); err != nil {
+				logx.Error("worker.job.update_progress_failed", err, logx.Fields{
+					"job_id": job.JobID,
+				})
+			} else {
+				m.jobRuntimePersistGate.MarkProgressPersisted(snapshot, snapshot.UpdatedAt)
+			}
 		}
-		if m.jobExecutionRepository != nil {
-			_ = m.jobExecutionRepository.TouchHeartbeat(ctx, job.JobID, job.LeaseGeneration)
+		if m.jobExecutionRepository != nil && m.jobRuntimePersistGate.ShouldPersistExecutionHeartbeat(snapshot.UpdatedAt, job.JobID, job.LeaseGeneration, cfg.Scheduler.WorkerHeartbeatTimeout) {
+			if err := m.jobExecutionRepository.TouchHeartbeatAt(ctx, job.JobID, job.LeaseGeneration, snapshot.UpdatedAt); err == nil {
+				m.jobRuntimePersistGate.MarkExecutionHeartbeatPersisted(job.JobID, job.LeaseGeneration, snapshot.UpdatedAt)
+			}
 		}
 		logx.Info("worker.job.progress", logx.Fields{
 			"job_id":            job.JobID,
@@ -348,7 +454,11 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 		})
 	}
 
+	_ = m.jobRepository.UpsertJobStep(ctx, job.JobID, mysql.JobStepSegment, mysql.JobStepRunning, inputHash, nil)
 	discoverResult := segmenter.Discover(job, pipeline)
+	/* 分片发现的结果本身就是这一步的产出（分片行随后逐条落库，续跑时以那些行为准），
+	 * 所以标记完成放在发现函数返回之后。 */
+	_ = m.jobRepository.UpsertJobStep(ctx, job.JobID, mysql.JobStepSegment, mysql.JobStepDone, inputHash, nil)
 	logx.Info("worker.job.segments_discovered", logx.Fields{
 		"job_id":        job.JobID,
 		"segment_count": len(discoverResult.Segments),
@@ -379,6 +489,8 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 			SupportHLS:       job.SupportHLS,
 			CodecName:        probeResult.VideoCodec,
 			ObjectKey:        seg.ObjectKey,
+			// B3：分片内容摘要随分片行一起落库（生产侧算一次），发布校验与清单物化都用它。
+			SHA256:           computeFileSHA256(seg.ObjectKey),
 			UploadStatus:     model.SegmentUploadPending,
 			CreatedAt:        time.Now(),
 			UpdatedAt:        time.Now(),
@@ -409,28 +521,41 @@ func (m *Module) executeJob(ctx context.Context, job model.TranscodeJob) {
 		Stage:            model.StageCompleted,
 		ProgressPermille: 1000,
 	})
+	// A1：这里只把完成回调要用的 payload **落库暂存**，不立刻发回调。
+	//
+	// 分片是之后由全局待传队列异步上传的（别的节点也可能在传这个任务的分片），此刻发回调会让
+	// 下游拉到残缺清单。待传数归零后由 publishCompletion 取出 payload、逐片校验、推进
+	// PUBLISHED 并写 outbox（回调）事件。
 	payload := m.buildCompletedPayload(ctx, job, probeResult, discoverResult)
 	payloadJSON, _ := json.Marshal(payload)
-	event := model.OutboxEvent{
-		EventID:       idgen.Next(),
-		EventType:     "transcode.completed",
-		JobID:         job.JobID,
-		RequestID:     job.RequestID,
-		PayloadJSON:   string(payloadJSON),
-		Status:        model.OutboxStatusPending,
-		MaxRetryCount: cfg.Worker.UploadMaxRetryCount,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-	if err := m.outboxRepository.Save(ctx, event); err != nil {
-		logx.Error("worker.job.outbox_save_failed", err, logx.Fields{
+	if err := m.jobRepository.SavePendingCompletion(ctx, job.JobID, string(payloadJSON)); err != nil {
+		// 暂存失败就退回旧行为（立刻写回调事件）：宁可回调早于分片，也不能让任务永远不回调。
+		logx.Error("worker.job.save_pending_completion_failed", err, logx.Fields{
 			"job_id": job.JobID,
 		})
+		event := model.OutboxEvent{
+			EventID:       idgen.Next(),
+			EventType:     "transcode.completed",
+			JobID:         job.JobID,
+			RequestID:     job.RequestID,
+			PayloadJSON:   string(payloadJSON),
+			Status:        model.OutboxStatusPending,
+			MaxRetryCount: cfg.Worker.UploadMaxRetryCount,
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+		if saveErr := m.outboxRepository.Save(ctx, event); saveErr != nil {
+			logx.Error("worker.job.outbox_save_failed", saveErr, logx.Fields{
+				"job_id": job.JobID,
+			})
+		}
+	} else {
+		// 小文件/极快上传：分片可能此刻已经全部传完，立即尝试发布一次。
+		m.publishCompletion(ctx, job.JobID)
 	}
 	logx.Info("worker.job.completed", logx.Fields{
 		"job_id":     job.JobID,
 		"request_id": job.RequestID,
-		"event_id":   event.EventID,
 	})
 
 	go m.cleanupOutputDir(pipeline.OutputDir)
@@ -600,6 +725,25 @@ func (m *Module) uploadSegments(ctx context.Context, segments []model.Segment) {
 			"error_message": result.ErrorMessage,
 		})
 	}
+
+	// A1：本批分片上传完成后立即检查"本任务待传数是否归零"，归零就发布（写回调 outbox 事件）。
+	//
+	// 就地触发是主路径（比对账更快，回调更及时）；跨节点上传与本进程重启由 ReconcilePublish 兜底。
+	// 同一任务可能有多片落在这一批里，按任务去重，避免对同一个任务重复查待传数。
+	publishedJobs := make(map[uint64]struct{}, len(tasks))
+	for _, task := range tasks {
+		if task.JobID == 0 {
+			continue
+		}
+		if _, done := publishedJobs[task.JobID]; done {
+			continue
+		}
+		publishedJobs[task.JobID] = struct{}{}
+		/* B2：本任务的分片全部传完 ⇒ UPLOAD 步骤完成（inputHash 传空串表示"不覆盖已记的指纹"）。
+		 * 续跑时这一步的完成状态与分片行一起构成"上传不用重做"的依据。 */
+		_ = m.jobRepository.UpsertJobStep(ctx, task.JobID, mysql.JobStepUpload, mysql.JobStepDone, "", nil)
+		m.publishCompletion(ctx, task.JobID)
+	}
 }
 
 func (m *Module) ensureWorkerInstance(ctx context.Context) {
@@ -622,6 +766,7 @@ func (m *Module) ensureWorkerInstance(ctx context.Context) {
 }
 
 func (m *Module) reportHeartbeatOnce(ctx context.Context) {
+	cfg := m.currentConfig()
 	heartbeatAt := time.Now()
 	heartbeat := model.WorkerHeartbeat{
 		NodeID:             m.nodeID,
@@ -633,18 +778,22 @@ func (m *Module) reportHeartbeatOnce(ctx context.Context) {
 	if m.stateCache != nil {
 		m.stateCache.SaveHeartbeat(ctx, heartbeat)
 	}
-	if m.clusterNodeRepository != nil {
+	if m.clusterNodeRepository != nil && m.shouldPersistDBHeartbeat(heartbeatAt, m.lastNodeHeartbeatAt, cfg.Scheduler.WorkerHeartbeatTimeout) {
 		if err := m.clusterNodeRepository.TouchHeartbeat(ctx, m.nodeID, heartbeatAt); err != nil {
 			logx.Error("worker.node.touch_heartbeat_failed", err, logx.Fields{
 				"node_id": m.nodeID,
 			})
+		} else {
+			m.lastNodeHeartbeatAt = heartbeatAt
 		}
 	}
-	if m.workerInstanceRepo != nil {
-		if err := m.workerInstanceRepo.TouchHeartbeat(ctx, m.workerID); err != nil {
+	if m.workerInstanceRepo != nil && m.shouldPersistDBHeartbeat(heartbeatAt, m.lastWorkerHeartbeatAt, cfg.Scheduler.WorkerHeartbeatTimeout) {
+		if err := m.workerInstanceRepo.TouchHeartbeat(ctx, m.workerID, heartbeatAt); err != nil {
 			logx.Error("worker.instance.touch_heartbeat_failed", err, logx.Fields{
 				"worker_id": m.workerID,
 			})
+		} else {
+			m.lastWorkerHeartbeatAt = heartbeatAt
 		}
 	}
 }
@@ -663,27 +812,79 @@ func (m *Module) reportMetricsOnce(ctx context.Context) {
 		CPUUsagePercent:         snapshot.CPUUsagePercent,
 		MemoryUsagePercent:      snapshot.MemoryUsagePercent,
 		GPUMemoryUsagePercent:   snapshot.GPUMemoryUsagePercent,
-		UploadQueueDepth:        len(m.segmentRepository.ListPendingUpload(ctx, cfg.Scheduler.MaxNodeUploadConcurrency, cfg.Worker.UploadMaxRetryCount)),
+		UploadQueueDepth:        m.segmentRepository.CountPendingUpload(ctx, cfg.Worker.UploadMaxRetryCount),
 		ActiveTranscodeSessions: m.hotpathBus.ActiveProgressCount(ctx),
 		GPUCapabilities:         gpuCapabilities,
 		Timestamp:               time.Now(),
 	}
 	reporter.ReportMetrics(ctx, m.stateCache, metrics)
 	if m.clusterNodeRepository != nil {
-		if err := m.clusterNodeRepository.SaveSnapshot(
-			ctx,
-			m.nodeID,
-			runtime.NumCPU(),
-			hoststats.TotalMemoryMB(),
-			cfg.Scheduler.MaxNodeTranscodeSessions,
-			cfg.Scheduler.MaxNodeUploadConcurrency,
-			buildNodeTags(cfg, gpuCapabilities),
-		); err != nil {
-			logx.Error("worker.node.save_snapshot_failed", err, logx.Fields{
-				"node_id": m.nodeID,
-			})
-		}
+		m.persistNodeSnapshotIfNeeded(ctx, cfg, gpuCapabilities)
 	}
+}
+
+func (m *Module) persistNodeSnapshotIfNeeded(ctx context.Context, cfg config.DynamicRuntimeConfig, gpuCapabilities []model.GPUCapability) {
+	if m.clusterNodeRepository == nil {
+		return
+	}
+
+	cpuCores := runtime.NumCPU()
+	memoryTotalMB := hoststats.TotalMemoryMB()
+	maxTranscodeSessions := cfg.Scheduler.MaxNodeTranscodeSessions
+	maxUploadConcurrency := cfg.Scheduler.MaxNodeUploadConcurrency
+	tags := buildNodeTags(m.nodeMode, gpuCapabilities)
+	now := time.Now()
+
+	if !m.shouldPersistNodeSnapshot(now, cpuCores, memoryTotalMB, maxTranscodeSessions, maxUploadConcurrency, tags) {
+		return
+	}
+	if err := m.clusterNodeRepository.SaveSnapshot(
+		ctx,
+		m.nodeID,
+		cpuCores,
+		memoryTotalMB,
+		maxTranscodeSessions,
+		maxUploadConcurrency,
+		tags,
+	); err != nil {
+		logx.Error("worker.node.save_snapshot_failed", err, logx.Fields{
+			"node_id": m.nodeID,
+		})
+		return
+	}
+	m.lastNodeSnapshotAt = now
+	m.lastNodeSnapshotCPU = cpuCores
+	m.lastNodeSnapshotMemory = memoryTotalMB
+	m.lastNodeSnapshotTrans = maxTranscodeSessions
+	m.lastNodeSnapshotUpload = maxUploadConcurrency
+	m.lastNodeSnapshotTags = tags
+}
+
+func (m *Module) shouldPersistNodeSnapshot(now time.Time, cpuCores, memoryTotalMB, maxTranscodeSessions, maxUploadConcurrency int, tags string) bool {
+	if m.lastNodeSnapshotAt.IsZero() {
+		return true
+	}
+	if m.lastNodeSnapshotCPU != cpuCores ||
+		m.lastNodeSnapshotMemory != memoryTotalMB ||
+		m.lastNodeSnapshotTrans != maxTranscodeSessions ||
+		m.lastNodeSnapshotUpload != maxUploadConcurrency ||
+		m.lastNodeSnapshotTags != tags {
+		return true
+	}
+	return now.Sub(m.lastNodeSnapshotAt) >= nodeSnapshotPersistInterval
+}
+
+// shouldPersistDBHeartbeat 判断本轮是否需要把心跳从 Redis 热路径同步落到数据库。
+//
+// 设计原则：
+// 1. Redis 继续高频写，调度器和监控优先读缓存；
+// 2. MySQL 只保留“可审计、可离线判定”的最近时间戳，不承担每轮心跳写放大；
+// 3. 持久化间隔始终明显小于 worker_heartbeat_timeout，避免后台误判离线。
+func (m *Module) shouldPersistDBHeartbeat(now time.Time, lastPersistAt time.Time, timeout time.Duration) bool {
+	if lastPersistAt.IsZero() {
+		return true
+	}
+	return now.Sub(lastPersistAt) >= cluster.ResolveHeartbeatPersistInterval(timeout)
 }
 
 func (m *Module) attachRuntimeGPUStats(capabilities []model.GPUCapability, runtime []hoststats.GPUDeviceSnapshot) []model.GPUCapability {
@@ -841,6 +1042,19 @@ func (m *Module) buildCompletedPayload(ctx context.Context, job model.TranscodeJ
 	totalSegments := 0
 	var totalSizeBytes uint64
 
+	/* B3 清单物化：把每片的 sha256 一并放进回调载荷。
+	 * 摘要取自分片行（切片产出时算好落库，见 segment_digest.go），不在这里重算文件：
+	 * 输出目录在任务收尾时会被清理，重算既慢又可能读不到文件。 */
+	segmentDigests := make(map[string]string)
+
+	if m.segmentRepository != nil {
+		for _, record := range m.segmentRepository.ListByJobID(ctx, job.JobID) {
+			if record.SHA256 != "" {
+				segmentDigests[record.ObjectKey] = record.SHA256
+			}
+		}
+	}
+
 	for _, seg := range discoverResult.Segments {
 		totalSegments++
 		totalSizeBytes += uint64(seg.FileSize)
@@ -857,9 +1071,11 @@ func (m *Module) buildCompletedPayload(ctx context.Context, job model.TranscodeJ
 				VideoCodec:            seg.VideoCodec,
 				VideoBitrateKbps:      seg.VideoBitrateKbps,
 				AudioBitrateKbps:      seg.AudioBitrateKbps,
-				ManifestDashURL:       fmt.Sprintf("/v1/manifest/dash/%d.mpd", job.JobID),
-				ManifestHLSURL:        fmt.Sprintf("/v1/manifest/hls/%d.m3u8", job.JobID),
-				ManifestHLSVariantURL: fmt.Sprintf("/v1/manifest/hls/%d/%s.m3u8", job.JobID, seg.RenditionName),
+				// 北向清单接口已经收敛为无扩展名路由，
+				// 回调载荷里必须与真实服务路由保持一致，避免外部系统拿到旧 URL 后直接 404。
+				ManifestDashURL:       fmt.Sprintf("/v1/manifest/dash/%d", job.JobID),
+				ManifestHLSURL:        fmt.Sprintf("/v1/manifest/hls/%d", job.JobID),
+				ManifestHLSVariantURL: fmt.Sprintf("/v1/manifest/hls/%d/%s", job.JobID, seg.RenditionName),
 			}
 			renditionMap[key] = rend
 		}
@@ -867,6 +1083,12 @@ func (m *Module) buildCompletedPayload(ctx context.Context, job model.TranscodeJ
 			rend.InitSegmentObjectKey = seg.ObjectKey
 		} else {
 			rend.SegmentCount++
+			/* 每片摘要随清单一起物化出去（init 段不带：它的内容由 init_segment_object_key 指认）。 */
+			rend.Segments = append(rend.Segments, model.CompletedSegmentDigest{
+				ObjectKey: seg.ObjectKey,
+				SHA256:    segmentDigests[seg.ObjectKey],
+				SizeBytes: uint64(seg.FileSize),
+			})
 		}
 	}
 
@@ -922,6 +1144,60 @@ func (m *Module) currentConfig() config.DynamicRuntimeConfig {
 	return m.effectiveConfig.Snapshot()
 }
 
+// SetOffline 将当前 Worker 切换到“运维下线”状态。
+//
+// 下线后的语义是：
+// 1. 不再领取新的 assigned 任务；
+// 2. 已在跑的任务和上传协程继续推进；
+// 3. worker_instance 状态收口为 offline，便于后台明确看到该实例已被人工摘除。
+func (m *Module) SetOffline(ctx context.Context, workerID string, reason string) error {
+	if strings.TrimSpace(workerID) != strings.TrimSpace(m.workerID) {
+		return fmt.Errorf("worker %s not hosted by current process", workerID)
+	}
+	m.controlMu.Lock()
+	m.offlineRequested = true
+	m.offlineReason = strings.TrimSpace(reason)
+	m.controlMu.Unlock()
+	if m.workerInstanceRepo != nil {
+		if err := m.workerInstanceRepo.MarkOffline(ctx, m.workerID, reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RequestExit 请求当前 Worker 执行模块退出。
+//
+// 这里不是直接退出整个服务进程，而是：
+// 1. 将 worker_instance 状态标记为 exited；
+// 2. 停止新的调度领取；
+// 3. 取消 Worker 自己的运行上下文，让执行/上传链路尽快收口。
+func (m *Module) RequestExit(ctx context.Context, workerID string, reason string) error {
+	if strings.TrimSpace(workerID) != strings.TrimSpace(m.workerID) {
+		return fmt.Errorf("worker %s not hosted by current process", workerID)
+	}
+
+	cancel := func() context.CancelFunc {
+		m.controlMu.Lock()
+		defer m.controlMu.Unlock()
+		m.offlineRequested = true
+		m.exitRequested = true
+		m.offlineReason = strings.TrimSpace(reason)
+		m.exitReason = strings.TrimSpace(reason)
+		return m.runCancel
+	}()
+
+	if m.workerInstanceRepo != nil {
+		if err := m.workerInstanceRepo.MarkExited(ctx, m.workerID, reason); err != nil {
+			return err
+		}
+	}
+	if cancel != nil {
+		cancel()
+	}
+	return nil
+}
+
 func (m *Module) refreshRuntimeState(cfg config.DynamicRuntimeConfig) {
 	m.uploaderMu.Lock()
 	defer m.uploaderMu.Unlock()
@@ -954,6 +1230,41 @@ func (m *Module) currentUploader() *storage.Client {
 	m.uploaderMu.RLock()
 	defer m.uploaderMu.RUnlock()
 	return m.uploader
+}
+
+func (m *Module) acceptingNewAssignments() bool {
+	m.controlMu.RLock()
+	defer m.controlMu.RUnlock()
+	return !m.offlineRequested && !m.exitRequested
+}
+
+func (m *Module) shutdownReason(parentErr error) string {
+	m.controlMu.RLock()
+	defer m.controlMu.RUnlock()
+	if m.exitRequested {
+		if strings.TrimSpace(m.exitReason) != "" {
+			return m.exitReason
+		}
+		return "remote_exit_requested"
+	}
+	if parentErr != nil {
+		return "context_canceled"
+	}
+	return "worker_stopped"
+}
+
+func (m *Module) setRunCancel(cancel context.CancelFunc) {
+	m.controlMu.Lock()
+	defer m.controlMu.Unlock()
+	m.runCancel = cancel
+}
+
+func (m *Module) clearRunCancel(cancel context.CancelFunc) {
+	m.controlMu.Lock()
+	defer m.controlMu.Unlock()
+	if fmt.Sprintf("%p", m.runCancel) == fmt.Sprintf("%p", cancel) {
+		m.runCancel = nil
+	}
 }
 
 func (m *Module) currentGPUSessionCounts() map[int]int {
@@ -1003,16 +1314,17 @@ func (m *Module) markWorkerExited(ctx context.Context, reason string) {
 	}
 }
 
-func buildNodeTags(cfg config.DynamicRuntimeConfig, capabilities []model.GPUCapability) string {
+func buildNodeTags(nodeMode string, capabilities []model.GPUCapability) string {
 	tags := make([]string, 0, 4)
-	if cfg.IsStandalone() {
-		tags = append(tags, "mode:standalone")
-	} else if cfg.IsClusterAllInOne() {
-		tags = append(tags, "mode:cluster-allinone")
-	} else if cfg.IsClusterControl() {
-		tags = append(tags, "mode:cluster-control")
-	} else if cfg.IsClusterWorker() {
-		tags = append(tags, "mode:cluster-worker")
+	switch strings.TrimSpace(nodeMode) {
+	case config.NodeModeStandalone:
+		tags = append(tags, "mode:"+config.NodeModeStandalone)
+	case config.NodeModeClusterAllInOne:
+		tags = append(tags, "mode:"+config.NodeModeClusterAllInOne)
+	case config.NodeModeClusterControl:
+		tags = append(tags, "mode:"+config.NodeModeClusterControl)
+	case config.NodeModeClusterWorker:
+		tags = append(tags, "mode:"+config.NodeModeClusterWorker)
 	}
 	if len(capabilities) == 0 {
 		tags = append(tags, "compute:cpu")

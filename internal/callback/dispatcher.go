@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"hvc/pkg/logx"
 	"hvc/pkg/retryx"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -49,8 +51,11 @@ type Dispatcher struct {
 	effectiveConfig    *configcenter.EffectiveConfig
 	outboxRepository   *mysql.OutboxRepository
 	callbackConfigRepo *mysql.CallbackConfigRepository
+	registryEtcdRepo   *mysql.RegistryEtcdConfigRepository
 	jobOverrideRepo    *mysql.JobRequestOverrideRepository
 	failureQueueRepo   *mysql.DeliveryFailureQueueRepository
+	// jobRepository 用于 A1 的状态闭合：回调送达后把任务从 PUBLISHED 推到 CALLBACK_SENT。
+	jobRepository *mysql.JobRepository
 }
 
 // NewDispatcher 创建回调投递模块。
@@ -58,15 +63,19 @@ func NewDispatcher(
 	effectiveConfig *configcenter.EffectiveConfig,
 	outboxRepository *mysql.OutboxRepository,
 	callbackConfigRepo *mysql.CallbackConfigRepository,
+	registryEtcdRepo *mysql.RegistryEtcdConfigRepository,
 	jobOverrideRepo *mysql.JobRequestOverrideRepository,
 	failureQueueRepo *mysql.DeliveryFailureQueueRepository,
+	jobRepository *mysql.JobRepository,
 ) *Dispatcher {
 	return &Dispatcher{
 		effectiveConfig:    effectiveConfig,
 		outboxRepository:   outboxRepository,
 		callbackConfigRepo: callbackConfigRepo,
+		registryEtcdRepo:   registryEtcdRepo,
 		jobOverrideRepo:    jobOverrideRepo,
 		failureQueueRepo:   failureQueueRepo,
+		jobRepository:      jobRepository,
 	}
 }
 
@@ -93,8 +102,12 @@ func (d *Dispatcher) Start(ctx context.Context) error {
 }
 
 func (d *Dispatcher) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeConfig) {
+	d.resetStaleSending(ctx, cfg)
 	events := append(d.outboxRepository.ListPending(ctx), d.outboxRepository.ListRetryable(ctx)...)
 	for _, event := range events {
+		if !d.outboxRepository.TryMarkSending(ctx, event.EventID, event.Status) {
+			continue
+		}
 		logx.Info("callback.dispatch.start", logx.Fields{
 			"event_id":    event.EventID,
 			"event_type":  event.EventType,
@@ -107,10 +120,34 @@ func (d *Dispatcher) dispatchOnce(ctx context.Context, cfg config.DynamicRuntime
 			continue
 		}
 		_ = d.outboxRepository.MarkDelivered(ctx, event.EventID)
+		// A1：回调已由至少一个通道送达 ⇒ 任务推进到 CALLBACK_SENT（对外承诺兑现的最终终态）。
+		// MarkCallbackSent 只在 PUBLISHED 时生效，乱序或重复的投递结果不会把状态拉回。
+		if d.jobRepository != nil && event.JobID != 0 {
+			if err := d.jobRepository.MarkCallbackSent(ctx, event.JobID); err != nil {
+				logx.Error("callback.mark_callback_sent_failed", err, logx.Fields{
+					"job_id":   event.JobID,
+					"event_id": event.EventID,
+				})
+			}
+		}
 		logx.Info("callback.dispatch.success", logx.Fields{
 			"event_id":   event.EventID,
 			"event_type": event.EventType,
 			"job_id":     event.JobID,
+		})
+	}
+}
+
+func (d *Dispatcher) resetStaleSending(ctx context.Context, cfg config.DynamicRuntimeConfig) {
+	if d.outboxRepository == nil {
+		return
+	}
+	staleBefore := time.Now().Add(-sendingLeaseTimeout(cfg))
+	resetTotal := d.outboxRepository.ResetStaleSending(ctx, staleBefore, "callback sending lease timeout")
+	if resetTotal > 0 {
+		logx.Info("callback.dispatch.recovered_stale_sending", logx.Fields{
+			"recovered_total": resetTotal,
+			"stale_before":    staleBefore,
 		})
 	}
 }
@@ -150,7 +187,11 @@ func (d *Dispatcher) dispatchToTarget(ctx context.Context, cfg config.DynamicRun
 		}
 		return d.dispatchHTTP(ctx, targetURL, timeoutMS, payload)
 	case callbackTypeGRPC:
-		return d.dispatchGRPC(ctx, target.RPCEndpoint, target.RPCServiceName, timeoutMS, payload)
+		endpoint, err := d.resolveGRPCEndpoint(ctx, target)
+		if err != nil {
+			return err
+		}
+		return d.dispatchGRPC(ctx, endpoint, target.RPCServiceName, timeoutMS, payload)
 	case callbackTypeMQ:
 		return d.dispatchMQ(ctx, cfg.MQ, target.MQExchange, target.MQRoutingKey, timeoutMS, payload)
 	default:
@@ -395,6 +436,18 @@ func defaultTimeoutMS(callbackType int, cfg config.CallbackConfig) int {
 	}
 }
 
+func sendingLeaseTimeout(cfg config.DynamicRuntimeConfig) time.Duration {
+	timeout := max(cfg.Callback.HTTPTimeout, cfg.Callback.GRPCTimeout, cfg.Callback.MQTimeout)
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	timeout *= 2
+	if timeout < 30*time.Second {
+		timeout = 30 * time.Second
+	}
+	return timeout
+}
+
 func dispatchStage(callbackType int) string {
 	switch callbackType {
 	case callbackTypeHTTP:
@@ -458,4 +511,115 @@ func (d *Dispatcher) currentConfig() config.DynamicRuntimeConfig {
 		return config.DynamicRuntimeConfig{}
 	}
 	return d.effectiveConfig.Snapshot()
+}
+
+func (d *Dispatcher) resolveGRPCEndpoint(ctx context.Context, target mysql.CallbackConfigRecord) (string, error) {
+	if endpoint := strings.TrimSpace(target.RPCEndpoint); endpoint != "" {
+		return endpoint, nil
+	}
+	if target.RegistryID == 0 {
+		return "", fmt.Errorf("callback grpc endpoint is empty")
+	}
+	if d.registryEtcdRepo == nil {
+		return "", fmt.Errorf("registry_etcd_repository not initialized")
+	}
+	registryCfg, ok := d.registryEtcdRepo.FindByID(ctx, target.RegistryID)
+	if !ok || !registryCfg.Enabled {
+		return "", fmt.Errorf("registry config %d not found or disabled", target.RegistryID)
+	}
+	return discoverGRPCEndpointByRegistry(ctx, registryCfg, target.RPCServiceName)
+}
+
+func discoverGRPCEndpointByRegistry(ctx context.Context, registryCfg mysql.RegistryEtcdConfigRecord, rpcMethod string) (string, error) {
+	serviceName := grpcServiceNameFromMethod(rpcMethod)
+	if serviceName == "" {
+		return "", fmt.Errorf("callback grpc method is empty")
+	}
+	endpoints := splitRegistryEndpoints(registryCfg.Endpoints)
+	if len(endpoints) == 0 {
+		return "", fmt.Errorf("registry endpoints is empty")
+	}
+	dialTimeout := 3 * time.Second
+	if registryCfg.DialTimeoutMS > 0 {
+		dialTimeout = time.Duration(registryCfg.DialTimeoutMS) * time.Millisecond
+	}
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: dialTimeout,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer cli.Close()
+
+	prefix := registryServicePrefix(registryCfg.ServiceNamespace, serviceName)
+	resp, err := cli.Get(ctx, prefix, clientv3.WithPrefix())
+	if err != nil {
+		return "", err
+	}
+	if len(resp.Kvs) == 0 {
+		return "", fmt.Errorf("no grpc service instance found under %s", prefix)
+	}
+
+	candidates := make([]string, 0, len(resp.Kvs))
+	for _, item := range resp.Kvs {
+		value := strings.TrimSpace(string(item.Value))
+		if value == "" {
+			continue
+		}
+		var decoded struct {
+			Endpoint string `json:"endpoint"`
+			Host     string `json:"host"`
+			Port     int    `json:"port"`
+		}
+		if err := json.Unmarshal(item.Value, &decoded); err == nil {
+			switch {
+			case strings.TrimSpace(decoded.Endpoint) != "":
+				candidates = append(candidates, strings.TrimSpace(decoded.Endpoint))
+			case strings.TrimSpace(decoded.Host) != "" && decoded.Port > 0:
+				candidates = append(candidates, fmt.Sprintf("%s:%d", strings.TrimSpace(decoded.Host), decoded.Port))
+			}
+			continue
+		}
+		candidates = append(candidates, value)
+	}
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no valid grpc service instance found under %s", prefix)
+	}
+	sort.Strings(candidates)
+	return candidates[0], nil
+}
+
+func splitRegistryEndpoints(raw string) []string {
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, item := range parts {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func grpcServiceNameFromMethod(method string) string {
+	method = strings.TrimSpace(method)
+	method = strings.TrimPrefix(method, "/")
+	if method == "" {
+		return ""
+	}
+	index := strings.LastIndex(method, "/")
+	if index <= 0 {
+		return method
+	}
+	return strings.TrimSpace(method[:index])
+}
+
+func registryServicePrefix(namespace string, serviceName string) string {
+	namespace = strings.Trim(strings.TrimSpace(namespace), "/")
+	serviceName = strings.Trim(strings.TrimSpace(serviceName), "/")
+	if namespace == "" {
+		return "/" + serviceName + "/"
+	}
+	return "/" + namespace + "/" + serviceName + "/"
 }

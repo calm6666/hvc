@@ -186,6 +186,9 @@ type TranscodeJob struct {
 	// CompletionPayload（A1）非空 = 转码已结束但分片还没传完：完成事件要用的 payload 先落在这里，
 	// 等本任务待传数归零、真正允许发布时取出来写 outbox（见 worker.publishCompletion）。
 	CompletionPayload string `json:"completionPayload,omitempty"`
+	// InputHash（B2）源文件 + 输出规格的 sha256：与 t_transcode_job_step 各步骤行的 input_hash
+	// 一致时才允许按步骤续跑；不一致（换源/改规格）必须整任务重跑。
+	InputHash                string `json:"inputHash,omitempty"`
 	AssignedWorkerID           string
 	ExecutorWorkerInstanceID   uint64
 	SelectedExecutionHWAccel   string

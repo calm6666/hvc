@@ -90,7 +90,7 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/v1/manifest/dash/{{job_id}}.mpd",
+              "raw": "{{base_url}}/v1/manifest/dash/{{job_id}}",
               "host": [
                 "{{base_url}}"
               ],
@@ -98,7 +98,7 @@
                 "v1",
                 "manifest",
                 "dash",
-                "{{job_id}}.mpd"
+                "{{job_id}}"
               ]
             }
           }
@@ -108,7 +108,7 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/v1/manifest/dash/{{job_id}}.mpd?renditions=720p,480p&max_height=720",
+              "raw": "{{base_url}}/v1/manifest/dash/{{job_id}}?renditions=720p,480p&max_height=720",
               "host": [
                 "{{base_url}}"
               ],
@@ -116,7 +116,7 @@
                 "v1",
                 "manifest",
                 "dash",
-                "{{job_id}}.mpd"
+                "{{job_id}}"
               ],
               "query": [
                 {
@@ -136,7 +136,7 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/v1/manifest/hls/{{job_id}}.m3u8",
+              "raw": "{{base_url}}/v1/manifest/hls/{{job_id}}",
               "host": [
                 "{{base_url}}"
               ],
@@ -144,7 +144,7 @@
                 "v1",
                 "manifest",
                 "hls",
-                "{{job_id}}.m3u8"
+                "{{job_id}}"
               ]
             }
           }
@@ -154,7 +154,7 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/v1/manifest/hls/{{job_id}}/1080p.m3u8",
+              "raw": "{{base_url}}/v1/manifest/hls/{{job_id}}/1080p",
               "host": [
                 "{{base_url}}"
               ],
@@ -163,7 +163,7 @@
                 "manifest",
                 "hls",
                 "{{job_id}}",
-                "1080p.m3u8"
+                "1080p"
               ]
             }
           }
@@ -335,7 +335,79 @@
           }
         },
         {
-          "name": "Who Am I",
+          "name": "Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/auth/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "profile"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/auth/current-user",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "current-user"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Session Alias",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/auth/session",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "auth",
+                "session"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Me Alias",
           "request": {
             "method": "GET",
             "header": [
@@ -426,7 +498,7 @@
           }
         },
         {
-          "name": "Update Runtime",
+          "name": "Update Runtime Server",
           "request": {
             "method": "POST",
             "header": [
@@ -441,10 +513,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"enable_http_server\": true,\n  \"enable_callback\": true,\n  \"default_profile_id\": 0,\n  \"max_global_transcode_sessions\": 100,\n  \"job_lease_ttl_sec\": 300,\n  \"worker_heartbeat_timeout_sec\": 30,\n  \"allow_request_override_profile\": true,\n  \"allow_request_override_segment_duration\": true,\n  \"allow_request_override_hwaccel\": true,\n  \"scheduler_loop_interval_ms\": 1000,\n  \"worker_loop_interval_ms\": 1000,\n  \"single_job_upload_concurrency\": 4,\n  \"require_hardware_encode\": false,\n  \"allow_software_decode_fallback\": true,\n  \"require_hardware_watermark\": false,\n  \"node_cpu_safety_limit_percent\": 85,\n  \"node_memory_safety_limit_percent\": 85,\n  \"node_gpu_safety_limit_percent\": 90,\n  \"callback_http_url\": \"https://callback.example.com/transcode\",\n  \"callback_mq_topic\": \"transcode.job.callback\",\n  \"enable_grpc_server\": true,\n  \"grpc_listen_address\": \":9090\",\n  \"enable_mq_consumer\": true,\n  \"mq_queue_name\": \"hvc.transcode.create\",\n  \"mq_host\": \"127.0.0.1\",\n  \"mq_port\": 5672,\n  \"mq_username\": \"guest\",\n  \"mq_password\": \"guest\",\n  \"mq_vhost\": \"/\",\n  \"mq_consumer_tag\": \"hvc-runtime\",\n  \"mq_prefetch_count\": 16,\n  \"storage_type\": \"s3\",\n  \"storage_endpoint\": \"127.0.0.1:9000\",\n  \"storage_bucket\": \"hvc-media\",\n  \"storage_access_key_id\": \"minioadmin\",\n  \"storage_secret_access_key\": \"minioadmin\",\n  \"storage_use_ssl\": false,\n  \"storage_play_domain\": \"https://play.example.com/live\",\n  \"storage_flv_domain\": \"https://flv.example.com/live\",\n  \"storage_local_base_path\": \"/data/hvc/media\",\n  \"default_storage_id\": 0,\n  \"worker_object_prefix\": \"hvc/runtime\",\n  \"change_summary\": \"enable public grpc and mq hot reload\"\n}"
+              "raw": "{\n  \"enable_http_server\": true,\n  \"change_summary\": \"update http exposure only\"\n}"
             },
             "url": {
-              "raw": "{{base_url}}/v1/admin/config/runtime/update",
+              "raw": "{{base_url}}/v1/admin/config/runtime/server/update",
               "host": [
                 "{{base_url}}"
               ],
@@ -453,6 +525,211 @@
                 "admin",
                 "config",
                 "runtime",
+                "server",
+                "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Runtime Scheduler",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"default_profile_id\": 0,\n  \"max_global_transcode_sessions\": 100,\n  \"job_lease_ttl_sec\": 300,\n  \"allow_request_override_profile\": true,\n  \"allow_request_override_segment_duration\": true,\n  \"allow_request_override_hwaccel\": true,\n  \"scheduler_loop_interval_ms\": 1000,\n  \"require_hardware_encode\": false,\n  \"allow_software_decode_fallback\": true,\n  \"require_hardware_watermark\": false,\n  \"node_cpu_safety_limit_percent\": 85,\n  \"node_memory_safety_limit_percent\": 85,\n  \"node_gpu_safety_limit_percent\": 90,\n  \"change_summary\": \"update scheduler only\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/runtime/scheduler/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "runtime",
+                "scheduler",
+                "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Runtime Worker",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"worker_heartbeat_timeout_sec\": 30,\n  \"worker_loop_interval_ms\": 1000,\n  \"single_job_upload_concurrency\": 4,\n  \"change_summary\": \"update worker only\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/runtime/worker/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "runtime",
+                "worker",
+                "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Runtime Storage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storage_type\": \"s3\",\n  \"storage_endpoint\": \"127.0.0.1:9000\",\n  \"storage_bucket\": \"hvc-media\",\n  \"storage_access_key_id\": \"minioadmin\",\n  \"storage_secret_access_key\": \"minioadmin\",\n  \"storage_use_ssl\": false,\n  \"storage_play_domain\": \"https://play.example.com\",\n  \"storage_flv_domain\": \"https://flv.example.com\",\n  \"storage_local_base_path\": \"/data/hvc/media\",\n  \"default_storage_id\": 0,\n  \"worker_object_prefix\": \"hvc/runtime\",\n  \"change_summary\": \"update storage only\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/runtime/storage/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "runtime",
+                "storage",
+                "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Runtime Callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enable_callback\": true,\n  \"callback_http_url\": \"https://callback.example.com/transcode\",\n  \"callback_rpc_endpoint\": \"\",\n  \"callback_mq_topic\": \"transcode.job.callback\",\n  \"change_summary\": \"update callback fallback only\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/runtime/callback/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "runtime",
+                "callback",
+                "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Runtime MQ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enable_mq_consumer\": true,\n  \"mq_queue_name\": \"hvc.transcode.create\",\n  \"mq_host\": \"127.0.0.1\",\n  \"mq_port\": 5672,\n  \"mq_username\": \"guest\",\n  \"mq_password\": \"guest\",\n  \"mq_vhost\": \"/\",\n  \"mq_consumer_tag\": \"hvc-runtime\",\n  \"mq_prefetch_count\": 16,\n  \"change_summary\": \"update mq only\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/runtime/mq/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "runtime",
+                "mq",
+                "update"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Runtime GRPC",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enable_grpc_server\": true,\n  \"grpc_listen_address\": \":9090\",\n  \"public_grpc_registry_id\": 3001,\n  \"change_summary\": \"update public grpc only\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/config/runtime/grpc/update",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "config",
+                "runtime",
+                "grpc",
                 "update"
               ]
             }
@@ -825,6 +1102,120 @@
       ]
     },
     {
+      "name": "Admin / Registry ETCD",
+      "item": [
+        {
+          "name": "List Registry ETCD Configs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/registry/etcd/list?page=1&page_size=20&registry_name=&enabled=",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "registry",
+                "etcd",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "registry_name",
+                  "value": ""
+                },
+                {
+                  "key": "enabled",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upsert Registry ETCD Config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registry_id\": 3001,\n  \"registry_name\": \"public-grpc-registry\",\n  \"endpoints\": \"127.0.0.1:2379\",\n  \"service_namespace\": \"/vod/transcoding\",\n  \"lease_ttl_sec\": 30,\n  \"dial_timeout_ms\": 3000,\n  \"enabled\": true,\n  \"priority\": 10\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/registry/etcd/upsert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "registry",
+                "etcd",
+                "upsert"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Enable Registry ETCD Config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registry_id\": 3001,\n  \"enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/registry/etcd/enabled",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "registry",
+                "etcd",
+                "enabled"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Admin / RBAC",
       "item": [
         {
@@ -886,7 +1277,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"operator\",\n  \"password_hash\": \"$2a$10$...\",\n  \"display_name\": \"operator\",\n  \"status\": 1\n}"
+              "raw": "{\n  \"username\": \"operator\",\n  \"password\": \"admin123\",\n  \"display_name\": \"operator\",\n  \"status\": 1\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/system/user/upsert",
@@ -1179,7 +1570,7 @@
         },
         {
           "name": "Role Menu Tree",
-          "description": "返回 role_id、menu_ids 和完整 menu_tree。",
+          "description": "返回统一的 data.items 菜单树，并附带 role_id、menu_ids。",
           "request": {
             "method": "GET",
             "header": [
@@ -1212,7 +1603,7 @@
         },
         {
           "name": "Upsert Menu",
-          "description": "返回单个 snake_case 菜单节点对象，不再返回仅包含自身的一棵树。",
+          "description": "返回单个 snake_case 菜单节点对象，不再返回仅包含自身的一棵树。component 字段用于存储前端组件路径；component_name 仅保留为旧客户端兼容字段。",
           "request": {
             "method": "POST",
             "header": [
@@ -1227,7 +1618,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"menu_id\": 0,\n  \"parent_id\": 100,\n  \"menu_key\": \"system.user\",\n  \"menu_name\": \"用户管理\",\n  \"route_path\": \"/system/user\",\n  \"component_name\": \"system/user/index\",\n  \"icon_name\": \"users\",\n  \"menu_type\": \"menu\",\n  \"permission_key\": \"system.user.read\",\n  \"sort_no\": 20,\n  \"hidden\": false,\n  \"status\": 1\n}"
+              "raw": "{\n  \"menu_id\": 0,\n  \"parent_id\": 100,\n  \"menu_key\": \"system.user\",\n  \"menu_name\": \"用户管理\",\n  \"route_path\": \"/system/user\",\n  \"component\": \"system/user/index\",\n  \"icon_name\": \"users\",\n  \"menu_type\": \"menu\",\n  \"permission_key\": \"system.user.read\",\n  \"sort_no\": 20,\n  \"hidden\": false,\n  \"status\": 1\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/system/menu/upsert",
@@ -1293,7 +1684,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"user_id\": 2,\n  \"role_id\": 2\n}"
+              "raw": "{\n  \"admin_user_id\": 2,\n  \"role_id\": 2\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/system/user-role/bind",
@@ -1474,7 +1865,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/cluster/node/metrics?page=1&page_size=20&node_id=1",
+              "raw": "{{base_url}}/v1/admin/cluster/node/metrics?page=1&page_size=20&keyword=&enabled=true&quarantined=false&draining=false&node_id=1",
               "host": [
                 "{{base_url}}"
               ],
@@ -1493,6 +1884,22 @@
                 {
                   "key": "page_size",
                   "value": "20"
+                },
+                {
+                  "key": "keyword",
+                  "value": ""
+                },
+                {
+                  "key": "enabled",
+                  "value": "true"
+                },
+                {
+                  "key": "quarantined",
+                  "value": "false"
+                },
+                {
+                  "key": "draining",
+                  "value": "false"
                 },
                 {
                   "key": "node_id",
@@ -1610,7 +2017,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/admin/cluster/member/list?page=1&page_size=20",
+              "raw": "{{base_url}}/v1/admin/cluster/member/list?page=1&page_size=20&keyword=&enabled=true&quarantined=false&draining=false",
               "host": [
                 "{{base_url}}"
               ],
@@ -1629,6 +2036,22 @@
                 {
                   "key": "page_size",
                   "value": "20"
+                },
+                {
+                  "key": "keyword",
+                  "value": ""
+                },
+                {
+                  "key": "enabled",
+                  "value": "true"
+                },
+                {
+                  "key": "quarantined",
+                  "value": "false"
+                },
+                {
+                  "key": "draining",
+                  "value": "false"
                 }
               ]
             }
@@ -1696,7 +2119,7 @@
                 "value": "Bearer {{token}}"
               }
             ],
-            "description": "查看调度器当前快照下的候选节点、过滤原因、Top-K 候选池和推荐调度结果。",
+            "description": "查看调度器当前快照下的候选节点、过滤原因、Top-K 候选池和推荐调度结果。候选项会返回 node_role、control_plane、admin_accessible、online_signal_source、scheduler_ready、state_reason 等运维字段。",
             "url": {
               "raw": "{{base_url}}/v1/admin/cluster/scheduler/insight?preferred_hw_accel=nvidia&video_codec=h264&enable_watermark=false",
               "host": [
@@ -1730,6 +2153,7 @@
           "name": "Set Worker Offline",
           "request": {
             "method": "POST",
+            "description": "优先通过 cluster internal gRPC 将目标 Worker 切换到运维下线状态；成功响应会返回 control_path，说明本次是走本地模块还是内部 gRPC。",
             "header": [
               {
                 "key": "Authorization",
@@ -1742,7 +2166,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"worker_id\": \"worker-node1-001\",\n  \"reason\": \"manual isolate\"\n}"
+              "raw": "{\n  \"worker_id\": \"worker-node1-001\",\n  \"reason\": \"manual isolate\",\n  \"takeover_active_jobs\": true\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/cluster/worker/offline",
@@ -1763,6 +2187,7 @@
           "name": "Set Worker Exit",
           "request": {
             "method": "POST",
+            "description": "优先通过 cluster internal gRPC 请求目标 Worker 执行模块退出；成功响应会返回 control_path，说明本次是走本地模块还是内部 gRPC。",
             "header": [
               {
                 "key": "Authorization",
@@ -1775,7 +2200,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"worker_id\": \"worker-node1-001\",\n  \"reason\": \"process terminated by operator\"\n}"
+              "raw": "{\n  \"worker_id\": \"worker-node1-001\",\n  \"reason\": \"process terminated by operator\",\n  \"takeover_active_jobs\": true\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/cluster/worker/exit",
@@ -1827,6 +2252,7 @@
         },
         {
           "name": "Set Node Enabled",
+          "description": "启用或禁用节点。禁用时可选联动接管该节点上的活跃任务。",
           "request": {
             "method": "POST",
             "header": [
@@ -1841,7 +2267,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"node_id\": 1,\n  \"enabled\": true\n}"
+              "raw": "{\n  \"node_id\": 1,\n  \"enabled\": false,\n  \"reason\": \"host maintenance\",\n  \"takeover_active_jobs\": true\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/cluster/node/enabled",
@@ -1860,6 +2286,7 @@
         },
         {
           "name": "Set Node Quarantined",
+          "description": "隔离或取消隔离节点。隔离后不再分配新任务，可选联动接管当前活跃任务。",
           "request": {
             "method": "POST",
             "header": [
@@ -1874,7 +2301,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"node_id\": 1,\n  \"quarantined\": true,\n  \"reason\": \"GPU maintenance\"\n}"
+              "raw": "{\n  \"node_id\": 1,\n  \"quarantined\": true,\n  \"reason\": \"GPU maintenance\",\n  \"takeover_active_jobs\": true\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/cluster/node/quarantined",
@@ -1893,6 +2320,7 @@
         },
         {
           "name": "Set Node Draining",
+          "description": "排空或恢复节点。排空更适合有序摘流量和滚动维护窗口。",
           "request": {
             "method": "POST",
             "header": [
@@ -1907,7 +2335,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"node_id\": 1,\n  \"draining\": true,\n  \"reason\": \"rolling upgrade\"\n}"
+              "raw": "{\n  \"node_id\": 1,\n  \"draining\": true,\n  \"reason\": \"rolling upgrade\",\n  \"takeover_active_jobs\": true\n}"
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/cluster/node/draining",
@@ -2361,6 +2789,7 @@
         },
         {
           "name": "Start Channel",
+          "description": "支持指定 node_id 执行；若目标节点不是当前控制面节点，会自动转发到目标节点内部控制接口。成功响应会返回 control_path、target_node_id、target_worker_id。",
           "request": {
             "method": "POST",
             "header": [
@@ -2394,6 +2823,7 @@
         },
         {
           "name": "Stop Channel",
+          "description": "会根据频道当前 assigned_node_id 自动选择本地执行或远程转发到目标节点。成功响应会返回 control_path、target_node_id、target_worker_id。",
           "request": {
             "method": "POST",
             "header": [
@@ -2427,6 +2857,7 @@
         },
         {
           "name": "Delete Channel",
+          "description": "仅允许删除不存在活动会话且未处于运行中的频道，建议先 stop 再 delete。",
           "request": {
             "method": "POST",
             "header": [
@@ -2706,6 +3137,148 @@
                 "internal",
                 "segments",
                 "upload-failed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Live Publish Connected",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_key\": \"live-001\",\n  \"node_id\": 1,\n  \"worker_id\": \"worker-node1-001\",\n  \"stream_key\": \"live-001\",\n  \"publish_ip\": \"10.0.0.10\",\n  \"push_protocol\": \"rtmp\",\n  \"ingest_url\": \"rtmp://push.example.com/live/live-001\",\n  \"playback_hls_url\": \"https://play.example.com/live/live-001/master.m3u8\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/live/publish-connected",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "live",
+                "publish-connected"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Live Publish Disconnected",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_key\": \"live-001\",\n  \"stream_key\": \"live-001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/live/publish-disconnected",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "live",
+                "publish-disconnected"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Live Publish Interrupted",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_key\": \"live-001\",\n  \"stream_key\": \"live-001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/live/publish-interrupted",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "live",
+                "publish-interrupted"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Internal Start Channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_id\": 1,\n  \"node_id\": 1,\n  \"worker_id\": \"worker-node1-001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/live/channel/start",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "live",
+                "channel",
+                "start"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Internal Stop Channel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/internal/live/channel/stop",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "internal",
+                "live",
+                "channel",
+                "stop"
               ]
             }
           }

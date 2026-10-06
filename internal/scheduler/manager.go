@@ -105,26 +105,29 @@ func (m *Manager) Start(ctx context.Context) error {
 //  3. 对每个任务，过滤合规候选并选择最优节点；
 //  4. 将任务分配给选中节点。
 func (m *Manager) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeConfig) {
-	jobs := m.jobRepository.ListQueued(ctx)
-	if len(jobs) == 0 {
-		return
-	}
-	candidates := m.collectCandidates(ctx)
-	if len(candidates) == 0 {
-		return
-	}
-	if m.reachedGlobalCapacity(ctx, cfg) {
+	activeExecutions := m.activeExecutionCount(ctx, cfg)
+	remainingCapacity := resolveDispatchRemainingCapacity(cfg, activeExecutions)
+	if remainingCapacity <= 0 {
 		logx.Info("scheduler.dispatch.skipped", logx.Fields{
 			"reason": "max_global_transcode_sessions_reached",
 			"limit":  cfg.Scheduler.MaxGlobalTranscodeSessions,
 		})
 		return
 	}
+	jobs := m.jobRepository.ListQueuedForDispatch(ctx, resolveDispatchQueueFetchLimit(remainingCapacity))
+	if len(jobs) == 0 {
+		return
+	}
+	jobOverrideByID := m.listJobOverrides(ctx, jobs)
+	candidates := m.collectCandidates(ctx)
+	if len(candidates) == 0 {
+		return
+	}
 	for _, job := range jobs {
-		if m.reachedGlobalCapacity(ctx, cfg) {
+		if remainingCapacity <= 0 {
 			return
 		}
-		req := m.buildJobRequest(ctx, job)
+		req := m.buildJobRequest(job, jobOverrideByID[job.JobID])
 		passed := filterpkg.NewFilter(cfg).Apply(req, candidates)
 		if len(passed) == 0 {
 			logx.Info("scheduler.dispatch.skipped", logx.Fields{
@@ -143,7 +146,7 @@ func (m *Manager) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeCon
 			})
 			continue
 		}
-		preferredHWAccel := m.resolvePreferredHWAccel(ctx, job)
+		preferredHWAccel := m.resolvePreferredHWAccel(jobOverrideByID[job.JobID])
 		decision := dispatchpkg.BuildDecision(best, preferredHWAccel, job.LeaseGeneration, job.AttemptNo)
 		if err := m.jobRepository.Assign(ctx, job.JobID, decision, best.NodeID, m.workerID, job.ExecutorWorkerInstanceID); err != nil {
 			if errors.Is(err, mysql.ErrJobAssignConflict) {
@@ -173,6 +176,7 @@ func (m *Manager) dispatchOnce(ctx context.Context, cfg config.DynamicRuntimeCon
 		if m.shieldTracker != nil {
 			m.shieldTracker.RecordSuccess(best.NodeID)
 		}
+		remainingCapacity--
 		logx.Info("scheduler.dispatch.assigned", logx.Fields{
 			"job_id":             job.JobID,
 			"request_id":         job.RequestID,
@@ -201,12 +205,13 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 	onlineGrace := resolveNodeOnlineGracePeriod(currentCfg)
 
 	if m.clusterNodeRepository != nil {
-		nodes := m.clusterNodeRepository.List(ctx)
+		nodes := m.clusterNodeRepository.ListForScheduler(ctx)
+		nodeIDs := make([]uint64, 0, len(nodes))
+		for _, node := range nodes {
+			nodeIDs = append(nodeIDs, node.NodeID)
+		}
+		metricsByNode := m.getNodeMetricsBatch(ctx, nodeIDs)
 		if m.jobExecutionRepository != nil && len(nodes) > 0 {
-			nodeIDs := make([]uint64, 0, len(nodes))
-			for _, node := range nodes {
-				nodeIDs = append(nodeIDs, node.NodeID)
-			}
 			activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, nodeIDs, metricsFreshAfter)
 		}
 		for _, node := range nodes {
@@ -216,7 +221,7 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 			if m.shieldTracker != nil && m.shieldTracker.IsShielded(node.NodeID) {
 				continue
 			}
-			metrics, ok := m.clusterCache.GetNodeMetrics(ctx, node.NodeID)
+			metrics, ok := metricsByNode[node.NodeID]
 			if !ok {
 				metrics = model.NodeMetrics{NodeID: node.NodeID}
 			}
@@ -271,6 +276,13 @@ func (m *Manager) collectCandidates(ctx context.Context) []model.DispatchCandida
 	return candidates
 }
 
+func (m *Manager) getNodeMetricsBatch(ctx context.Context, nodeIDs []uint64) map[uint64]model.NodeMetrics {
+	if m.clusterCache == nil || len(nodeIDs) == 0 {
+		return map[uint64]model.NodeMetrics{}
+	}
+	return m.clusterCache.GetNodeMetricsBatch(ctx, nodeIDs)
+}
+
 func mergeGPUActiveSessions(metrics model.NodeMetrics, activeByGPU map[int]int) model.NodeMetrics {
 	if len(metrics.GPUCapabilities) == 0 || len(activeByGPU) == 0 {
 		return metrics
@@ -281,16 +293,17 @@ func mergeGPUActiveSessions(metrics model.NodeMetrics, activeByGPU map[int]int) 
 	return metrics
 }
 
-// buildJobRequest 从任务模型构造调度请求。
-func (m *Manager) buildJobRequest(ctx context.Context, job model.TranscodeJob) model.CreateJobRequest {
+// buildJobRequest 从任务模型和预取的 override 构造调度请求。
+func (m *Manager) buildJobRequest(job model.TranscodeJob, override model.TranscodeJobRequestOverride) model.CreateJobRequest {
 	req := model.CreateJobRequest{
 		RequestID:       job.RequestID,
 		SourceURL:       job.SourceURL,
 		ProfileID:       job.ProfileID,
 		Priority:        job.Priority,
 		EnableWatermark: job.EnableWatermark,
+		Renditions:      append([]model.RenditionOption(nil), job.Renditions...),
 	}
-	preferredHWAccel := m.resolvePreferredHWAccel(ctx, job)
+	preferredHWAccel := m.resolvePreferredHWAccel(override)
 	if preferredHWAccel != "" {
 		req.ScheduleOptions = &model.ScheduleOptions{PreferredHWAccel: preferredHWAccel}
 	}
@@ -298,13 +311,20 @@ func (m *Manager) buildJobRequest(ctx context.Context, job model.TranscodeJob) m
 }
 
 // resolvePreferredHWAccel 解析任务的硬件加速偏好。
-func (m *Manager) resolvePreferredHWAccel(ctx context.Context, job model.TranscodeJob) string {
-	if m.jobRequestOverrideRepo != nil {
-		if override, ok := m.jobRequestOverrideRepo.FindByJobID(ctx, job.JobID); ok && override.OverridePreferredHWAccel != "" {
-			return override.OverridePreferredHWAccel
-		}
+func (m *Manager) resolvePreferredHWAccel(override model.TranscodeJobRequestOverride) string {
+	return override.OverridePreferredHWAccel
+}
+
+func (m *Manager) listJobOverrides(ctx context.Context, jobs []model.TranscodeJob) map[uint64]model.TranscodeJobRequestOverride {
+	result := make(map[uint64]model.TranscodeJobRequestOverride)
+	if m.jobRequestOverrideRepo == nil || len(jobs) == 0 {
+		return result
 	}
-	return ""
+	jobIDs := make([]uint64, 0, len(jobs))
+	for _, job := range jobs {
+		jobIDs = append(jobIDs, job.JobID)
+	}
+	return m.jobRequestOverrideRepo.ListByJobIDs(ctx, jobIDs)
 }
 
 // failoverOnce 执行一次故障接管循环。
@@ -339,12 +359,32 @@ func (m *Manager) currentConfig() config.DynamicRuntimeConfig {
 }
 
 func (m *Manager) reachedGlobalCapacity(ctx context.Context, cfg config.DynamicRuntimeConfig) bool {
-	if m.jobExecutionRepository == nil || cfg.Scheduler.MaxGlobalTranscodeSessions <= 0 {
-		return false
+	return resolveDispatchRemainingCapacity(cfg, m.activeExecutionCount(ctx, cfg)) <= 0
+}
+
+func resolveDispatchRemainingCapacity(cfg config.DynamicRuntimeConfig, activeExecutions int64) int64 {
+	if cfg.Scheduler.MaxGlobalTranscodeSessions <= 0 {
+		return 1<<62 - 1
 	}
-	activeAfter := time.Now().Add(-cfg.Scheduler.WorkerHeartbeatTimeout)
-	activeExecutions := m.jobExecutionRepository.CountActiveExecutions(ctx, activeAfter)
-	return activeExecutions >= int64(cfg.Scheduler.MaxGlobalTranscodeSessions)
+	remaining := int64(cfg.Scheduler.MaxGlobalTranscodeSessions) - activeExecutions
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+func resolveDispatchQueueFetchLimit(remainingCapacity int64) int {
+	if remainingCapacity <= 0 {
+		return 0
+	}
+	limit := remainingCapacity * 4
+	if limit < 20 {
+		limit = 20
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	return int(limit)
 }
 
 func resolveNodeOnlineGracePeriod(cfg config.DynamicRuntimeConfig) time.Duration {

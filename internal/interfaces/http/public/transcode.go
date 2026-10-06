@@ -10,7 +10,7 @@ import (
 	"hvc/pkg/logx"
 )
 
-var errJobNotFound = errors.New("job not found")
+var errJobNotFound = errors.New("任务不存在")
 
 // TranscodeHandler 处理转码公共接口。
 type TranscodeHandler struct {
@@ -32,7 +32,7 @@ func (h *TranscodeHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 			"method": r.Method,
 			"path":   r.URL.Path,
 		})
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "请求体格式无效"})
 		return
 	}
 

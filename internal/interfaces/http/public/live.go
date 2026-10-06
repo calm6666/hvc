@@ -28,11 +28,11 @@ func NewLiveHandler(manager *livemanager.Manager, service *livesvc.ChannelServic
 func (h *LiveHandler) GetPlaybackInfo(w http.ResponseWriter, r *http.Request) {
 	channelKey := strings.TrimSpace(r.URL.Query().Get("channel_key"))
 	if channelKey == "" {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key is required"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key 不能为空"})
 		return
 	}
 	if _, ok := h.service.GetChannelByKeyContext(r.Context(), channelKey); !ok {
-		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "channel not found"})
+		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "频道不存在"})
 		return
 	}
 	logx.Info("http.live.playback.request", logx.Fields{
@@ -55,11 +55,11 @@ func (h *LiveHandler) GetPlaybackInfo(w http.ResponseWriter, r *http.Request) {
 func (h *LiveHandler) PushAuth(w http.ResponseWriter, r *http.Request) {
 	channelKey := strings.TrimSpace(r.URL.Query().Get("channel_key"))
 	if channelKey == "" {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key is required"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key 不能为空"})
 		return
 	}
 	if _, ok := h.service.GetChannelByKeyContext(r.Context(), channelKey); !ok {
-		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "channel not found"})
+		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "频道不存在"})
 		return
 	}
 
@@ -96,11 +96,11 @@ func requestRemoteIP(r *http.Request) string {
 func (h *LiveHandler) PlayAuth(w http.ResponseWriter, r *http.Request) {
 	channelKey := strings.TrimSpace(r.URL.Query().Get("channel_key"))
 	if channelKey == "" {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key is required"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key 不能为空"})
 		return
 	}
 	if _, ok := h.service.GetChannelByKeyContext(r.Context(), channelKey); !ok {
-		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "channel not found"})
+		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "频道不存在"})
 		return
 	}
 
@@ -120,7 +120,7 @@ func (h *LiveHandler) PlayAuth(w http.ResponseWriter, r *http.Request) {
 // PublishConnected 处理直播推流连接建立回调。
 func (h *LiveHandler) PublishConnected(w http.ResponseWriter, r *http.Request) {
 	if h.manager == nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "live manager not ready"})
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "直播管理器未初始化"})
 		return
 	}
 	var req struct {
@@ -134,12 +134,12 @@ func (h *LiveHandler) PublishConnected(w http.ResponseWriter, r *http.Request) {
 		PlaybackHLSURL string `json:"playback_hls_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "请求体格式无效"})
 		return
 	}
 	req.ChannelKey = strings.TrimSpace(req.ChannelKey)
 	if req.ChannelKey == "" {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key is required"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key 不能为空"})
 		return
 	}
 	session, err := h.manager.OnPublish(r.Context(), req.ChannelKey, req.NodeID, req.WorkerID, req.StreamKey, req.PublishIP, req.PushProtocol, req.IngestURL, req.PlaybackHLSURL)
@@ -154,7 +154,7 @@ func (h *LiveHandler) PublishConnected(w http.ResponseWriter, r *http.Request) {
 // PublishDisconnected 处理直播推流断开回调。
 func (h *LiveHandler) PublishDisconnected(w http.ResponseWriter, r *http.Request) {
 	if h.manager == nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "live manager not ready"})
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "直播管理器未初始化"})
 		return
 	}
 	var req struct {
@@ -162,12 +162,12 @@ func (h *LiveHandler) PublishDisconnected(w http.ResponseWriter, r *http.Request
 		StreamKey  string `json:"stream_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "请求体格式无效"})
 		return
 	}
 	req.ChannelKey = strings.TrimSpace(req.ChannelKey)
 	if req.ChannelKey == "" {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key is required"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key 不能为空"})
 		return
 	}
 	if err := h.manager.OnUnpublish(r.Context(), req.ChannelKey, strings.TrimSpace(req.StreamKey)); err != nil {
@@ -181,7 +181,7 @@ func (h *LiveHandler) PublishDisconnected(w http.ResponseWriter, r *http.Request
 // PublishInterrupted 处理直播推流中断回调。
 func (h *LiveHandler) PublishInterrupted(w http.ResponseWriter, r *http.Request) {
 	if h.manager == nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "live manager not ready"})
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "直播管理器未初始化"})
 		return
 	}
 	var req struct {
@@ -189,14 +189,81 @@ func (h *LiveHandler) PublishInterrupted(w http.ResponseWriter, r *http.Request)
 		StreamKey  string `json:"stream_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid request"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "请求体格式无效"})
 		return
 	}
 	req.ChannelKey = strings.TrimSpace(req.ChannelKey)
 	if req.ChannelKey == "" {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key is required"})
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_key 不能为空"})
 		return
 	}
 	h.manager.OnInterrupt(r.Context(), req.ChannelKey, strings.TrimSpace(req.StreamKey))
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok"})
+}
+
+// StartRequested 处理集群内部下发的频道启动请求。
+//
+// 该接口只暴露给集群内部控制链路调用，真正的鉴权由 HTTP 中间件完成。
+// 这里保持请求结构与后台管理接口基本一致，便于控制面节点直接转发。
+func (h *LiveHandler) StartRequested(w http.ResponseWriter, r *http.Request) {
+	if h.manager == nil {
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "直播管理器未初始化"})
+		return
+	}
+	var req struct {
+		ChannelID uint64 `json:"channel_id"`
+		NodeID    uint64 `json:"node_id"`
+		WorkerID  string `json:"worker_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "请求体格式无效"})
+		return
+	}
+	if req.ChannelID == 0 {
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_id 不能为空"})
+		return
+	}
+	if err := h.manager.StartChannel(r.Context(), req.ChannelID, req.NodeID, strings.TrimSpace(req.WorkerID)); err != nil {
+		logx.Error("http.live.start_requested.failed", err, logx.Fields{
+			"channel_id": req.ChannelID,
+			"node_id":    req.NodeID,
+			"worker_id":  strings.TrimSpace(req.WorkerID),
+		})
+		logx.WriteJSON(w, http.StatusConflict, model.Response{Code: 409, Message: err.Error()})
+		return
+	}
+	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
+		"channel_id": req.ChannelID,
+		"node_id":    req.NodeID,
+		"worker_id":  strings.TrimSpace(req.WorkerID),
+	}})
+}
+
+// StopRequested 处理集群内部下发的频道停止请求。
+func (h *LiveHandler) StopRequested(w http.ResponseWriter, r *http.Request) {
+	if h.manager == nil {
+		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "直播管理器未初始化"})
+		return
+	}
+	var req struct {
+		ChannelID uint64 `json:"channel_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "请求体格式无效"})
+		return
+	}
+	if req.ChannelID == 0 {
+		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "channel_id 不能为空"})
+		return
+	}
+	if err := h.manager.StopChannel(r.Context(), req.ChannelID); err != nil {
+		logx.Error("http.live.stop_requested.failed", err, logx.Fields{
+			"channel_id": req.ChannelID,
+		})
+		logx.WriteJSON(w, http.StatusConflict, model.Response{Code: 409, Message: err.Error()})
+		return
+	}
+	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: map[string]any{
+		"channel_id": req.ChannelID,
+	}})
 }

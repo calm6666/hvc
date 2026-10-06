@@ -26,15 +26,15 @@ func NewManifestHandler(builder *manifest.Builder) *ManifestHandler {
 
 // ServeMPD 动态构建 DASH MPD 播放清单。
 //
-// GET /v1/manifest/dash/{job_id}.mpd
+// GET /v1/manifest/dash/{job_id}
 //
 // 查询参数：
 //   - renditions: 逗号分隔的清晰度白名单（版权保护，如 renditions=720p,480p）
 //   - max_height: 最大允许高度（如 max_height=720）
 func (h *ManifestHandler) ServeMPD(w http.ResponseWriter, r *http.Request) {
-	jobID, err := parsePathUintWithSuffix(r, "job_id", ".mpd")
+	jobID, err := parsePathUint(r, "job_id")
 	if err != nil || jobID == 0 {
-		http.Error(w, "invalid job_id", http.StatusBadRequest)
+		http.Error(w, "job_id 无效", http.StatusBadRequest)
 		return
 	}
 
@@ -53,15 +53,15 @@ func (h *ManifestHandler) ServeMPD(w http.ResponseWriter, r *http.Request) {
 
 // ServeMasterM3U8 动态构建 HLS Master 播放清单。
 //
-// GET /v1/manifest/hls/{job_id}.m3u8
+// GET /v1/manifest/hls/{job_id}
 //
 // 查询参数：
 //   - renditions: 逗号分隔的清晰度白名单
 //   - max_height: 最大允许高度
 func (h *ManifestHandler) ServeMasterM3U8(w http.ResponseWriter, r *http.Request) {
-	jobID, err := parsePathUintWithSuffix(r, "job_id", ".m3u8")
+	jobID, err := parsePathUint(r, "job_id")
 	if err != nil || jobID == 0 {
-		http.Error(w, "invalid job_id", http.StatusBadRequest)
+		http.Error(w, "job_id 无效", http.StatusBadRequest)
 		return
 	}
 
@@ -80,17 +80,17 @@ func (h *ManifestHandler) ServeMasterM3U8(w http.ResponseWriter, r *http.Request
 
 // ServeVariantM3U8 动态构建 HLS Variant 播放清单。
 //
-// GET /v1/manifest/hls/{job_id}/{rendition}.m3u8
+// GET /v1/manifest/hls/{job_id}/{rendition}
 func (h *ManifestHandler) ServeVariantM3U8(w http.ResponseWriter, r *http.Request) {
-	jobID, err := parsePathUintWithSuffix(r, "job_id", "")
+	jobID, err := parsePathUint(r, "job_id")
 	if err != nil || jobID == 0 {
-		http.Error(w, "invalid job_id", http.StatusBadRequest)
+		http.Error(w, "job_id 无效", http.StatusBadRequest)
 		return
 	}
 
-	rendition := parsePathStringWithSuffix(r, "rendition", ".m3u8")
+	rendition := parsePathString(r, "rendition")
 	if rendition == "" {
-		http.Error(w, "invalid rendition", http.StatusBadRequest)
+		http.Error(w, "rendition 无效", http.StatusBadRequest)
 		return
 	}
 
@@ -140,18 +140,11 @@ func getPathValue(r *http.Request, key string) string {
 	return r.PathValue(key)
 }
 
-func parsePathUintWithSuffix(r *http.Request, key string, suffix string) (uint64, error) {
-	value := parsePathStringWithSuffix(r, key, suffix)
+func parsePathUint(r *http.Request, key string) (uint64, error) {
+	value := parsePathString(r, key)
 	return strconv.ParseUint(value, 10, 64)
 }
 
-func parsePathStringWithSuffix(r *http.Request, key string, suffix string) string {
-	value := strings.TrimSpace(getPathValue(r, key))
-	if suffix == "" {
-		return value
-	}
-	if !strings.HasSuffix(value, suffix) {
-		return ""
-	}
-	return strings.TrimSuffix(value, suffix)
+func parsePathString(r *http.Request, key string) string {
+	return strings.TrimSpace(getPathValue(r, key))
 }

@@ -14,6 +14,9 @@ type JobRecord struct {
 	SourceURL                  string     `gorm:"column:source_url"`
 	SourceProtocol             int        `gorm:"column:source_protocol"`
 	ProfileID                  uint64     `gorm:"column:profile_id"`
+	// B2: 源文件+输出规格的 sha256。与 t_transcode_job_step 里各步骤的 input_hash 一致时才允许续跑；
+	// 不一致（换源、改规格）必须整任务重跑，避免把上一版输入的中间产物当成本版结果。
+	InputHash string `gorm:"column:input_hash"`
 	JobConfigVersion           uint64     `gorm:"column:job_config_version"`
 	SegmentDurationSec         int        `gorm:"column:segment_duration_sec"`
 	SegmentTemplate            string     `gorm:"column:segment_template"`

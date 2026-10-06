@@ -20,6 +20,7 @@
 #   HVC_MYSQL_USER     MySQL 用户名（默认 hvc）
 #   HVC_MYSQL_PASSWORD MySQL 密码（默认 hvc_pwd）
 #   HVC_MYSQL_DATABASE 数据库名（默认 hvc）
+#   HVC_MIGRATE_MODE   迁移模式（full / incremental，默认 full）
 # ============================================================
 
 set -euo pipefail
@@ -32,18 +33,28 @@ MYSQL_PORT="${HVC_MYSQL_PORT:-3306}"
 MYSQL_USER="${HVC_MYSQL_USER:-hvc}"
 MYSQL_PASSWORD="${HVC_MYSQL_PASSWORD:-hvc_pwd}"
 MYSQL_DATABASE="${HVC_MYSQL_DATABASE:-hvc}"
+MIGRATE_MODE="${HVC_MIGRATE_MODE:-full}"
 
 # ---- 解析命令行参数 ----
-while getopts "h:P:u:p:d:" opt; do
+while getopts "h:P:u:p:d:m:" opt; do
   case ${opt} in
     h) MYSQL_HOST="${OPTARG}" ;;
     P) MYSQL_PORT="${OPTARG}" ;;
     u) MYSQL_USER="${OPTARG}" ;;
     p) MYSQL_PASSWORD="${OPTARG}" ;;
     d) MYSQL_DATABASE="${OPTARG}" ;;
-    \?) echo "用法: $0 [-h host] [-P port] [-u user] [-p password] [-d database]"; exit 1 ;;
+    m) MIGRATE_MODE="${OPTARG}" ;;
+    \?) echo "用法: $0 [-h host] [-P port] [-u user] [-p password] [-d database] [-m full|incremental]"; exit 1 ;;
   esac
 done
+
+case "${MIGRATE_MODE}" in
+  full|incremental) ;;
+  *)
+    echo "错误：迁移模式只能是 full 或 incremental"
+    exit 1
+    ;;
+esac
 
 # MySQL 连接命令
 MYSQL_CMD="mysql --default-character-set=utf8mb4 -h ${MYSQL_HOST} -P ${MYSQL_PORT} -u ${MYSQL_USER} -p${MYSQL_PASSWORD}"
@@ -54,6 +65,7 @@ echo "=========================================="
 echo "  主机:   ${MYSQL_HOST}:${MYSQL_PORT}"
 echo "  用户:   ${MYSQL_USER}"
 echo "  数据库: ${MYSQL_DATABASE}"
+echo "  模式:   ${MIGRATE_MODE}"
 echo "=========================================="
 
 # ---- 检查 MySQL 连接 ----
@@ -77,8 +89,14 @@ echo "[3/4] 执行数据库迁移..."
 # 项目统一以 sql/ 作为显式建表/增量迁移源，避免 scripts 目录里再维护一套影子 SQL。
 MIGRATE_DIR="${PROJECT_ROOT}/sql"
 
-# 按文件名排序执行所有 .sql 文件
-SQL_FILES=$(find "${MIGRATE_DIR}" -name "*.sql" -type f | sort)
+# 迁移策略说明：
+# - full：全新初始化，只执行 000_full_project_schema.sql；
+# - incremental：存量库升级，只执行 100 及之后的历史增量脚本。
+if [ "${MIGRATE_MODE}" = "full" ]; then
+  SQL_FILES="${MIGRATE_DIR}/000_full_project_schema.sql"
+else
+  SQL_FILES=$(find "${MIGRATE_DIR}" -name "*.sql" -type f | sort | grep -v '/000_full_project_schema.sql$' || true)
+fi
 
 if [ -z "${SQL_FILES}" ]; then
   echo "  警告：未找到 SQL 迁移文件"

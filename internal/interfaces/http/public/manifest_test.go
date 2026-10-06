@@ -5,11 +5,11 @@ import (
 	"testing"
 )
 
-func TestParsePathUintWithSuffix(t *testing.T) {
-	req := httptest.NewRequest("GET", "/v1/manifest/dash/123.mpd", nil)
-	req.SetPathValue("job_id", "123.mpd")
+func TestParsePathUint(t *testing.T) {
+	req := httptest.NewRequest("GET", "/v1/manifest/dash/123", nil)
+	req.SetPathValue("job_id", "123")
 
-	jobID, err := parsePathUintWithSuffix(req, "job_id", ".mpd")
+	jobID, err := parsePathUint(req, "job_id")
 	if err != nil {
 		t.Fatalf("parse job_id failed: %v", err)
 	}
@@ -18,21 +18,21 @@ func TestParsePathUintWithSuffix(t *testing.T) {
 	}
 }
 
-func TestParsePathStringWithSuffix(t *testing.T) {
-	req := httptest.NewRequest("GET", "/v1/manifest/hls/123/1080p.m3u8", nil)
-	req.SetPathValue("rendition", "1080p.m3u8")
+func TestParsePathString(t *testing.T) {
+	req := httptest.NewRequest("GET", "/v1/manifest/hls/123/1080p", nil)
+	req.SetPathValue("rendition", "1080p")
 
-	rendition := parsePathStringWithSuffix(req, "rendition", ".m3u8")
+	rendition := parsePathString(req, "rendition")
 	if rendition != "1080p" {
 		t.Fatalf("unexpected rendition: %q", rendition)
 	}
 }
 
-func TestParsePathStringWithSuffixRejectsUnexpectedSuffix(t *testing.T) {
+func TestParsePathStringKeepsRawPathValue(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/manifest/dash/123.txt", nil)
 	req.SetPathValue("job_id", "123.txt")
 
-	if value := parsePathStringWithSuffix(req, "job_id", ".mpd"); value != "" {
+	if value := parsePathString(req, "job_id"); value != "123.txt" {
 		t.Fatalf("unexpected path value: %q", value)
 	}
 }

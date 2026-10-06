@@ -6,7 +6,9 @@
 # 1. 当前程序的 bootstrap 配置来源是 config.yaml 文件；
 # 2. scheduler/worker/callback/storage/public grpc/mq 等业务动态配置
 #    不应写在这里，而是通过后台 runtime config 维护；
-# 3. 本清单演示如何把 bootstrap 配置以 ConfigMap 文件方式挂载进容器。
+# 3. 本清单提供一个 control-plane 单副本示例；
+# 4. worker 节点请使用单独清单，并保证 node_id / worker_id 唯一；
+# 5. 如果要做多副本有状态部署，应改用 StatefulSet，不能直接共享同一个 node_id。
 # ============================================================
 
 apiVersion: v1
@@ -27,9 +29,10 @@ data:
     server:
       listen_address: ":8080"
       advertise_ip: ""
+      node_mode: "cluster-control"
       service_name: "hili-video-cloud"
       node_id: 1
-      worker_id: "hvc-k8s-node-1"
+      worker_id: "hvc-k8s-control-1"
 
     mysql:
       dsn: "hvc:hvc_pwd@tcp(hvc-mysql.hvc.svc.cluster.local:3306)/hvc?parseTime=true&charset=utf8mb4"
@@ -76,15 +79,18 @@ metadata:
   namespace: hvc
   labels:
     app: hvc-server
+    role: control-plane
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: hvc-server
+      role: control-plane
   template:
     metadata:
       labels:
         app: hvc-server
+        role: control-plane
     spec:
       containers:
         - name: hvc-server
@@ -157,10 +163,12 @@ metadata:
   namespace: hvc
   labels:
     app: hvc-server
+    role: control-plane
 spec:
   type: ClusterIP
   selector:
     app: hvc-server
+    role: control-plane
   ports:
     - name: http
       port: 8080
@@ -174,30 +182,3 @@ spec:
       port: 19090
       targetPort: grpc-internal
       protocol: TCP
-
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: hvc-server-hpa
-  namespace: hvc
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: hvc-server
-  minReplicas: 2
-  maxReplicas: 10
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 80

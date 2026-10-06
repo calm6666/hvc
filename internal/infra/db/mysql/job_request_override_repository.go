@@ -97,3 +97,39 @@ func (r *JobRequestOverrideRepository) FindByJobID(ctx context.Context, jobID ui
 	}
 	return toJobRequestOverrideModel(record), true
 }
+
+// ListByJobIDs 按 job_id 批量查询单任务覆盖参数。
+//
+// 调度器会在单轮循环里批量读取当前待分配任务的 override，
+// 避免 buildJobRequest / resolvePreferredHWAccel 对每个任务反复单查数据库。
+func (r *JobRequestOverrideRepository) ListByJobIDs(ctx context.Context, jobIDs []uint64) map[uint64]model.TranscodeJobRequestOverride {
+	result := make(map[uint64]model.TranscodeJobRequestOverride)
+	if len(jobIDs) == 0 {
+		return result
+	}
+
+	uniqueJobIDs := make([]uint64, 0, len(jobIDs))
+	seen := make(map[uint64]struct{}, len(jobIDs))
+	for _, jobID := range jobIDs {
+		if jobID == 0 {
+			continue
+		}
+		if _, exists := seen[jobID]; exists {
+			continue
+		}
+		seen[jobID] = struct{}{}
+		uniqueJobIDs = append(uniqueJobIDs, jobID)
+	}
+	if len(uniqueJobIDs) == 0 {
+		return result
+	}
+
+	var records []TranscodeJobRequestOverrideRecord
+	if err := r.db.WithContext(ctx).Where("job_id IN ?", uniqueJobIDs).Find(&records).Error; err != nil {
+		return result
+	}
+	for _, record := range records {
+		result[record.JobID] = toJobRequestOverrideModel(record)
+	}
+	return result
+}

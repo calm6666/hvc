@@ -61,6 +61,18 @@ func (r *NamingTemplateRepository) Latest(ctx context.Context) (NamingTemplateRe
 	return record, true
 }
 
+// ListRecent 返回最近保存的命名模板记录。
+func (r *NamingTemplateRepository) ListRecent(ctx context.Context, limit int) []NamingTemplateRecord {
+	if limit <= 0 {
+		limit = 20
+	}
+	var records []NamingTemplateRecord
+	if err := r.db.WithContext(ctx).Order("created_at desc, config_version desc").Limit(limit).Find(&records).Error; err != nil {
+		return nil
+	}
+	return records
+}
+
 // ApplyLatestNamingTemplate 用数据库中最新保存的命名模板覆盖运行时配置里的默认模板。
 //
 // 命名模板在当前项目里采用“独立模板表 + 发布或立即生效控制”的方式管理，

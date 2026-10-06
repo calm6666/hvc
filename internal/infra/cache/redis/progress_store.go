@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"hvc/internal/model"
 )
@@ -22,6 +23,9 @@ func NewProgressStore(client *Client) *ProgressStore {
 func (s *ProgressStore) Save(ctx context.Context, snapshot model.ProgressSnapshot) {
 	if s == nil || s.client == nil {
 		return
+	}
+	if snapshot.UpdatedAt.IsZero() {
+		snapshot.UpdatedAt = time.Now()
 	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {

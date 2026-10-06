@@ -172,6 +172,7 @@ func NewBootstrapRuntimeConfigRecord(cfg config.DynamicRuntimeConfig, source str
 		PublicGRPCEnabled:                cfg.Mode.EnableGRPCServer,
 		PublicGRPCHost:                   host,
 		PublicGRPCPort:                   port,
+		PublicGRPCRegistryID:             0,
 		// legacy callback receiver 字段已不再承载 public gRPC 运行期开关。
 		// 这里保持零值，避免新版本继续把两套语义混写到一起。
 		RPCCallbackReceiverEnabled:    false,

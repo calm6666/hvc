@@ -153,3 +153,98 @@ func TestDeleteChannelRemovesExistingChannel(t *testing.T) {
 		t.Fatal("channel should be removed after delete")
 	}
 }
+
+func TestStartChannelReturnsControlDispatchMetadata(t *testing.T) {
+	idgen.Configure(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), 1, 1, 1)
+	service := liveservice.NewChannelService(config.DynamicRuntimeConfig{}, nil, nil, nil)
+	handler := NewLiveHandler(nil, service)
+	handler.ConfigureInternalControl(nil, "", 1001)
+
+	channel, err := service.CreateChannelContext(t.Context(), "live-start-1", "room-start", 1)
+	if err != nil {
+		t.Fatalf("create channel failed: %v", err)
+	}
+
+	raw, _ := json.Marshal(map[string]any{
+		"channel_id": channel.ChannelID,
+		"worker_id":  "worker-a",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/live/channel/start", bytes.NewReader(raw))
+	resp := httptest.NewRecorder()
+	handler.StartChannel(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", resp.Code)
+	}
+
+	var body struct {
+		Data struct {
+			ChannelID      uint64 `json:"channel_id"`
+			ControlPath    string `json:"control_path"`
+			TargetNodeID   uint64 `json:"target_node_id"`
+			TargetWorkerID string `json:"target_worker_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if body.Data.ChannelID != channel.ChannelID {
+		t.Fatalf("unexpected channel id: %d", body.Data.ChannelID)
+	}
+	if body.Data.ControlPath != "local" {
+		t.Fatalf("unexpected control path: %s", body.Data.ControlPath)
+	}
+	if body.Data.TargetNodeID != 1001 {
+		t.Fatalf("unexpected target node id: %d", body.Data.TargetNodeID)
+	}
+	if body.Data.TargetWorkerID != "worker-a" {
+		t.Fatalf("unexpected target worker id: %s", body.Data.TargetWorkerID)
+	}
+}
+
+func TestStopChannelReturnsControlDispatchMetadata(t *testing.T) {
+	idgen.Configure(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), 1, 1, 1)
+	service := liveservice.NewChannelService(config.DynamicRuntimeConfig{}, nil, nil, nil)
+	handler := NewLiveHandler(nil, service)
+	handler.ConfigureInternalControl(nil, "", 1001)
+
+	channel, err := service.CreateChannelContext(t.Context(), "live-stop-1", "room-stop", 1)
+	if err != nil {
+		t.Fatalf("create channel failed: %v", err)
+	}
+
+	raw, _ := json.Marshal(map[string]any{
+		"channel_id": channel.ChannelID,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/live/channel/stop", bytes.NewReader(raw))
+	resp := httptest.NewRecorder()
+	handler.StopChannel(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", resp.Code)
+	}
+
+	var body struct {
+		Data struct {
+			ChannelID      uint64 `json:"channel_id"`
+			ControlPath    string `json:"control_path"`
+			TargetNodeID   uint64 `json:"target_node_id"`
+			TargetWorkerID string `json:"target_worker_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if body.Data.ChannelID != channel.ChannelID {
+		t.Fatalf("unexpected channel id: %d", body.Data.ChannelID)
+	}
+	if body.Data.ControlPath != "local" {
+		t.Fatalf("unexpected control path: %s", body.Data.ControlPath)
+	}
+	if body.Data.TargetNodeID != 1001 {
+		t.Fatalf("unexpected target node id: %d", body.Data.TargetNodeID)
+	}
+	if body.Data.TargetWorkerID != "" {
+		t.Fatalf("unexpected target worker id: %s", body.Data.TargetWorkerID)
+	}
+}

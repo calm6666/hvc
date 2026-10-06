@@ -11,6 +11,9 @@ server:
   listen_address: ":8888"
   # 对外广播 IP；为空或 auto 时自动探测。
   advertise_ip: ""
+  # 节点部署模式：standalone / cluster-control / cluster-worker / cluster-allinone。
+  # 这是 bootstrap 拓扑语义，决定节点角色、集群视图和部署形态。
+  node_mode: "standalone"
   # 服务名，用于日志和集群内标识。
   service_name: "hili-video-cloud"
   # 当前节点 ID。

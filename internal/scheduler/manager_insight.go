@@ -3,9 +3,11 @@ package scheduler
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"hvc/internal/config"
+	"hvc/internal/infra/db/mysql"
 	"hvc/internal/model"
 	dispatchpkg "hvc/internal/scheduler/dispatch"
 	filterpkg "hvc/internal/scheduler/filter"
@@ -18,26 +20,29 @@ import (
 // 2. 为什么某些节点被过滤；
 // 3. 如果此刻分配一个任务，Top-K 池和推荐结果会是什么。
 type DispatchInsight struct {
-	GeneratedAt                 time.Time
-	TopK                        int
-	DispatchPolicy              string
-	MaxGlobalTranscodeSessions  int
-	ActiveExecutionCount        int64
-	QueuedJobCount              int64
-	CandidateTotal              int
-	PassedCandidateTotal        int
-	RecommendedNodeID           uint64
-	RecommendedDecision         *model.DispatchDecision
-	Candidates                  []CandidateInsight
+	GeneratedAt                time.Time
+	TopK                       int
+	DispatchPolicy             string
+	MaxGlobalTranscodeSessions int
+	ActiveExecutionCount       int64
+	QueuedJobCount             int64
+	CandidateTotal             int
+	PassedCandidateTotal       int
+	RecommendedNodeID          uint64
+	RecommendedDecision        *model.DispatchDecision
+	Candidates                 []CandidateInsight
 }
 
 // CandidateInsight 表示单个候选节点的调度评估结果。
 type CandidateInsight struct {
 	NodeID                    uint64
 	NodeName                  string
+	NodeRole                  string
 	Enabled                   bool
 	Quarantined               bool
 	Draining                  bool
+	ControlPlane              bool
+	AdminAccessible           bool
 	Shielded                  bool
 	SupportsHardwareWatermark bool
 	MaxTranscodeSessions      int
@@ -45,6 +50,9 @@ type CandidateInsight struct {
 	MetricsAvailable          bool
 	MetricsFresh              bool
 	Online                    bool
+	OnlineSignalSource        string
+	SchedulerReady            bool
+	StateReason               string
 	LastMetricsAt             time.Time
 	LastHeartbeatAt           time.Time
 	Score                     int
@@ -57,8 +65,14 @@ type CandidateInsight struct {
 }
 
 type candidateState struct {
-	candidate model.DispatchCandidate
-	shielded  bool
+	candidate          model.DispatchCandidate
+	shielded           bool
+	nodeRole           string
+	controlPlane       bool
+	adminAccessible    bool
+	onlineSignalSource string
+	schedulerReady     bool
+	stateReason        string
 }
 
 // BuildInsight 构建当前调度器快照。
@@ -125,9 +139,12 @@ func (m *Manager) BuildInsight(ctx context.Context, req model.CreateJobRequest) 
 		item := CandidateInsight{
 			NodeID:                    state.candidate.NodeID,
 			NodeName:                  state.candidate.NodeName,
+			NodeRole:                  state.nodeRole,
 			Enabled:                   state.candidate.Enabled,
 			Quarantined:               state.candidate.Quarantined,
 			Draining:                  state.candidate.Draining,
+			ControlPlane:              state.controlPlane,
+			AdminAccessible:           state.adminAccessible,
 			Shielded:                  state.shielded,
 			SupportsHardwareWatermark: state.candidate.SupportsHardwareWatermark,
 			MaxTranscodeSessions:      state.candidate.MaxTranscodeSessions,
@@ -135,6 +152,9 @@ func (m *Manager) BuildInsight(ctx context.Context, req model.CreateJobRequest) 
 			MetricsAvailable:          state.candidate.MetricsAvailable,
 			MetricsFresh:              state.candidate.MetricsFresh,
 			Online:                    state.candidate.Online,
+			OnlineSignalSource:        state.onlineSignalSource,
+			SchedulerReady:            state.schedulerReady,
+			StateReason:               state.stateReason,
 			LastMetricsAt:             state.candidate.LastMetricsAt,
 			LastHeartbeatAt:           state.candidate.LastHeartbeatAt,
 			Score:                     dispatchpkg.ScoreCandidate(state.candidate),
@@ -203,40 +223,51 @@ func (m *Manager) collectCandidateStates(ctx context.Context, cfg config.Dynamic
 	items := make([]candidateState, 0)
 
 	if m.clusterNodeRepository != nil {
-		nodes := m.clusterNodeRepository.List(ctx)
+		nodes := m.clusterNodeRepository.ListForScheduler(ctx)
+		nodeIDs := make([]uint64, 0, len(nodes))
+		for _, node := range nodes {
+			nodeIDs = append(nodeIDs, node.NodeID)
+		}
+		metricsByNode := m.getNodeMetricsBatch(ctx, nodeIDs)
 		if m.jobExecutionRepository != nil && len(nodes) > 0 {
-			nodeIDs := make([]uint64, 0, len(nodes))
-			for _, node := range nodes {
-				nodeIDs = append(nodeIDs, node.NodeID)
-			}
 			activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, nodeIDs, metricsFreshAfter)
 		}
 		for _, node := range nodes {
-			metrics, ok := m.clusterCache.GetNodeMetrics(ctx, node.NodeID)
+			metrics, ok := metricsByNode[node.NodeID]
 			if !ok {
 				metrics = model.NodeMetrics{NodeID: node.NodeID}
 			}
 			metrics = mergeGPUActiveSessions(metrics, activeGPUUsageByNode[node.NodeID])
 			lastMetricsAt := metrics.Timestamp
 			_, shielded := shieldSnapshot[node.NodeID]
+			nodeRole := schedulerNodeRoleFromTags(node.NodeTags)
+			controlPlane, adminAccessible := schedulerEvaluateNodeManagementCapability(nodeRole, node.Enabled, node.HTTPHost)
+			candidate := model.DispatchCandidate{
+				NodeID:                    node.NodeID,
+				NodeName:                  node.NodeName,
+				Enabled:                   node.Enabled,
+				Quarantined:               node.Quarantined,
+				Draining:                  node.Draining,
+				SupportsHardwareWatermark: node.SupportNVENC || node.SupportQSV || node.SupportAMF,
+				MaxTranscodeSessions:      node.MaxTranscodeSessions,
+				MaxUploadConcurrency:      node.MaxUploadConcurrency,
+				MetricsAvailable:          ok,
+				MetricsFresh:              ok && !lastMetricsAt.IsZero() && !lastMetricsAt.Before(metricsFreshAfter),
+				Online:                    isNodeOnlineCandidate(node.LastHeartbeatAt, lastMetricsAt, now, onlineGrace),
+				LastMetricsAt:             lastMetricsAt,
+				LastHeartbeatAt:           node.LastHeartbeatAt,
+				Metrics:                   metrics,
+			}
+			schedulerReady, stateReason := evaluateSchedulerCandidateReadiness(cfg, node, candidate)
 			items = append(items, candidateState{
-				shielded: shielded,
-				candidate: model.DispatchCandidate{
-					NodeID:                    node.NodeID,
-					NodeName:                  node.NodeName,
-					Enabled:                   node.Enabled,
-					Quarantined:               node.Quarantined,
-					Draining:                  node.Draining,
-					SupportsHardwareWatermark: node.SupportNVENC || node.SupportQSV || node.SupportAMF,
-					MaxTranscodeSessions:      node.MaxTranscodeSessions,
-					MaxUploadConcurrency:      node.MaxUploadConcurrency,
-					MetricsAvailable:          ok,
-					MetricsFresh:              ok && !lastMetricsAt.IsZero() && !lastMetricsAt.Before(metricsFreshAfter),
-					Online:                    isNodeOnlineCandidate(node.LastHeartbeatAt, lastMetricsAt, now, onlineGrace),
-					LastMetricsAt:             lastMetricsAt,
-					LastHeartbeatAt:           node.LastHeartbeatAt,
-					Metrics:                   metrics,
-				},
+				shielded:           shielded,
+				candidate:          candidate,
+				nodeRole:           nodeRole,
+				controlPlane:       controlPlane,
+				adminAccessible:    adminAccessible,
+				onlineSignalSource: resolveSchedulerOnlineSignalSource(candidate),
+				schedulerReady:     schedulerReady,
+				stateReason:        stateReason,
 			})
 		}
 	}
@@ -253,23 +284,39 @@ func (m *Manager) collectCandidateStates(ctx context.Context, cfg config.Dynamic
 		activeGPUUsageByNode = m.jobExecutionRepository.CountActiveGPUUsageByNode(ctx, []uint64{m.nodeID}, metricsFreshAfter)
 	}
 	metrics = mergeGPUActiveSessions(metrics, activeGPUUsageByNode[m.nodeID])
+	candidate := model.DispatchCandidate{
+		NodeID:                    m.nodeID,
+		NodeName:                  m.workerID,
+		Enabled:                   true,
+		Quarantined:               false,
+		Draining:                  false,
+		SupportsHardwareWatermark: true,
+		MaxTranscodeSessions:      cfg.Scheduler.MaxNodeTranscodeSessions,
+		MaxUploadConcurrency:      cfg.Scheduler.MaxNodeUploadConcurrency,
+		MetricsAvailable:          ok,
+		MetricsFresh:              ok && !metrics.Timestamp.IsZero() && !metrics.Timestamp.Before(metricsFreshAfter),
+		Online:                    true,
+		LastMetricsAt:             metrics.Timestamp,
+		LastHeartbeatAt:           now,
+		Metrics:                   metrics,
+	}
+	schedulerReady, stateReason := evaluateSchedulerCandidateReadiness(cfg, mysql.ClusterNodeRecord{
+		NodeID:               m.nodeID,
+		NodeName:             m.workerID,
+		Enabled:              true,
+		MaxTranscodeSessions: cfg.Scheduler.MaxNodeTranscodeSessions,
+		MaxUploadConcurrency: cfg.Scheduler.MaxNodeUploadConcurrency,
+		NodeTags:             "mode:standalone",
+		LastHeartbeatAt:      now,
+	}, candidate)
 	items = append(items, candidateState{
-		candidate: model.DispatchCandidate{
-			NodeID:                    m.nodeID,
-			NodeName:                  m.workerID,
-			Enabled:                   true,
-			Quarantined:               false,
-			Draining:                  false,
-			SupportsHardwareWatermark: true,
-			MaxTranscodeSessions:      cfg.Scheduler.MaxNodeTranscodeSessions,
-			MaxUploadConcurrency:      cfg.Scheduler.MaxNodeUploadConcurrency,
-			MetricsAvailable:          ok,
-			MetricsFresh:              ok && !metrics.Timestamp.IsZero() && !metrics.Timestamp.Before(metricsFreshAfter),
-			Online:                    true,
-			LastMetricsAt:             metrics.Timestamp,
-			LastHeartbeatAt:           now,
-			Metrics:                   metrics,
-		},
+		candidate:          candidate,
+		nodeRole:           "standalone",
+		controlPlane:       true,
+		adminAccessible:    false,
+		onlineSignalSource: resolveSchedulerOnlineSignalSource(candidate),
+		schedulerReady:     schedulerReady,
+		stateReason:        stateReason,
 	})
 	return items
 }
@@ -283,4 +330,71 @@ func (m *Manager) shieldSnapshot() map[uint64]struct{} {
 		result[nodeID] = struct{}{}
 	}
 	return result
+}
+
+func schedulerNodeRoleFromTags(tags string) string {
+	for _, item := range strings.Split(tags, ",") {
+		item = strings.TrimSpace(item)
+		if strings.HasPrefix(item, "mode:") {
+			return strings.TrimPrefix(item, "mode:")
+		}
+	}
+	return "unknown"
+}
+
+func schedulerEvaluateNodeManagementCapability(nodeRole string, enabled bool, httpHost string) (bool, bool) {
+	adminAccessible := enabled && strings.TrimSpace(httpHost) != ""
+	controlPlane := false
+	switch nodeRole {
+	case "standalone", "cluster-control", "cluster-allinone":
+		controlPlane = enabled
+	}
+	return controlPlane, adminAccessible
+}
+
+func resolveSchedulerOnlineSignalSource(candidate model.DispatchCandidate) string {
+	if candidate.MetricsFresh && !candidate.LastMetricsAt.IsZero() {
+		return "metrics"
+	}
+	if !candidate.LastHeartbeatAt.IsZero() {
+		return "node_heartbeat"
+	}
+	return "unknown"
+}
+
+func evaluateSchedulerCandidateReadiness(cfg config.DynamicRuntimeConfig, node mysql.ClusterNodeRecord, candidate model.DispatchCandidate) (bool, string) {
+	if !node.Enabled {
+		return false, "node_disabled"
+	}
+	if node.Quarantined {
+		return false, "node_quarantined"
+	}
+	if node.Draining {
+		return false, "node_draining"
+	}
+	if !candidate.Online {
+		return false, "node_offline"
+	}
+	if !candidate.MetricsAvailable {
+		return false, "metrics_missing"
+	}
+	if !candidate.MetricsFresh {
+		return false, "metrics_stale"
+	}
+	if candidate.Metrics.CPUUsagePercent >= cfg.Scheduler.NodeCPUSafetyLimitPercent {
+		return false, "cpu_limit_reached"
+	}
+	if candidate.Metrics.MemoryUsagePercent >= cfg.Scheduler.NodeMemorySafetyLimitPercent {
+		return false, "memory_limit_reached"
+	}
+	if candidate.Metrics.GPUMemoryUsagePercent >= cfg.Scheduler.NodeGPUSafetyLimitPercent {
+		return false, "gpu_memory_limit_reached"
+	}
+	if candidate.Metrics.ActiveTranscodeSessions >= candidate.MaxTranscodeSessions {
+		return false, "node_session_limit_reached"
+	}
+	if candidate.Metrics.UploadQueueDepth >= candidate.MaxUploadConcurrency {
+		return false, "upload_queue_limit_reached"
+	}
+	return true, "ready"
 }

@@ -9,7 +9,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -47,7 +46,7 @@ func (h *TranscodeHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	requestID := r.URL.Query().Get("request_id")
 
 	if h.jobRepository == nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "任务仓储未初始化"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "任务仓储未初始化"})
 		return
 	}
 
@@ -66,7 +65,7 @@ func (h *TranscodeHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 			"biz_key":    bizKey,
 			"request_id": requestID,
 		})
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "任务列表查询失败"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "任务列表查询失败"})
 		return
 	}
 
@@ -98,18 +97,18 @@ func (h *TranscodeHandler) JobDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	jobID, _ := strconv.ParseUint(r.URL.Query().Get("job_id"), 10, 64)
 	if jobID == 0 {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "job_id 参数无效"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "job_id 参数无效"})
 		return
 	}
 
 	if h.jobRepository == nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "任务仓储未初始化"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "任务仓储未初始化"})
 		return
 	}
 
 	job, found := h.jobRepository.GetByID(ctx, jobID)
 	if !found {
-		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "任务不存在"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 404, Message: "任务不存在"})
 		return
 	}
 
@@ -160,28 +159,27 @@ func (h *TranscodeHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		JobID uint64 `json:"job_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "请求参数无效"})
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.JobID == 0 {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "job_id 不能为空"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "job_id 不能为空"})
 		return
 	}
 
 	if h.jobRepository == nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "任务仓储未初始化"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "任务仓储未初始化"})
 		return
 	}
 
 	job, found := h.jobRepository.GetByID(ctx, req.JobID)
 	if !found {
-		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "任务不存在"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 404, Message: "任务不存在"})
 		return
 	}
 
 	if job.Status != model.JobStatusFailed {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{
+		logx.WriteJSON(w, http.StatusOK, model.Response{
 			Code:    400,
 			Message: fmt.Sprintf("任务状态为 %s，只有失败任务可以重试", statusName(job.Status)),
 		})
@@ -190,7 +188,7 @@ func (h *TranscodeHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.jobRepository.ResetToQueued(ctx, req.JobID); err != nil {
 		logx.Error("admin.retry_job.reset_failed", err, logx.Fields{"job_id": req.JobID})
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "重试失败"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "重试失败"})
 		return
 	}
 
@@ -207,28 +205,27 @@ func (h *TranscodeHandler) CancelJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		JobID uint64 `json:"job_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "请求参数无效"})
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.JobID == 0 {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "job_id 不能为空"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "job_id 不能为空"})
 		return
 	}
 
 	if h.jobRepository == nil {
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "任务仓储未初始化"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "任务仓储未初始化"})
 		return
 	}
 
 	job, found := h.jobRepository.GetByID(ctx, req.JobID)
 	if !found {
-		logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "任务不存在"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 404, Message: "任务不存在"})
 		return
 	}
 
 	if job.Status == model.JobStatusCompleted || job.Status == model.JobStatusCanceled {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{
+		logx.WriteJSON(w, http.StatusOK, model.Response{
 			Code:    400,
 			Message: fmt.Sprintf("任务状态为 %s，无法取消", statusName(job.Status)),
 		})
@@ -237,7 +234,7 @@ func (h *TranscodeHandler) CancelJob(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.jobRepository.MarkCanceled(ctx, req.JobID); err != nil {
 		logx.Error("admin.cancel_job.mark_failed", err, logx.Fields{"job_id": req.JobID})
-		logx.WriteJSON(w, http.StatusInternalServerError, model.Response{Code: 500, Message: "取消失败"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 500, Message: "取消失败"})
 		return
 	}
 
@@ -254,7 +251,7 @@ func (h *TranscodeHandler) JobProgress(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	jobID, _ := strconv.ParseUint(r.URL.Query().Get("job_id"), 10, 64)
 	if jobID == 0 {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "job_id 参数无效"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "job_id 参数无效"})
 		return
 	}
 
@@ -279,7 +276,7 @@ func (h *TranscodeHandler) JobProgress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	logx.WriteJSON(w, http.StatusNotFound, model.Response{Code: 404, Message: "任务不存在"})
+	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 404, Message: "任务不存在"})
 }
 
 // statusName 返回任务状态的中文描述。

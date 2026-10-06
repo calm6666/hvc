@@ -99,12 +99,19 @@ func (r *JobExecutionRepository) MarkCompleted(ctx context.Context, jobID uint64
 
 // TouchHeartbeat 更新执行实例心跳时间。
 func (r *JobExecutionRepository) TouchHeartbeat(ctx context.Context, jobID uint64, leaseGeneration uint64) error {
-	now := time.Now()
+	return r.TouchHeartbeatAt(ctx, jobID, leaseGeneration, time.Time{})
+}
+
+// TouchHeartbeatAt 按指定时间更新执行实例心跳时间。
+func (r *JobExecutionRepository) TouchHeartbeatAt(ctx context.Context, jobID uint64, leaseGeneration uint64, heartbeatAt time.Time) error {
+	if heartbeatAt.IsZero() {
+		heartbeatAt = time.Now()
+	}
 	return r.db.WithContext(ctx).Model(&JobExecutionRecord{}).
 		Where("job_id = ? AND lease_generation = ?", jobID, leaseGeneration).
 		Updates(map[string]any{
-			"last_heartbeat_at": now,
-			"updated_at":        now,
+			"last_heartbeat_at": heartbeatAt,
+			"updated_at":        heartbeatAt,
 		}).Error
 }
 

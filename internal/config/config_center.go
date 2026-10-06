@@ -87,8 +87,31 @@ func DefaultDynamicRuntimeConfig() DynamicRuntimeConfig {
 // 2. 本地 YAML 不再承载 scheduler/worker/callback/storage/public grpc/mq 这些业务动态段；
 // 3. 外部配置中心不再直接下发业务运行时配置，只负责启动所需的基础设施配置。
 func LoadBootstrapDynamicRuntimeConfig(base RuntimeConfig) DynamicRuntimeConfig {
-	_ = base
 	cfg := DefaultDynamicRuntimeConfig()
+	switch base.EffectiveNodeMode() {
+	case NodeModeStandalone:
+		cfg.Mode.EnableHTTPServer = true
+		cfg.Mode.EnableScheduler = true
+		cfg.Mode.EnableWorker = true
+		cfg.Mode.EnableCallback = true
+	case NodeModeClusterControl:
+		cfg.Mode.EnableHTTPServer = true
+		cfg.Mode.EnableScheduler = true
+		cfg.Mode.EnableWorker = false
+		cfg.Mode.EnableCallback = true
+	case NodeModeClusterWorker:
+		cfg.Mode.EnableHTTPServer = false
+		cfg.Mode.EnableScheduler = false
+		cfg.Mode.EnableWorker = true
+		cfg.Mode.EnableCallback = false
+		cfg.Mode.EnableGRPCServer = false
+		cfg.Mode.EnableMQConsumer = false
+	case NodeModeClusterAllInOne:
+		cfg.Mode.EnableHTTPServer = true
+		cfg.Mode.EnableScheduler = true
+		cfg.Mode.EnableWorker = true
+		cfg.Mode.EnableCallback = true
+	}
 	applyDynamicDefaults(&cfg)
 	return cfg
 }

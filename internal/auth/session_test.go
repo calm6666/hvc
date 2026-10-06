@@ -7,7 +7,7 @@ import (
 )
 
 func TestExtractAdminSessionTokenFromBearerHeader(t *testing.T) {
-	req := httptest.NewRequest("GET", "/v1/admin/auth/me", nil)
+	req := httptest.NewRequest("GET", "/v1/admin/auth/session", nil)
 	req.Header.Set("Authorization", "Bearer test-token-123")
 
 	if got := ExtractAdminSessionToken(req); got != "test-token-123" {
@@ -16,7 +16,7 @@ func TestExtractAdminSessionTokenFromBearerHeader(t *testing.T) {
 }
 
 func TestExtractAdminSessionTokenFromCookie(t *testing.T) {
-	req := httptest.NewRequest("GET", "/v1/admin/auth/me", nil)
+	req := httptest.NewRequest("GET", "/v1/admin/auth/session", nil)
 	req.AddCookie(cookie("admin_session", "cookie-token-456"))
 
 	if got := ExtractAdminSessionToken(req); got != "cookie-token-456" {
@@ -25,7 +25,7 @@ func TestExtractAdminSessionTokenFromCookie(t *testing.T) {
 }
 
 func TestExtractAdminSessionTokenPrefersAuthorizationHeader(t *testing.T) {
-	req := httptest.NewRequest("GET", "/v1/admin/auth/me", nil)
+	req := httptest.NewRequest("GET", "/v1/admin/auth/session", nil)
 	req.Header.Set("Authorization", "bearer header-token")
 	req.AddCookie(cookie("admin_session", "cookie-token"))
 

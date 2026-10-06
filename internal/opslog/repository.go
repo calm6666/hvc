@@ -68,3 +68,34 @@ func (r *Repository) SaveStructured(ctx context.Context, item logx.PersistedEntr
 		LoggedAt:   item.LoggedAt,
 	})
 }
+
+// SaveStructuredBatch 批量保存结构化运行日志。
+//
+// 用于对接 logx 的异步批量持久化，减少高峰期逐条 insert 带来的连接与事务开销。
+func (r *Repository) SaveStructuredBatch(ctx context.Context, items []logx.PersistedEntry) error {
+	if r == nil || r.db == nil || len(items) == 0 {
+		return nil
+	}
+	payload := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		fieldsJSON := "{}"
+		if len(item.Fields) > 0 {
+			if data, err := json.Marshal(item.Fields); err == nil {
+				fieldsJSON = string(data)
+			}
+		}
+		loggedAt := item.LoggedAt
+		if loggedAt.IsZero() {
+			loggedAt = time.Now()
+		}
+		payload = append(payload, map[string]any{
+			"log_id":       idgen.Next(),
+			"service_name": item.Service,
+			"log_level":    item.Level,
+			"action_name":  item.Action,
+			"fields_json":  fieldsJSON,
+			"logged_at":    loggedAt,
+		})
+	}
+	return r.db.WithContext(ctx).Table("t_system_runtime_log").CreateInBatches(payload, 100).Error
+}

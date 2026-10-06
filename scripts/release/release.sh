@@ -17,7 +17,7 @@
 #
 # 前置条件：
 #   - Docker 已安装并登录
-#   - Git 工作目录干净
+#   - 如果需要创建 Git Tag，则工作目录应保持干净
 # ============================================================
 
 set -euo pipefail
@@ -140,6 +140,8 @@ mkdir -p "${RELEASE_DIR}"
 cp -r "${PROJECT_ROOT}/configs" "${RELEASE_DIR}/configs"
 cp -r "${PROJECT_ROOT}/deployments" "${RELEASE_DIR}/deployments"
 cp -r "${PROJECT_ROOT}/scripts" "${RELEASE_DIR}/scripts"
+cp -r "${PROJECT_ROOT}/sql" "${RELEASE_DIR}/sql"
+cp "${PROJECT_ROOT}/DEPLOYMENT_GUIDE.md" "${RELEASE_DIR}/DEPLOYMENT_GUIDE.md"
 
 # 打包
 cd "${PROJECT_ROOT}/release/${VERSION}"

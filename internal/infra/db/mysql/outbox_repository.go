@@ -90,6 +90,20 @@ func (r *OutboxRepository) ListPending(ctx context.Context) []model.OutboxEvent 
 	return items
 }
 
+// TryMarkSending 尝试以 CAS 方式抢占事件投递权。
+//
+// 只有当前状态仍等于 expectedStatus 时才会更新为 sending，
+// 这样多个节点并发扫 outbox 时，同一事件只能被一个节点真正拿到。
+func (r *OutboxRepository) TryMarkSending(ctx context.Context, eventID uint64, expectedStatus int) bool {
+	result := r.db.WithContext(ctx).Model(&OutboxRecord{}).
+		Where("event_id = ? AND delivery_status = ?", eventID, expectedStatus).
+		Updates(map[string]any{
+			"delivery_status": model.OutboxStatusSending,
+			"updated_at":      time.Now(),
+		})
+	return result.Error == nil && result.RowsAffected == 1
+}
+
 // MarkDelivered 标记投递成功。
 func (r *OutboxRepository) MarkDelivered(ctx context.Context, eventID uint64) error {
 	return r.db.WithContext(ctx).Model(&OutboxRecord{}).Where("event_id = ?", eventID).Updates(map[string]any{
@@ -208,6 +222,31 @@ func (r *OutboxRepository) ListRetryable(ctx context.Context) []model.OutboxEven
 		items = append(items, toOutboxModel(record))
 	}
 	return items
+}
+
+// ResetStaleSending 将长时间停留在 sending 的事件回收为可重试失败状态。
+//
+// 这个兜底用于处理“节点在成功抢占后崩溃/断电”的情况，避免事件永久卡死在 sending。
+func (r *OutboxRepository) ResetStaleSending(ctx context.Context, staleBefore time.Time, message string) int {
+	if message == "" {
+		message = "callback sending timeout"
+	}
+	updates := map[string]any{
+		"delivery_status":    model.OutboxStatusFailed,
+		"last_error_message": message,
+		"next_retry_at":      time.Now(),
+		"updated_at":         time.Now(),
+	}
+	result := r.db.WithContext(ctx).Model(&OutboxRecord{}).
+		Where("delivery_status = ? AND updated_at < ?", model.OutboxStatusSending, staleBefore).
+		Updates(updates)
+	if result.Error != nil && isMissingOutboxColumn(result.Error, "last_error_message") {
+		delete(updates, "last_error_message")
+		result = r.db.WithContext(ctx).Table((&OutboxRecord{}).TableName()).
+			Where("delivery_status = ? AND updated_at < ?", model.OutboxStatusSending, staleBefore).
+			Updates(updates)
+	}
+	return int(result.RowsAffected)
 }
 
 // ResetToPending 将失败事件重置为待投递状态（手动重试）。

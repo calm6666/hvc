@@ -7,18 +7,18 @@ import (
 
 // Item 表示审计日志查询结果。
 type Item struct {
-	AuditLogID        uint64    `json:"audit_log_id"`
-	AdminUserID       uint64    `json:"admin_user_id"`
-	Username          string    `json:"username"`
-	ActionName        string    `json:"action_name"`
-	TargetType        string    `json:"target_type"`
-	TargetID          string    `json:"target_id"`
-	RequestID         string    `json:"request_id"`
-	RequestIP         string    `json:"request_ip"`
-	RequestUserAgent  string    `json:"request_user_agent"`
-	ResultCode        int       `json:"result_code"`
-	ResultMessage     string    `json:"result_message"`
-	CreatedAt         time.Time `json:"created_at"`
+	AuditLogID       uint64    `json:"audit_log_id"`
+	AdminUserID      uint64    `json:"admin_user_id"`
+	Username         string    `json:"username"`
+	ActionName       string    `json:"action_name"`
+	TargetType       string    `json:"target_type"`
+	TargetID         string    `json:"target_id"`
+	RequestID        string    `json:"request_id"`
+	RequestIP        string    `json:"request_ip"`
+	RequestUserAgent string    `json:"request_user_agent"`
+	ResultCode       int       `json:"result_code"`
+	ResultMessage    string    `json:"result_message"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // List 返回审计日志列表。
@@ -78,4 +78,36 @@ func (r *Repository) ListPaged(ctx context.Context, page, pageSize int, actionFi
 func (r *Repository) CleanBefore(ctx context.Context, before time.Time) int {
 	result := r.db.WithContext(ctx).Table("t_admin_audit_log").Where("created_at < ?", before).Delete(nil)
 	return int(result.RowsAffected)
+}
+
+// ListRecentByActions 返回指定动作集合的最近审计记录。
+func (r *Repository) ListRecentByActions(ctx context.Context, actions []string, limit int, since *time.Time) []Item {
+	if len(actions) == 0 {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	query := r.db.WithContext(ctx).Table("t_admin_audit_log").Where("action_name IN ?", actions)
+	if since != nil {
+		query = query.Where("created_at >= ?", *since)
+	}
+	var items []Item
+	if err := query.Order("created_at desc").Limit(limit).Find(&items).Error; err != nil {
+		return nil
+	}
+	return items
+}
+
+// CountByActionsSince 统计指定动作集合在某个时间点之后的数量。
+func (r *Repository) CountByActionsSince(ctx context.Context, actions []string, since time.Time) int64 {
+	if len(actions) == 0 {
+		return 0
+	}
+	var total int64
+	r.db.WithContext(ctx).Table("t_admin_audit_log").Where("action_name IN ? AND created_at >= ?", actions, since).Count(&total)
+	return total
 }

@@ -47,6 +47,19 @@ type configCenterBindingView struct {
 	BindingUsage    []string   `json:"binding_usage"`
 }
 
+type registryEtcdConfigView struct {
+	RegistryID       uint64    `json:"registry_id"`
+	RegistryName     string    `json:"registry_name"`
+	Endpoints        string    `json:"endpoints"`
+	ServiceNamespace string    `json:"service_namespace"`
+	LeaseTTLSec      int       `json:"lease_ttl_sec"`
+	DialTimeoutMS    int       `json:"dial_timeout_ms"`
+	Enabled          bool      `json:"enabled"`
+	Priority         int       `json:"priority"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
 type runtimeConfigVersionView struct {
 	ConfigVersion                  uint64     `json:"config_version"`
 	EnableHTTPServer               bool       `json:"enable_http_server"`
@@ -73,6 +86,7 @@ type runtimeConfigVersionView struct {
 	CallbackMQTopic                string     `json:"callback_mq_topic"`
 	EnableGRPCServer               bool       `json:"enable_grpc_server"`
 	GRPCListenAddress              string     `json:"grpc_listen_address"`
+	PublicGRPCRegistryID           uint64     `json:"public_grpc_registry_id"`
 	EnableMQConsumer               bool       `json:"enable_mq_consumer"`
 	MQQueueName                    string     `json:"mq_queue_name"`
 	MQHost                         string     `json:"mq_host"`
@@ -183,6 +197,7 @@ func toRuntimeConfigVersionView(record mysql.RuntimeConfigRecord) runtimeConfigV
 		CallbackMQTopic:                record.CallbackMQTopic,
 		EnableGRPCServer:               record.PublicGRPCEnabled,
 		GRPCListenAddress:              buildListenAddress(record.PublicGRPCHost, record.PublicGRPCPort),
+		PublicGRPCRegistryID:           record.PublicGRPCRegistryID,
 		EnableMQConsumer:               record.EnableMQConsumer,
 		MQQueueName:                    record.MQQueueName,
 		MQHost:                         record.MQHost,
@@ -216,6 +231,21 @@ func toRuntimeConfigVersionView(record mysql.RuntimeConfigRecord) runtimeConfigV
 		view.PublishedAt = &publishedAt
 	}
 	return view
+}
+
+func toRegistryEtcdConfigView(record mysql.RegistryEtcdConfigRecord) registryEtcdConfigView {
+	return registryEtcdConfigView{
+		RegistryID:       record.RegistryID,
+		RegistryName:     record.RegistryName,
+		Endpoints:        record.Endpoints,
+		ServiceNamespace: record.ServiceNamespace,
+		LeaseTTLSec:      record.LeaseTTLSec,
+		DialTimeoutMS:    record.DialTimeoutMS,
+		Enabled:          record.Enabled,
+		Priority:         record.Priority,
+		CreatedAt:        record.CreatedAt,
+		UpdatedAt:        record.UpdatedAt,
+	}
 }
 
 func buildListenAddress(host string, port int) string {

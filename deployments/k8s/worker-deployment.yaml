@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hvc-worker
+  namespace: hvc
+  labels:
+    app: hvc-worker
+    role: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hvc-worker
+      role: worker
+  template:
+    metadata:
+      labels:
+        app: hvc-worker
+        role: worker
+    spec:
+      containers:
+        - name: hvc-worker
+          image: hvc-server:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--config"
+            - "/etc/hvc/config.yaml"
+          ports:
+            - containerPort: 19090
+              name: grpc-internal
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "4000m"
+              memory: "8Gi"
+          livenessProbe:
+            tcpSocket:
+              port: grpc-internal
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: grpc-internal
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/hvc/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: tmp-volume
+              mountPath: /tmp/hvc
+      volumes:
+        - name: config-volume
+          configMap:
+            name: hvc-worker-bootstrap-config
+        - name: tmp-volume
+          emptyDir:
+            medium: ""
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hvc-worker-bootstrap-config
+  namespace: hvc
+data:
+  config.yaml: |
+    server:
+      listen_address: ":8080"
+      advertise_ip: ""
+      node_mode: "cluster-worker"
+      service_name: "hili-video-cloud"
+      node_id: 21
+      worker_id: "hvc-k8s-worker-21"
+
+    mysql:
+      dsn: "hvc:hvc_pwd@tcp(hvc-mysql.hvc.svc.cluster.local:3306)/hvc?parseTime=true&charset=utf8mb4"
+      sharding_enabled: false
+      shard_count: 1
+      query_timeout: "3s"
+      exec_timeout: "5s"
+
+    redis:
+      addrs:
+        - "hvc-redis.hvc.svc.cluster.local:6379"
+      password: ""
+      db: 0
+      cluster_enabled: false
+      dial_timeout: "2s"
+      read_timeout: "2s"
+      write_timeout: "2s"
+
+    internal_grpc:
+      enabled: true
+      listen_address: ":19090"
+      shared_token: "replace-me-in-production"
+      max_recv_msg_size: 64
+      max_send_msg_size: 64
+      graceful_stop_timeout: "5s"
+
+    config_center:
+      enabled: false
+      endpoint: ""
+      namespace: ""
+      auth_mode: "none"
+      token: ""
+
+    id:
+      start_time: "2025-01-01T00:00:00Z"
+      node_bits: 10
+      sequence_bits: 12

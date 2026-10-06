@@ -366,7 +366,7 @@ func (b *Builder) objectURL(objectKey string) string {
 }
 
 func (b *Builder) variantM3U8URL(jobID uint64, rendName string) string {
-	return fmt.Sprintf("/v1/manifest/hls/%d/%s.m3u8", jobID, rendName)
+	return fmt.Sprintf("/v1/manifest/hls/%d/%s", jobID, rendName)
 }
 
 func groupSegmentsByRendition(segments []model.Segment) map[string][]model.Segment {

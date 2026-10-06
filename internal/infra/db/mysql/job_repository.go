@@ -22,6 +22,7 @@ func toJobRecord(job model.TranscodeJob) JobRecord {
 		Priority:                   job.Priority,
 		SourceURL:                  job.SourceURL,
 		ProfileID:                  job.ProfileID,
+		InputHash:                  job.InputHash,
 		SegmentDurationSec:         job.SegmentDurationSec,
 		SegmentTemplate:            job.SegmentTemplate,
 		SupportDash:                job.SupportDash,
@@ -75,6 +76,7 @@ func toJobModel(record JobRecord) model.TranscodeJob {
 		Priority:                   record.Priority,
 		SourceURL:                  record.SourceURL,
 		ProfileID:                  record.ProfileID,
+		InputHash:                  record.InputHash,
 		SegmentDurationSec:         record.SegmentDurationSec,
 		SegmentTemplate:            record.SegmentTemplate,
 		SupportDash:                record.SupportDash,
@@ -353,6 +355,59 @@ func (r *JobRepository) MarkCompleted(ctx context.Context, jobID uint64) error {
 		"progress_stage":    model.StageCompleted,
 		"updated_at":        time.Now(),
 	}).Error
+}
+
+// MarkPublished 把任务从"已完成"推进到"已发布"（A1）。
+//
+// 只在**本任务待传分片数归零**、且清单已物化、逐片可 GET 与 sha256 校验通过之后调用：
+// 这一步之后的语义是"下游现在去拉清单一定拿到完整内容"。用 status 做条件更新，
+// 保证只有仍处于 Completed 的行会被推进（重复调用或已被别的节点推进时不产生副作用）。
+func (r *JobRepository) MarkPublished(ctx context.Context, jobID uint64) error {
+	return r.db.WithContext(ctx).Model(&JobRecord{}).
+		Where("job_id = ? AND status = ?", jobID, model.JobStatusCompleted).
+		Updates(map[string]any{
+			"status":         model.JobStatusPublished,
+			"progress_stage": model.StagePublished,
+			"updated_at":     time.Now(),
+		}).Error
+}
+
+// MarkCallbackSent 把任务从"已发布"推进到"回调已送达"（A1）。
+//
+// 由回调投递侧在**至少一个通道成功**（Outbox 事件 MarkDelivered，或 HTTP/gRPC/MQ 任一成功）后调用，
+// 是任务对外承诺兑现的最终终态。同样用 status 做条件更新，避免乱序回写把状态拉回。
+func (r *JobRepository) MarkCallbackSent(ctx context.Context, jobID uint64) error {
+	return r.db.WithContext(ctx).Model(&JobRecord{}).
+		Where("job_id = ? AND status = ?", jobID, model.JobStatusPublished).
+		Updates(map[string]any{
+			"status":         model.JobStatusCallbackSent,
+			"progress_stage": model.StageCallbackSent,
+			"updated_at":     time.Now(),
+		}).Error
+}
+
+// SetInputHash 落库"源文件 + 输出规格"的指纹（B2）。
+//
+// 只在任务**首次**开始执行时写入（input_hash = '' 才写）：指纹一旦记下就代表"这一版输入"，
+// 后续重跑/换节点都拿它跟当前输入比对，一致才允许按步骤续跑。重复覆盖会让"输入变了"这件事
+// 被悄悄抹掉。调用方（worker 启动时）负责判断是否需要先清空旧指纹。
+func (r *JobRepository) SetInputHash(ctx context.Context, jobID uint64, inputHash string) error {
+	return r.db.WithContext(ctx).Model(&JobRecord{}).
+		Where("job_id = ? AND input_hash = ''", jobID).
+		Updates(map[string]any{
+			"input_hash": inputHash,
+			"updated_at": time.Now(),
+		}).Error
+}
+
+// ResetInputHash 清空指纹（B2）：源或规格变了必须整任务重跑，先清指纹再重新记。
+func (r *JobRepository) ResetInputHash(ctx context.Context, jobID uint64) error {
+	return r.db.WithContext(ctx).Model(&JobRecord{}).
+		Where("job_id = ?", jobID).
+		Updates(map[string]any{
+			"input_hash": "",
+			"updated_at": time.Now(),
+		}).Error
 }
 
 // GetByID 根据 job_id 获取任务信息。

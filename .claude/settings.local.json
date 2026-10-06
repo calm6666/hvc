@@ -7,7 +7,20 @@
       "Bash(go test *)",
       "Bash(python *)",
       "Read(//c/Users/calm/go/pkg/mod/github.com/zlabwork/snowflake@v1.0.0/**)",
-      "Bash([ -f \"$del\" ])"
+      "Bash([ -f \"$del\" ])",
+      "Bash(npx vite *)",
+      "Read(//tmp/**)",
+      "Bash(python3 *)",
+      "Bash(node *)",
+      "Bash(sed -i 's/http\\\\.StatusBadRequest/http.StatusOK/g' *.go)",
+      "Bash(sed -i 's/http\\\\.StatusInternalServerError/http.StatusOK/g' *.go)",
+      "Bash(sed -i 's/http\\\\.StatusNotFound/http.StatusOK/g' *.go)",
+      "Bash(sed -i 's/http\\\\.StatusConflict/http.StatusOK/g' *.go)",
+      "Bash(git checkout *)",
+      "Bash(npx --prefix /d/hilihili/server/hvc/web vite build)",
+      "WebSearch",
+      "WebFetch(domain:www.naiveui.com)",
+      "Bash(grep -rn \"import { computed, [a-z]\" /d/hilihili/server/hvc/web/src/views/ --include=\"*.vue\")"
     ]
   }
 }

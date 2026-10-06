@@ -23,3 +23,11 @@ func (s *Sink) SavePersistedEntry(item logx.PersistedEntry) error {
 	}
 	return s.repo.SaveStructured(context.Background(), item)
 }
+
+// SavePersistedEntries 实现 logx.BatchPersistenceSink。
+func (s *Sink) SavePersistedEntries(items []logx.PersistedEntry) error {
+	if s == nil || s.repo == nil {
+		return nil
+	}
+	return s.repo.SaveStructuredBatch(context.Background(), items)
+}

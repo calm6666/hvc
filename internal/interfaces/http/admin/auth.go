@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -26,12 +25,12 @@ func NewAuthHandler(loginUseCase *authusecase.LoginUseCase, adminRepository *mys
 // Login 处理管理员登录。
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		logx.WriteJSON(w, http.StatusBadRequest, model.Response{Code: 400, Message: "invalid form"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 400, Message: "登录表单格式无效"})
 		return
 	}
 	token, ok := h.loginUseCase.Execute(r)
 	if !ok {
-		logx.WriteJSON(w, http.StatusUnauthorized, model.Response{Code: 401, Message: "login failed"})
+		logx.WriteJSON(w, http.StatusOK, model.Response{Code: 401, Message: "用户名或密码错误"})
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -65,7 +64,10 @@ func (h *AuthHandler) WhoAmI(w http.ResponseWriter, r *http.Request) {
 			data["user"] = toAdminUserView(user)
 		}
 		data["permission_keys"] = h.adminRepository.ListPermissionKeysByUserID(r.Context(), userID)
-		data["menu_tree"] = buildMenuTree(h.adminRepository.ListMenusByUserID(r.Context(), userID))
+		menuTree := buildMenuTree(h.adminRepository.ListMenusByUserID(r.Context(), userID))
+		data["tree"] = true
+		data["items"] = menuTree
+		data["menu_tree"] = menuTree
 	}
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok", Data: data})
 }
@@ -88,5 +90,3 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 	logx.WriteJSON(w, http.StatusOK, model.Response{Code: 0, Message: "ok"})
 }
-
-var _ = json.NewDecoder

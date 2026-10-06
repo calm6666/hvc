@@ -113,3 +113,69 @@ func (r *RuntimeConfigRepository) MarkPublished(ctx context.Context, configVersi
 		return nil
 	})
 }
+
+// SwitchPublished 切换当前发布版本，并返回切换前的已发布版本。
+//
+// 之所以显式返回旧版本，是为了让上层在“数据库已切换、但缓存或进程内快照刷新失败”时，
+// 能把发布状态安全回滚，避免出现接口返回失败但数据库实际上已经切版本的半成功状态。
+func (r *RuntimeConfigRepository) SwitchPublished(ctx context.Context, configVersion uint64, publishedBy string) (RuntimeConfigRecord, bool, error) {
+	var previous RuntimeConfigRecord
+	var previousExists bool
+	now := time.Now()
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("published = ?", true).Order("config_version desc").Take(&previous).Error; err == nil {
+			previousExists = true
+		} else if err != nil && err != gorm.ErrRecordNotFound {
+			return err
+		}
+
+		if err := tx.Model(&RuntimeConfigRecord{}).Where("published = ?", true).Updates(map[string]any{
+			"published":  false,
+			"updated_at": now,
+		}).Error; err != nil {
+			return err
+		}
+
+		result := tx.Model(&RuntimeConfigRecord{}).Where("config_version = ?", configVersion).Updates(map[string]any{
+			"published":    true,
+			"published_by": publishedBy,
+			"published_at": now,
+			"updated_at":   now,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
+	return previous, previousExists, err
+}
+
+// RestorePublished 回滚一次失败的发布切换。
+func (r *RuntimeConfigRepository) RestorePublished(ctx context.Context, failedVersion uint64, previous RuntimeConfigRecord, previousExists bool) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if failedVersion > 0 {
+			if err := tx.Model(&RuntimeConfigRecord{}).Where("config_version = ?", failedVersion).Updates(map[string]any{
+				"published":    false,
+				"published_by": "",
+				"published_at": nil,
+				"updated_at":   now,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		if !previousExists || previous.ConfigVersion == 0 {
+			return nil
+		}
+		return tx.Model(&RuntimeConfigRecord{}).Where("config_version = ?", previous.ConfigVersion).Updates(map[string]any{
+			"published":    true,
+			"published_by": previous.PublishedBy,
+			"published_at": previous.PublishedAt,
+			"updated_at":   now,
+		}).Error
+	})
+}
