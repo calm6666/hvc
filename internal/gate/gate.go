@@ -26,11 +26,15 @@ type CheckResult struct {
 	ID string
 	// Title 判据内容；凡是从设计推导而来、而非引自原文的，标题里会带"（推导）"。
 	Title string
-	// Passed 是否通过。Skipped 为真时本字段无意义。
+	// Passed 是否通过。Skipped 或 NotApplicable 为真时本字段无意义。
 	Passed bool
-	// Skipped 表示本次运行无法判定（缺外部资源/缺数据），**不计入通过**。
+	// Skipped 表示本次运行**无法判定**（缺外部资源/缺数据），**不计入通过**。
 	Skipped bool
-	// Detail 失败或跳过时的具体原因（含定位信息），通过时可为空。
+	// NotApplicable 表示这条判据**在本次情形下不适用**（例如 A3 只管软解，硬解路径天然不适用）。
+	// 与 Skipped 的区别必须分清：Skipped 是"该判却没判成"，NotApplicable 是"本就不该判"。
+	// 两者都不计入通过，但报告时语义不同 —— 全部 NotApplicable 也不能宣称"已验收"。
+	NotApplicable bool
+	// Detail 失败/跳过/不适用时的具体原因（含定位信息），通过时可为空。
 	Detail string
 }
 
