@@ -41,12 +41,15 @@ func fetchSegments() []model.Segment {
 	return []model.Segment{
 		{
 			RenditionName: "720p", SegmentType: "init", IsInitSegment: true, SequenceNo: 0,
-			ObjectKey: "out/720p/init.mp4", ObjectSizeBytes: uint64(len("INIT")), SHA256: digestOf("INIT"),
+			ObjectKey: "out/720p/init.mp4", ObjectSizeBytes: uint64(len("INIT")),
+			/* init 段也是上传到对象存储的对象：A6 要求它同样带回执（ETag），这里必须给。 */
+			ObjectETag: "etag-init", SHA256: digestOf("INIT"),
 			UploadStatus: model.SegmentUploaded,
 		},
 		{
 			RenditionName: "720p", SequenceNo: 1,
-			ObjectKey: "out/720p/1.m4s", ObjectSizeBytes: uint64(len("SEG1")), SHA256: digestOf("SEG1"),
+			ObjectKey: "out/720p/1.m4s", ObjectSizeBytes: uint64(len("SEG1")),
+			ObjectETag: "etag-1", SHA256: digestOf("SEG1"),
 			UploadStatus: model.SegmentUploaded,
 		},
 	}
